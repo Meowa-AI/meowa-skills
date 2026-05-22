@@ -10,8 +10,8 @@
 可用能力概览：
 
 - `credits-balance`：查询当前账号剩余 credit，适合在批量生成前先确认额度是否充足。
-- `gemini-generate-content`：通用生成入口（nano banana)，适合自由度较高的文生图, 适合用来生成大尺度的背景，人物等。。
-- `pixel-gen-run`：基于模板生成像素图片，适合角色、物件、道具这类固定尺寸的 Sprite；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
+- `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、tile、tileset、UI 小图标这类固定尺寸 Sprite；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
+- `gemini-generate-content`：通用生成入口（nano banana），适合非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿。不要把它作为像素 sprite、像素角色、像素道具、像素 icon 的默认入口；像素资产只有没有合适模板或用户明确不用模板时才 fallback 到这里。
 - `self-loop-run`：基于现有图片生成 self-loop 无缝循环图。目前支持横向或纵向无缝拼接，适合用于横版卷轴背景、纵向场景和可重复平铺的纹理。
 - `remove-background-run`：对现有图片做去背景处理
   - 像素图片使用 `pixel` 模式，只支持去白色背景。支持任意尺寸输入，最好提前做过 pixelate，且不需要提前缩放到 nano banana尺寸。
@@ -19,6 +19,13 @@
 - `pixelate-run`：把较大的图片重新收敛成更干净的像素风输出，适合在 AI 先生成大图后，将其变为完美像素的 Spite。
 - `animate-run`：基于单张角色图生成动作动画，适合做角色待机、跑步、跳跃、弹跳这类短循环动画。
 - `music-run`：生成结构化音乐描述，可选继续生成音乐音频；适合游戏 BGM、主题曲、场景音乐方向测试。
+
+## 0. 命令选择
+
+- 明确要像素图、pixel art、sprite、角色、怪物、道具、物品、icon、tile、tileset、UI 小图标时：先执行 `pixel-gen-template-info`，再用合适模板执行 `pixel-gen-run`。
+- 不要因为需求写了“人物”“背景”“场景”就直接使用 `gemini-generate-content`。如果最终要求是像素资产，`pixel-gen-run` 优先。
+- 只有非像素概念图、高清插画、完整大背景概念稿、UI 整体视觉稿，或明确没有合适 pixel template 时，才使用 `gemini-generate-content`。
+- 像素资产 fallback 到 `gemini-generate-content` 后不能直接交付：继续跑 `pixelate-run`，需要透明图时再跑 `remove-background-run --method pixel`，并检查尺寸和透明通道。
 
 ## 1. 鉴权
 
@@ -86,7 +93,7 @@ python3 skills/meowart_api.py credits-balance
 
 ## 4. General Image Generation
 
-The most common entry point is `generateContent`:
+For non-pixel concepts, high-resolution illustration, full-scene background concepts, and broad UI mockups, use `generateContent`:
 
 ```bash
 python3 skills/meowart_api.py \
@@ -96,9 +103,9 @@ python3 skills/meowart_api.py \
 
 If you need to customize the path or request body, check the `gemini-*` subcommands in `skills/meowart_api.py`.
 
-## 5. 像素sprite生成
+## 5. 像素 Sprite / 角色 / 道具 / Icon 生成
 
-`pixel-gen` 最常用的入口是 `pixel-gen-run`，它会自动完成提交、轮询和结果下载。
+`pixel-gen` 是像素资产的默认入口。最常用的命令是 `pixel-gen-run`，它会自动完成提交、轮询和结果下载。
 
 ```bash
 python3 skills/meowart_api.py \

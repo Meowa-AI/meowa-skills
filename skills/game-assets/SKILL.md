@@ -12,6 +12,14 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 - 需要快速执行资产生成任务时，先看下面的“核心规则”，再按后文的“实战指南”选择具体工作流。
 - 需要游戏 BGM、主题曲、场景音乐、音效氛围草案时，优先看“音乐生成”，通常从 `music-run` 的 prompt-only 模式开始。
 
+## 核心路由规则
+
+- 只要用户目标明确是像素资产，默认先走 `pixel-gen-template-info` 选模板，再用 `pixel-gen-run`。触发词包括：像素图、pixel art、pixel、sprite、spritesheet、角色、怪物、NPC、道具、物品、icon、tile、tileset、UI 小图标、game asset、透明素材。
+- 不要因为需求里出现“背景”“场景”“人物”“自由风格探索”就自动改用 `gemini-generate-content`。如果最终资产需要保持像素网格，`pixel-gen-run` 是默认入口。
+- `gemini-generate-content` 只用于非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿，或明确没有合适 pixel template 且用户接受 fallback 的情况。
+- 像素资产 fallback 到通用生成时，必须把它当作中间稿：先用 `gemini-generate-content` 生成白底/固定尺寸图，再用 `pixelate-run` 收敛像素，再按需求用 `remove-background-run --method pixel` 去白底，最后校验尺寸、透明通道和边缘清晰度。
+- 如果用户明确“不使用 template”，可以跳过 `pixel-gen-run`，但仍要按上面的 fallback 链路处理，不能把通用生成结果直接当作最终像素资产。
+
 
 ## AI生图基础
 - 基本原理：
@@ -49,7 +57,7 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 - 如果任务是局部修改，而不是整图重绘，那么“输入尺寸 = 输出尺寸”几乎应视为默认前提，且都是 Nano banana 的标准尺寸
 - 如果原图不是标准尺寸，先决定是 padding，还是 Crop；不要把这个决定留给模型隐式处理。
 - 如果后续还要继续多轮编辑，第一轮就应把画布尺寸固定下来，后面每一轮都保持一致，这样最容易维持对位关系和像素稳定性。
-- Sprite 生成：如果使用 meowart api 的 pixel_gen，那么生成的 sprite 默认都是白色背景，或者透明背景。如果是通用生成，则最好自己在 prompt 里约束 sprite 背景色为白色。
+- Sprite 生成：默认使用 meowart api 的 `pixel-gen-run`，生成的 sprite 通常是白色背景或透明背景。只有 fallback 到通用生成时，才需要在 prompt 里明确约束 sprite 背景色为白色，并在生成后继续 `pixelate-run` 和去背景。
 
 
 ## 像素风格注意事项
@@ -85,8 +93,9 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 - 文档编写：随着开发，交流，生成的过程，最好持续的更新文档，例如写到项目根目录下的 `AGENTS.md`里，在里面开一个章节，记录美术相关的只是，例如美术风格，资产要求（如画布尺寸，sprite 尺寸等），资产分布，生成过程的记录等。这可以让提高整体美术开发的效率和一致性。
 
 ### 场景生成
-- 游戏背景图或者场景图，通常优先使用通用的 `gemini-generate-content`。
-- 固定尺寸背景图：直接走通用生成模式，在描述里明确风格、主体和镜头关系。例如“像素风格的夜空和烟花”。这里最重要的是先选一个接近最终画布的尺寸比例，例如 `16:9`，这样后续通常只需要轻微 crop，不必再做大幅缩放。
+- 非像素的游戏背景图、场景概念图、氛围稿，通常优先使用通用的 `gemini-generate-content`。
+- 像素背景要先判断最终交付物：如果是 tile、tileset、可拆分场景素材、道具组、UI 小图标或角色周边资产，优先使用 `pixel-gen-run` 选择模板生成；如果是大幅完整场景概念稿且没有合适模板，才使用 `gemini-generate-content` 生成中间稿，然后用 `pixelate-run` 收敛成像素风最终稿。
+- 固定尺寸非像素背景图：直接走通用生成模式，在描述里明确风格、主体和镜头关系。这里最重要的是先选一个接近最终画布的尺寸比例，例如 `16:9`，这样后续通常只需要轻微 crop，不必再做大幅缩放。
 - 如果用户明确要 `2K`、`16:9` 等尺寸，不要只在 prompt 里写尺寸；同时传 `generationConfig.imageConfig`，例如：
   ```bash
   python3 skills/game-assets/meowart_api.py gemini-generate-content \
@@ -95,9 +104,9 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
     --output-dir ./outputs/background_2k_16x9
   ```
   生成后必须检查实际尺寸；`16:9 2K` 期望是 `2752 x 1536`。
-- 无限循环背景图：先生成一张普通背景图(最好在 prompt 中提前说明这是横向游戏还是纵向游戏的背景,否则图片的横纵比或者内容太差，可能无法改造为自我循环)。然后再调用 `self-loop-run`，把它转成横向或纵向可无缝循环的背景，用于卷轴场景或重复平铺纹理。需要四向连续时传 `--mode full`。
+- 无限循环背景图：先生成一张普通背景图(最好在 prompt 中提前说明这是横向游戏还是纵向游戏的背景,否则图片的横纵比或者内容太差，可能无法改造为自我循环)。如果最终要求像素图，先按上面的像素背景规则生成或 `pixelate-run` 收敛，再调用 `self-loop-run`，把它转成横向或纵向可无缝循环的背景，用于卷轴场景或重复平铺纹理。需要四向连续时传 `--mode full`。
 
-### 角色生成
+### 角色 / 道具 / Icon / Sprite 生成
 - 人物、怪物、道具、Icon 这类资源，通常先通过 `pixel-gen-template-info` 查看可用模板。选择模板生成之前如果条件允许，可选择几个备选项，将 `preview_image_url` 的图片下载下来，并在对话窗口里直接展示给用户，进行一次风格的对齐。
 - 不同模板的主要差异在于美术风格、单张图片尺寸，以及一次可批量生成的数量。原则上模板本身都是通用的，都可以通过 prompt 生成任意内容；但选一个更合适的模板，会明显提高结果确定性，也更容易维持整个项目的美术统一。
 - 模板选择建议：
@@ -130,9 +139,9 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 - 已有任务 id 时，用 `music-poll --api-job-id workflow-music_generator-...` 复查并下载音频。生成失败或超时时，先看 `job_response.json` 和 `meta.json`，不要盲目重复提交正式音频任务。
 
 ### UI 生成
-- 目前工具里没有真正端到端的 UI 生成接口，但可以通过通用生图和其他 API 组合出一套可用流程。
+- 目前工具里没有真正端到端的 UI 生成接口，但可以通过通用生图和其他 API 组合出一套可用流程。这里的通用生图只适合整体 UI 视觉稿；如果用户要的是像素 UI 小图标、按钮 sprite、道具栏格子等独立像素资产，仍按核心路由规则优先用 `pixel-gen-run`。
 - 第一步：先截取真实游戏画面。
 - 第二步：使用 `gemini-generate-content` 做通用生成，例如让模型“在这个游戏画面左上角添加一个角色状态栏 UI，包含血量，经验，头像等，并保持整体美术风格一致”。
 - 第三步：拿到视觉稿后，一般有两条路线。
   - 编程复刻：根据视觉稿，用代码来复刻 UI。这条路线更可控，生成之前可以先给用户看一下 UI是否符合要求。。
-  - 提取 UI Sprite：继续使用通用生图，把 prompt 改成“将画面左上角人物角色状态栏的 UI 提取到白色背景上，删除其他所有背景、人物和 UI，只保留角色状态栏，并保持白色背景”。得到结果后，再调用 `remove-background-run` 去除白底；最后结合 crop 或手工微调尺寸，就可以得到可直接用于游戏中的 UI Sprite。
+  - 提取非像素 UI PNG asset：继续使用通用生图，把 prompt 改成“将画面左上角人物角色状态栏的 UI 提取到白色背景上，删除其他所有背景、人物和 UI，只保留角色状态栏，并保持白色背景”。得到结果后，再调用 `remove-background-run` 去除白底；最后结合 crop 或手工微调尺寸，就可以得到可直接用于游戏中的非像素 UI PNG。

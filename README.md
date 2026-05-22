@@ -110,15 +110,20 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/fox_rogue
 ```
 
-Generate a 16:9 game background:
+Generate a 16:9 non-pixel game background concept:
 
 ```bash
 python3 skills/game-assets/meowart_api.py \
   gemini-generate-content \
-  --text "Generate a 2K 16:9 pixel-art night market background for a cozy RPG." \
+  --text "Generate a 2K 16:9 night market background concept for a cozy RPG." \
   --generation-config '{"responseModalities":["TEXT","IMAGE"],"imageConfig":{"aspectRatio":"16:9","imageSize":"2K"}}' \
   --output-dir ./outputs/night_market
 ```
+
+For pixel sprites, props, icons, tiles, or character assets, use
+`pixel-gen-template-info` and `pixel-gen-run` first. Only use general generation
+as a fallback, then run `pixelate-run` before treating the result as a final
+pixel asset.
 
 Create a seamless horizontal loop from an existing background:
 
