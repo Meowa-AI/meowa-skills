@@ -1,6 +1,6 @@
 ---
 name: game-assets
-description: Create, edit, and pipeline game assets with MeowArt for sprites, backgrounds, UI mockups, seamless loops, background removal, pixel cleanup, simple animation, and music/BGM generation. Use when Codex needs to produce or refine game art or audio in this project, especially when choosing MeowArt commands, sizing canvases, selecting pixel templates, generating music prompts/audio, or turning generated assets into game-ready files.
+description: Create, edit, and pipeline game assets with MeowArt for pixel sprites, HD assets, backgrounds, UI mockups, seamless loops, texture tiles, dual-grid tilesets, background removal, pixel cleanup, simple animation, sound effects, and music/BGM generation. Use when Codex needs to produce or refine game art or audio in this project, especially when choosing MeowArt commands, sizing canvases, selecting templates, generating music or SFX audio, or turning generated assets into game-ready files.
 ---
 
 # Meowart Game Asset
@@ -10,11 +10,18 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 - 需要先判断用哪个命令、参数怎么写、输出会落到哪里时，先读 [`meowart_api.md`](./meowart_api.md)。
 - 需要确认精确 CLI 参数、请求结构、轮询逻辑、下载逻辑，或者准备扩展脚本时，直接读 [`meowart_api.py`](./meowart_api.py)。
 - 需要快速执行资产生成任务时，先看下面的“核心规则”，再按后文的“实战指南”选择具体工作流。
-- 需要游戏 BGM、主题曲、场景音乐、音效氛围草案时，优先看“音乐生成”，通常从 `music-run` 的 prompt-only 模式开始。
+- 需要高清非像素角色、图标、物品包、透明 PNG 时，优先看“HD 资产生成”，通常从 `hd-gen-template-info` 选模板，再用 `hd-gen-run`。
+- 需要游戏 BGM、主题曲、场景音乐时，优先看“音乐生成”，通常从 `music-run` 的 prompt-only 模式开始。
+- 需要 UI 点击、攻击、拾取、环境、技能等短音效时，优先看“音效生成”，使用 `sound-run` / `sfx-run`。
+- 需要可平铺 texture、地表纹理、terrain tileset、dual-grid 地形过渡图时，优先看“Texture / Tileset 生成”，使用 `texture-gen-run` 或 `tileset-gen-run`。
+- `meowart_api.py` 默认带 bootstrap 自动更新：正常执行命令前会检查远端 manifest，发现新版 runner 会校验 SHA-256 后执行缓存版本。需要排查时用 `bootstrap-status`；需要关闭时传 `--no-bootstrap` 或设置 `MEOWART_BOOTSTRAP=0`。
 
 ## 核心路由规则
 
-- 只要用户目标明确是像素资产，默认先走 `pixel-gen-template-info` 选模板，再用 `pixel-gen-run`。触发词包括：像素图、pixel art、pixel、sprite、spritesheet、角色、怪物、NPC、道具、物品、icon、tile、tileset、UI 小图标、game asset、透明素材。
+- 只要用户目标明确是像素 sprite / 小图标 / 道具 / 角色 / 怪物 / NPC，默认先走 `pixel-gen-template-info` 选模板，再用 `pixel-gen-run`。触发词包括：像素图、pixel art、pixel、sprite、spritesheet、角色、怪物、NPC、道具、物品、icon、UI 小图标、game asset、透明素材。
+- 明确要非像素高清角色、高清 icon、高清物品包、透明 HD 资产时，走 `hd-gen-template-info` + `hd-gen-run`，不要退回通用 `gemini-generate-content`。
+- 明确要单张可平铺 texture / material tile / 地表纹理时，走 `texture-gen-run`。明确要 terrain tileset / dual-grid 15 tiles / 草地水面过渡图时，走 `tileset-gen-run`。只有“tile”是普通小道具或像素小图标时才走 `pixel-gen-run`。
+- 明确要短音效、SFX、UI 点击、攻击、爆炸、拾取、环境音片段时，走 `sound-run`。需要一组音效用 `--sound-pack`，需要同一音效多个抽卡版本用 `--variants`。
 - 不要因为需求里出现“背景”“场景”“人物”“自由风格探索”就自动改用 `gemini-generate-content`。如果最终资产需要保持像素网格，`pixel-gen-run` 是默认入口。
 - `gemini-generate-content` 只用于非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿，或明确没有合适 pixel template 且用户接受 fallback 的情况。
 - 像素资产 fallback 到通用生成时，必须把它当作中间稿：先用 `gemini-generate-content` 生成白底/固定尺寸图，再用 `pixelate-run` 收敛像素，再按需求用 `remove-background-run --method pixel` 去白底，最后校验尺寸、透明通道和边缘清晰度。
@@ -79,12 +86,16 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 
 - [`meowart_api.md`](./meowart_api.md)：面向日常使用的快速说明，重点整理了最常用的命令入口、鉴权方式和典型调用示例。适合在已经明确需求后，直接查“该用哪个命令、参数怎么写”。
 - [`meowart_api.py`](./meowart_api.py)：实际调用 MeowArt API 的脚本封装，包含各个子命令的参数定义、请求发送、轮询、下载和输出目录处理逻辑。遇到需要更细粒度控制参数、确认底层行为，或者扩展新调用方式时，应直接阅读这个脚本。
+- Bootstrap 只更新 CLI runner；`SKILL.md` 的触发描述和路由说明如果发生变化，仍需要用户更新 skill 并重启 Codex 后才能被当前 agent 稳定识别。
 
 ## 输出目录规则
 
 - 用户要求一批资产或统一位置时，先创建本次任务专用资产根目录，例如 `./.meowart-test/<task_slug>/` 或项目约定的 `assets/generated/<task_slug>/`；之后所有生成、后处理、动画命令都显式传这个根目录下的子目录作为 `--output-dir`。
 - `--work-dir` 是命令日志/元数据目录；`--output-dir` 才是图片、动画、sprite 等资产目录。只有 `meta.json` 的目录通常不是最终资产目录。
 - `credits-balance`、`pixel-gen-template-info` 这类查询命令通常只生成 JSON；`gemini-generate-content` 和各类 `*-run` 命令才会下载资源文件。
+- `hd-gen-template-info` 只查询模板；`hd-gen-run` 会提交高清生成任务、轮询并下载透明 PNG 或资产包输出。
+- `sound-run` / `sfx-run` 会下载 `mp3`/`wav`/`ogg` 等音频文件；如果用 `--sound-pack` 或 `--variants`，通常会有多条音频。
+- `texture-gen-run` 会下载单张纹理 PNG，并在开启默认 `--self-loop` 时返回四方连续纹理；`tileset-gen-run` 会下载 dual-grid tileset PNG。
 - `music-run` 的 prompt-only 模式通常只保存 `submit_response.json` 和 `job_response.json`；只有传 `--audio-generate` 并成功生成音频时，才会下载 `mp3` 等音频文件。
 - 任务完成后，用图片尺寸/帧数做一次快速校验，确认关键文件实际落在用户指定的统一目录下。
 
@@ -94,7 +105,7 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 
 ### 场景生成
 - 非像素的游戏背景图、场景概念图、氛围稿，通常优先使用通用的 `gemini-generate-content`。
-- 像素背景要先判断最终交付物：如果是 tile、tileset、可拆分场景素材、道具组、UI 小图标或角色周边资产，优先使用 `pixel-gen-run` 选择模板生成；如果是大幅完整场景概念稿且没有合适模板，才使用 `gemini-generate-content` 生成中间稿，然后用 `pixelate-run` 收敛成像素风最终稿。
+- 像素背景要先判断最终交付物：如果是单张可平铺地表纹理，优先使用 `texture-gen-run`；如果是地形过渡 tileset，优先使用 `tileset-gen-run`；如果是可拆分场景素材、道具组、UI 小图标或角色周边资产，优先使用 `pixel-gen-run` 选择模板生成；如果是大幅完整场景概念稿且没有合适模板，才使用 `gemini-generate-content` 生成中间稿，然后用 `pixelate-run` 收敛成像素风最终稿。
 - 固定尺寸非像素背景图：直接走通用生成模式，在描述里明确风格、主体和镜头关系。这里最重要的是先选一个接近最终画布的尺寸比例，例如 `16:9`，这样后续通常只需要轻微 crop，不必再做大幅缩放。
 - 如果用户明确要 `2K`、`16:9` 等尺寸，不要只在 prompt 里写尺寸；同时传 `generationConfig.imageConfig`，例如：
   ```bash
@@ -123,12 +134,66 @@ description: Create, edit, and pipeline game assets with MeowArt for sprites, ba
 - 人物主角、Boss、立绘感更强的角色，通常更适合选单次只生成 `1` 到 `2` 个的大尺寸模板。批量敌人、批量道具、Icon 等，则更适合一次生成 `8` 个左右的模板，提高效率并确保同批资源风格一致。
 - 不同模板生成出来的 sprite 尺寸可能不同，接入游戏代码时要注意统一 resize。像素图只能使用邻近采样，并尽量保持整数倍缩放，例如 `2x`、`3x`；不要使用 `0.85x`、`1.2x` 这类非整数缩放，否则会破坏像素质感。
 
+### HD 资产生成
+- 非像素高清角色、道具、Icon、物品包、透明 PNG 资产，使用 `hd-gen-template-info` 查看模板，再用 `hd-gen-run` 生成。
+- `hd_gen_grid_2x2` 模板偏角色或少量高清资产，`hd_gen_grid_4x4` 模板偏批量 icon / sprite pack；具体以 `hd-gen-template-info` 的 `workflow_id`、`agent_type`、`output_size`、`supported_config_keys` 为准。
+- 如果模板支持方向，使用 `--template-config '{"direction":"front"}'`、`left`、`right`、`back` 等值；如果模板支持数量，用 `target_count` 放进 `--template-config`。
+- HD 资产默认会做 HD 去背景，`--hd-remove-bg-mode batch` 通常更快，`single` 更适合 batch 模式失败或边缘质量需要逐张优化时重试。
+- 典型命令：
+  ```bash
+  python3 skills/game-assets/meowart_api.py hd-gen-template-info
+  python3 skills/game-assets/meowart_api.py hd-gen-run \
+    --template-name "hd_char_1" \
+    --requirement "A cheerful fantasy alchemist girl with green cloak" \
+    --template-config '{"direction":"front"}' \
+    --output-dir ./outputs/hd_alchemist
+  ```
+
+### Texture / Tileset 生成
+- 单张可平铺纹理、地表材质、墙面、水面、岩浆、木板、石块等，使用 `texture-gen-run`。默认会追加 self-loop 后处理，输出 512x512 左右的四方连续纹理。
+- `texture-gen-run` 可以传参考纹理名：`--texture-name "水面"`，也可以重复传或用逗号写一组。当前内置参考包括 `水面`、`带气泡的岩浆`、`砖墙`、`木板`、`破碎小石块`、`金属板`、`凝固中的熔岩`、`火山岩带熔岩纹理`。
+- 如果只是想快速生成普通纹理草稿，可以不传 `--texture-name`，后端会使用默认三张参考。若要降低成本或只要非连续中间稿，可以传 `--no-self-loop`。
+- 地形过渡 tileset、dual-grid 15 tile atlas、草地/水面/岩浆等前景背景混合边缘，使用 `tileset-gen-run`。可选传 `--foreground-texture` 和 `--background-texture` 让 tileset 贴近已有纹理。
+- 典型命令：
+  ```bash
+  python3 skills/game-assets/meowart_api.py texture-gen-run \
+    --prompt "mossy cracked stone floor" \
+    --texture-name "砖墙" \
+    --texture-name "破碎小石块" \
+    --output-dir ./outputs/mossy_stone_texture
+
+  python3 skills/game-assets/meowart_api.py tileset-gen-run \
+    --prompt "lush grass foreground plus shallow blue water background" \
+    --output-dir ./outputs/grass_water_tileset
+  ```
+
 ### 动画生成
 - 角色或物体的攻击、死亡、移动、跳跃、弹跳等动作，通常使用 `animate-run`。
 - 输出通常会包含 `gif`、`webp`、`png` 三种格式；其中 `png` 一般已经去掉背景，可以直接作为 sprite sheet 接入游戏。
 - 最佳顺序通常不是一开始就做动画，而是先把静态 Sprite 做出来，并在游戏里验证尺寸、透视、美术风格、碰撞盒、游戏性都没有问题后，再进入动画阶段。
 - 这样做的原因是 `animate-run` 相对更慢、费用也更高，更适合作为资产定稿前的最后一步，而不是前期反复试错的主流程。
 - 动画接口偶尔会返回临时 `502` 或轮询异常：如果提交阶段已经打印 `api_job_id`，用 `animate-poll --api-job-id <id>` 复查并下载；如果提交阶段没有拿到 job id，直接重试 `animate-run`。
+
+### 音效生成
+- 短音效、UI 反馈、攻击、受击、拾取、爆炸、魔法、环境音片段，使用 `sound-run`（别名 `sfx-run` / `sound-effect-run`）。它走后端 `elevenlabs_generator` 工作流，会先优化音效 prompt，再生成音频。
+- 单个音效默认 `--duration 2` 秒；支持 `0.5` 或 `1` 到 `10` 秒整数。需要可循环环境短音时传 `--loop`。
+- 需要一组不同音效时传 `--sound-pack --count N`；需要同一个音效多个版本供挑选时传 `--variants --count N`。`--sound-pack` 和 `--variants` 不能同时使用。
+- 默认会做峰值音量归一化，输出更适合直接接入游戏；如果要保留原始响度，可以传 `--no-normalize-volume`。
+- 如果后端没有配置 ElevenLabs key，可以临时用 `--provider-api-key` 传入，但更推荐后端环境变量配置，避免密钥进入命令历史。
+- 典型命令：
+  ```bash
+  python3 skills/game-assets/meowart_api.py sound-run \
+    --prompt "soft wooden UI button click for cozy pixel RPG" \
+    --duration 1 \
+    --output-dir ./outputs/ui_click
+
+  python3 skills/game-assets/meowart_api.py sound-run \
+    --prompt "8-bit fantasy combat sound pack: sword slash, shield block, coin pickup, potion drink" \
+    --sound-pack \
+    --count 4 \
+    --duration 1 \
+    --output-dir ./outputs/combat_sfx_pack
+  ```
 
 ### 音乐生成
 - 游戏 BGM、场景音乐、主题曲方向探索，通常使用 `music-run`。默认不生成音频，只生成结构化英文音乐描述，包括 `name`、`summary` 和 `timestamps_detail`，适合先让用户确认音乐方向。

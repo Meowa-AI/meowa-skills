@@ -10,19 +10,27 @@
 可用能力概览：
 
 - `credits-balance`：查询当前账号剩余 credit，适合在批量生成前先确认额度是否充足。
-- `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、tile、tileset、UI 小图标这类固定尺寸 Sprite；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
+- `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、UI 小图标这类固定尺寸 Sprite；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
+- `hd-gen-run`：高清非像素资产入口。基于 HD 模板生成透明 PNG 角色、图标、物品包等；命令会自动提交、轮询并保存结果。
 - `gemini-generate-content`：通用生成入口（nano banana），适合非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿。不要把它作为像素 sprite、像素角色、像素道具、像素 icon 的默认入口；像素资产只有没有合适模板或用户明确不用模板时才 fallback 到这里。
 - `self-loop-run`：基于现有图片生成 self-loop 无缝循环图。目前支持横向或纵向无缝拼接，适合用于横版卷轴背景、纵向场景和可重复平铺的纹理。
+- `texture-gen-run`：生成单张像素纹理 texture，适合水面、石块、墙面、木板、岩浆等可平铺地表或材质；默认追加四方连续后处理。
+- `tileset-gen-run`：生成 dual-grid 15 地形过渡 tileset，适合草地/水面、石地/岩浆等前景和背景 terrain 过渡。
 - `remove-background-run`：对现有图片做去背景处理
   - 像素图片使用 `pixel` 模式，只支持去白色背景。支持任意尺寸输入，最好提前做过 pixelate，且不需要提前缩放到 nano banana尺寸。
   - 普通图片使用 `hd`，支持任意背景色
 - `pixelate-run`：把较大的图片重新收敛成更干净的像素风输出，适合在 AI 先生成大图后，将其变为完美像素的 Spite。
 - `animate-run`：基于单张角色图生成动作动画，适合做角色待机、跑步、跳跃、弹跳这类短循环动画。
+- `sound-run` / `sfx-run`：生成短音效，适合 UI 点击、攻击、拾取、爆炸、技能、环境短音；支持单条、音效包、同音效多版本。
 - `music-run`：生成结构化音乐描述，可选继续生成音乐音频；适合游戏 BGM、主题曲、场景音乐方向测试。
 
 ## 0. 命令选择
 
-- 明确要像素图、pixel art、sprite、角色、怪物、道具、物品、icon、tile、tileset、UI 小图标时：先执行 `pixel-gen-template-info`，再用合适模板执行 `pixel-gen-run`。
+- 明确要像素图、pixel art、sprite、角色、怪物、道具、物品、icon、UI 小图标时：先执行 `pixel-gen-template-info`，再用合适模板执行 `pixel-gen-run`。
+- 明确要高清非像素角色、透明 PNG、高清 icon 或物品包时：先执行 `hd-gen-template-info`，再用 `hd-gen-run`。
+- 明确要可平铺 texture / material tile / 地表纹理时：执行 `texture-gen-run`。
+- 明确要 terrain tileset / dual-grid 地形过渡图时：执行 `tileset-gen-run`。
+- 明确要 SFX、音效、UI click、攻击、拾取、爆炸、技能音时：执行 `sound-run` 或 `sfx-run`。
 - 不要因为需求写了“人物”“背景”“场景”就直接使用 `gemini-generate-content`。如果最终要求是像素资产，`pixel-gen-run` 优先。
 - 只有非像素概念图、高清插画、完整大背景概念稿、UI 整体视觉稿，或明确没有合适 pixel template 时，才使用 `gemini-generate-content`。
 - 像素资产 fallback 到 `gemini-generate-content` 后不能直接交付：继续跑 `pixelate-run`，需要透明图时再跑 `remove-background-run --method pixel`，并检查尺寸和透明通道。
@@ -84,6 +92,34 @@ open "https://meowa.ai/#/api-keys"
 pip install requests
 python3 skills/meowart_api.py --help
 ```
+
+## 2.1 Bootstrap 自动更新
+
+`meowart_api.py` 自带 bootstrap wrapper。正常执行命令时，它会先检查远端
+`meowart_api.bootstrap.json`，如果发现更高版本的 CLI runner，会下载新的
+`meowart_api.py` 到本机缓存，校验 SHA-256 后再执行缓存 runner。检查或下载失败
+不会中断当前任务，会自动回退到 skill 内置脚本。
+
+常用命令：
+
+```bash
+python3 skills/meowart_api.py bootstrap-status
+python3 skills/meowart_api.py bootstrap-status --check
+python3 skills/meowart_api.py --no-bootstrap credits-balance
+python3 skills/meowart_api.py --bootstrap-force credits-balance
+```
+
+常用环境变量：
+
+- `MEOWART_BOOTSTRAP=0`：关闭本次/当前环境的 bootstrap 检查。
+- `MEOWART_BOOTSTRAP_MANIFEST_URL=...`：改用自定义 manifest 地址。
+- `MEOWART_BOOTSTRAP_CACHE_DIR=...`：改用自定义缓存目录。
+- `MEOWART_BOOTSTRAP_VERBOSE=1`：打印 bootstrap 诊断信息。
+- `MEOWART_BOOTSTRAP_TIMEOUT=2`：设置 manifest/runner 下载超时时间，单位秒。
+
+这个机制更新的是 CLI runner。`SKILL.md` 的触发描述和路由说明仍然是 Codex
+启动时加载的内容；如果这些说明发生变化，仍需要执行 `skills update` 或重新安装
+skill，并重启 Codex。
 
 ## 3. Credits
 
@@ -207,7 +243,45 @@ python3 skills/meowart_api.py \
 python3 skills/meowart_api.py --help
 ```
 
-## 6. Remove Background
+## 6. HD 资产生成
+
+HD Gen 是非像素高清资产入口，适合透明 PNG 角色、高清 icon、物品包等。
+
+先查看可用模板：
+
+```bash
+python3 skills/meowart_api.py hd-gen-template-info
+```
+
+提交并等待高清生成：
+
+```bash
+python3 skills/meowart_api.py \
+  hd-gen-run \
+  --template-name "hd_char_1" \
+  --requirement "A cheerful fantasy alchemist girl with green cloak" \
+  --template-config '{"direction":"front"}' \
+  --output-dir ./outputs/hd_alchemist
+```
+
+常用参数：
+
+- `--template-name`
+- `--requirement`
+- `--template-config '{}'`
+- `--reference-file ./reference.png`
+- `--reference-files ./ref2.png`，可重复
+- `--hd-remove-bg-mode batch|single`
+- `--output-dir ./outputs/hd_asset`
+
+已经有任务 id 时：
+
+```bash
+python3 skills/meowart_api.py hd-gen-poll --api-job-id <api_job_id>
+python3 skills/meowart_api.py hd-gen-download --api-job-id <api_job_id> --output-dir ./outputs/hd_download
+```
+
+## 7. Remove Background
 
 像素图通常用：
 
@@ -228,7 +302,7 @@ python3 skills/meowart_api.py \
 
 
 
-## 7. Pixelate
+## 8. Pixelate
 
 ```bash
 python3 skills/meowart_api.py \
@@ -238,7 +312,7 @@ python3 skills/meowart_api.py \
 
 这个命令适合先把较大的 AI 图收敛成更干净的小尺寸像素图，再继续做去背景等处理。
 
-## 8. Self-Loop Image Generation
+## 9. Self-Loop Image Generation
 
 ```bash
 python3 skills/meowart_api.py \
@@ -258,7 +332,59 @@ python3 skills/meowart_api.py \
 
 常用参数是 `--image-file`、`--direction` 和 `--mode`。横向卷轴背景通常使用 `--direction horizontal`，纵向场景使用 `--direction vertical`，四向平铺素材使用 `--mode full`。
 
-## 9. Animate
+## 10. Texture Generator
+
+生成单张可平铺像素纹理：
+
+```bash
+python3 skills/meowart_api.py \
+  texture-gen-run \
+  --prompt "mossy cracked stone floor" \
+  --texture-name "砖墙" \
+  --texture-name "破碎小石块" \
+  --output-dir ./outputs/mossy_stone_texture
+```
+
+常用参数：
+
+- `--prompt`：纹理需求。
+- `--texture-name`：参考纹理名，可重复，也可以逗号分隔。内置参考包括 `水面`、`带气泡的岩浆`、`砖墙`、`木板`、`破碎小石块`、`金属板`、`凝固中的熔岩`、`火山岩带熔岩纹理`。
+- `--padding-mode no_padding|padded`
+- `--edge-fill-pixels 1`
+- `--no-self-loop`：跳过默认四方连续后处理。
+
+## 11. Tileset Generator
+
+生成 dual-grid 15 terrain tileset：
+
+```bash
+python3 skills/meowart_api.py \
+  tileset-gen-run \
+  --prompt "lush grass foreground plus shallow blue water background" \
+  --output-dir ./outputs/grass_water_tileset
+```
+
+可选使用已有纹理作为前景和背景参考：
+
+```bash
+python3 skills/meowart_api.py \
+  tileset-gen-run \
+  --prompt "mossy stone foreground plus lava background" \
+  --foreground-texture ./stone_texture.png \
+  --background-texture ./lava_texture.png \
+  --texture-reference-mode white_region_fill \
+  --output-dir ./outputs/stone_lava_tileset
+```
+
+常用参数：
+
+- `--tileset-mode dual-grid-15`
+- `--foreground-texture ./foreground.png`
+- `--background-texture ./background.png`
+- `--texture-reference-size 64`
+- `--texture-reference-mode white_region_fill|texture_block_fill`
+
+## 12. Animate
 
 ```bash
 python3 skills/meowart_api.py \
@@ -277,7 +403,47 @@ python3 skills/meowart_api.py \
 
 `animate-run` 会自动提交、轮询并下载生成结果。如果已经有任务 id，也可以用 `animate-poll --api-job-id <id>` 继续等待和下载。
 
-## 10. Music Generator
+## 13. Sound Effect Generator
+
+生成单条短音效：
+
+```bash
+python3 skills/meowart_api.py \
+  sound-run \
+  --prompt "soft wooden UI button click for cozy pixel RPG" \
+  --duration 1 \
+  --output-dir ./outputs/ui_click
+```
+
+生成一组音效包：
+
+```bash
+python3 skills/meowart_api.py \
+  sound-run \
+  --prompt "8-bit fantasy combat sound pack: sword slash, shield block, coin pickup, potion drink" \
+  --sound-pack \
+  --count 4 \
+  --duration 1 \
+  --output-dir ./outputs/combat_sfx_pack
+```
+
+常用参数：
+
+- `--duration`：`0.5` 或 `1` 到 `10` 秒整数。
+- `--loop`：请求可循环短音。
+- `--sound-pack --count N`：生成 N 条不同音效。
+- `--variants --count N`：生成同一音效的 N 个版本。
+- `--temperature`：映射 ElevenLabs prompt influence，范围 0 到 1。
+- `--no-normalize-volume`：跳过默认峰值归一化。
+- `--provider-api-key`：临时传 ElevenLabs key；优先使用后端环境变量。
+
+已经有任务 id 时：
+
+```bash
+python3 skills/meowart_api.py sound-poll --api-job-id workflow-elevenlabs_generator-xxxx
+```
+
+## 14. Music Generator
 
 只生成结构化音乐 prompt，不生成音频：
 
@@ -320,7 +486,7 @@ python3 skills/meowart_api.py \
 python3 skills/meowart_api.py music-poll --api-job-id workflow-music_generator-xxxx
 ```
 
-## 11. 输出目录
+## 15. 输出目录
 
 这些 `*-run` 命令默认会在脚本目录下创建：
 
@@ -333,6 +499,6 @@ python3 skills/meowart_api.py music-poll --api-job-id workflow-music_generator-x
 - `meta.json`
 - `submit_response.json`
 - `job_response.json`
-- 下载得到的输出文件
+- 下载得到的 PNG、GIF、WebP、spritesheet、MP3、WAV、OGG 等输出文件
 
 如需自定义目录，可使用 `--work-dir` 或 `--output-dir`。更细的行为差异直接看脚本源码即可。

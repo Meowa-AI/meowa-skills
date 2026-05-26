@@ -1,8 +1,9 @@
 # Game Assets Generation Skill for Meowa
 
-Create game-ready 2D assets with Meowa from inside Codex: pixel sprites, props,
-backgrounds, seamless loops, transparent PNGs, simple animations, UI mockups,
-and loop-friendly game music drafts.
+Create game-ready 2D assets with Meowa from inside Codex: pixel sprites, HD
+assets, props, backgrounds, seamless loops, texture tiles, terrain tilesets,
+transparent PNGs, simple animations, UI mockups, sound effects, and
+loop-friendly game music drafts.
 
 This repository contains a Codex skill plus a small Python CLI wrapper around
 the MeowArt API. The skill teaches an agent how to choose the right generation
@@ -12,11 +13,14 @@ files before handing them back to a game project.
 ## What It Can Generate
 
 - Pixel characters, enemies, props, items, icons, and sprite batches
+- HD transparent characters, icons, props, and asset packs
 - Backgrounds, scene concepts, and 16:9 or other fixed-ratio game art
 - Seamless horizontal, vertical, or four-way looping backgrounds and textures
+- Single texture tiles and dual-grid terrain tilesets
 - Transparent PNG assets through pixel or HD background removal
 - Pixel-cleaned versions of larger AI-generated images
 - Short character or object animations as WebP, GIF, or spritesheets
+- UI, combat, pickup, ambient, and skill sound effects
 - Game BGM directions, 30 second demos, or full music generations
 - UI concept mockups and extractable UI sprites from game screenshots
 
@@ -29,6 +33,7 @@ files before handing them back to a game project.
     `-- game-assets/
         |-- SKILL.md          # Codex skill instructions
         |-- meowart_api.md    # Quick API usage guide
+        |-- meowart_api.bootstrap.json
         `-- meowart_api.py    # MeowArt API helper CLI
 ```
 
@@ -51,6 +56,34 @@ Install the Python dependency used by the helper CLI:
 python3 -m pip install requests
 python3 skills/game-assets/meowart_api.py --help
 ```
+
+## Automatic CLI Updates
+
+`meowart_api.py` includes a bootstrap wrapper. On normal command runs it checks
+the checksummed manifest at:
+
+```text
+https://raw.githubusercontent.com/MeowjitoAI/meowa-skills/main/skills/game-assets/meowart_api.bootstrap.json
+```
+
+If the manifest advertises a newer runner, the script downloads the new
+`meowart_api.py`, verifies its SHA-256, caches it under
+`~/.cache/meowa-skills/game-assets/`, and executes that cached runner. If the
+network is unavailable, the manifest is invalid, or the checksum fails, it
+continues with the bundled script.
+
+Useful controls:
+
+```bash
+python3 skills/game-assets/meowart_api.py bootstrap-status
+python3 skills/game-assets/meowart_api.py bootstrap-status --check
+MEOWART_BOOTSTRAP=0 python3 skills/game-assets/meowart_api.py credits-balance
+python3 skills/game-assets/meowart_api.py --no-bootstrap credits-balance
+python3 skills/game-assets/meowart_api.py --bootstrap-force credits-balance
+```
+
+The bootstrap updates the CLI runner only. Changes to `SKILL.md` routing
+instructions still require reinstalling/updating the skill and restarting Codex.
 
 ## Authentication
 
@@ -89,6 +122,12 @@ List pixel generation templates:
 python3 skills/game-assets/meowart_api.py pixel-gen-template-info
 ```
 
+List HD generation templates:
+
+```bash
+python3 skills/game-assets/meowart_api.py hd-gen-template-info
+```
+
 Dry run a pixel sprite batch without spending credits:
 
 ```bash
@@ -110,6 +149,17 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/fox_rogue
 ```
 
+Generate a transparent HD character:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  hd-gen-run \
+  --template-name "hd_char_1" \
+  --requirement "A cheerful fantasy alchemist girl with green cloak" \
+  --template-config '{"direction":"front"}' \
+  --output-dir ./outputs/hd_alchemist
+```
+
 Generate a 16:9 non-pixel game background concept:
 
 ```bash
@@ -120,7 +170,7 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/night_market
 ```
 
-For pixel sprites, props, icons, tiles, or character assets, use
+For pixel sprites, props, icons, small tile sprites, or character assets, use
 `pixel-gen-template-info` and `pixel-gen-run` first. Only use general generation
 as a fallback, then run `pixelate-run` before treating the result as a final
 pixel asset.
@@ -133,6 +183,26 @@ python3 skills/game-assets/meowart_api.py \
   --image-file ./outputs/night_market/background.png \
   --direction horizontal \
   --output-dir ./outputs/night_market_loop
+```
+
+Generate a single seamless texture tile:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  texture-gen-run \
+  --prompt "mossy cracked stone floor" \
+  --texture-name "砖墙" \
+  --texture-name "破碎小石块" \
+  --output-dir ./outputs/mossy_stone_texture
+```
+
+Generate a dual-grid terrain tileset:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  tileset-gen-run \
+  --prompt "lush grass foreground plus shallow blue water background" \
+  --output-dir ./outputs/grass_water_tileset
 ```
 
 Remove a white background from a pixel sprite:
@@ -155,6 +225,28 @@ python3 skills/game-assets/meowart_api.py \
   --is-pixel \
   --output-format spritesheet \
   --output-dir ./outputs/fox_rogue_idle
+```
+
+Generate a short sound effect:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  sound-run \
+  --prompt "soft wooden UI button click for cozy pixel RPG" \
+  --duration 1 \
+  --output-dir ./outputs/ui_click
+```
+
+Generate a small sound pack:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  sound-run \
+  --prompt "8-bit fantasy combat sound pack: sword slash, shield block, coin pickup, potion drink" \
+  --sound-pack \
+  --count 4 \
+  --duration 1 \
+  --output-dir ./outputs/combat_sfx_pack
 ```
 
 Draft loop-friendly game music:
@@ -189,7 +281,15 @@ Create a side-scrolling forest background, then turn it into a seamless horizont
 ```
 
 ```text
+Generate a mossy stone floor texture and a matching grass-water dual-grid tileset.
+```
+
+```text
 Generate a transparent idle spritesheet for this character reference.
+```
+
+```text
+Create four short UI and combat sound effects for this game.
 ```
 
 ```text
@@ -203,7 +303,7 @@ The skill will guide Codex to:
 - Keep pixel art on stable canvas sizes
 - Prefer nearest-neighbor resizing for pixel assets
 - Save outputs and metadata into explicit task directories
-- Validate dimensions, transparency, frame counts, and downloaded files
+- Validate dimensions, transparency, frame counts, audio files, and downloaded files
 
 ## Output Directories
 
@@ -225,7 +325,7 @@ Typical saved files include:
 - `meta.json`
 - `submit_response.json`
 - `job_response.json`
-- Downloaded PNG, GIF, WebP, spritesheet, or MP3 files when available
+- Downloaded PNG, GIF, WebP, spritesheet, MP3, WAV, or OGG files when available
 
 ## Production Notes
 
@@ -234,6 +334,9 @@ Typical saved files include:
 - For pixel sprites, avoid non-integer scaling and use nearest-neighbor sampling.
 - For local edits, keep input and output canvas dimensions stable.
 - For batch templates, write the whole batch request, not a single-object prompt.
+- For HD assets, choose an HD template first instead of using generic image generation.
+- For texture tiles and terrain tilesets, use `texture-gen-run` or `tileset-gen-run` before falling back to generic image generation.
+- For sound effects, keep prompts concrete and short, then use `--sound-pack` or `--variants` only when you really need multiple outputs.
 - For music, start with prompt-only mode, then generate a 30 second demo before a full track.
 - Always inspect generated assets before committing them to a game pipeline.
 
