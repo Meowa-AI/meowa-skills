@@ -104,6 +104,13 @@ Do not commit API keys. Prefer environment variables or a local `.env` file.
 
 ## Quick Start
 
+Endpoint contract:
+
+- Pixel assets use `POST /api/pixel-gen`, then `GET /api/pixel-gen/jobs?id=<api_job_id>`.
+- HD assets use `POST /api/hd-gen`, then `GET /api/hd-gen/jobs?id=<api_job_id>`.
+- Generic Gemini calls use `POST /api/gemini/...` through the `gemini-*` commands.
+- Meowa does not expose `POST /generate` or `POST /api/generate`. A 404 for `/generate` means the client endpoint is wrong, not that the API key is valid or invalid.
+
 Check available commands:
 
 ```bash

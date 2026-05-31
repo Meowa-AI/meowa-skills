@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.05.22.1"
+MEOWART_API_CLI_VERSION = "2026.05.31.1"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -33,6 +33,11 @@ TERMINAL_ANIMATE_STATUSES = {"success", "completed", "failure", "failed", "cance
 SUCCESS_ANIMATE_STATUSES = {"success", "completed"}
 LONG_INLINE_DATA_DISPLAY_LIMIT = 240
 AUTH_HEADER_HOST_SUFFIXES = ("meowa.ai", "generativelanguage.googleapis.com")
+MEOWART_ENDPOINT_HINT = (
+    "MeowArt does not expose /generate or /api/generate. "
+    "Use POST /api/pixel-gen for pixel sprites, POST /api/hd-gen for HD assets, "
+    "or POST /api/gemini/... for generic image generation."
+)
 DEFAULT_BOOTSTRAP_MANIFEST_URL = (
     "https://raw.githubusercontent.com/MeowjitoAI/meowa-skills/main/"
     "skills/game-assets/meowart_api.bootstrap.json"
@@ -352,11 +357,21 @@ def _mime_for_path(path: Path) -> str:
     return guessed or "application/octet-stream"
 
 
+def _endpoint_hint_for_response(response: requests.Response) -> str:
+    path = urlparse(str(response.url)).path.rstrip("/").lower()
+    if response.status_code == 404 and path in {"/generate", "/api/generate"}:
+        return f" {MEOWART_ENDPOINT_HINT}"
+    return ""
+
+
 def _parse_json_response(response: requests.Response) -> dict[str, Any]:
     content_type = response.headers.get("content-type", "")
     if "application/json" not in content_type.lower():
         body = response.text[:500].strip()
-        raise ValueError(f"expected JSON response, got {content_type or 'unknown'}: {body}")
+        raise ValueError(
+            f"expected JSON response, got {content_type or 'unknown'}: {body}"
+            f"{_endpoint_hint_for_response(response)}"
+        )
     payload = response.json()
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object, got {type(payload).__name__}")
@@ -386,7 +401,13 @@ def _request_json(
         timeout=timeout,
         verify=verify,
     )
-    return response, _parse_json_response(response)
+    try:
+        return response, _parse_json_response(response)
+    except ValueError as exc:
+        hint = _endpoint_hint_for_response(response)
+        if hint and hint not in str(exc):
+            raise ValueError(f"{exc}{hint}") from exc
+        raise
 
 
 def _save_json(path: Path, payload: dict[str, Any]) -> None:
@@ -531,8 +552,27 @@ def _should_send_auth_headers(url: str) -> bool:
     return any(_host_matches_suffix(host, suffix) for suffix in AUTH_HEADER_HOST_SUFFIXES)
 
 
+def _normalize_api_base(api_base: str) -> str:
+    raw = str(api_base or DEFAULT_API_BASE).strip() or DEFAULT_API_BASE
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"invalid --api-base: {raw!r}")
+
+    path = parsed.path.rstrip("/")
+    lowered_path = path.lower()
+    if lowered_path in {"/generate", "/api/generate"}:
+        print(
+            f"[WARN] --api-base included deprecated endpoint path {path!r}; using host root instead. "
+            f"{MEOWART_ENDPOINT_HINT}",
+            file=sys.stderr,
+        )
+        path = ""
+
+    return parsed._replace(path=path, params="", query="", fragment="").geturl().rstrip("/")
+
+
 def _normalize_base_url(api_base: str, endpoint: str) -> str:
-    return f"{api_base.rstrip('/')}/{endpoint.lstrip('/')}"
+    return f"{_normalize_api_base(api_base)}/{endpoint.lstrip('/')}"
 
 
 def _print_status(prefix: str, payload: dict[str, Any]) -> None:

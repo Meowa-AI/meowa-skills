@@ -7,6 +7,14 @@
 这个文档只保留最常用的调用方式，作为快速入口。
 需要确认完整 CLI 参数时，可以查看脚本的 `--help`。
 
+重要 endpoint 规则：
+
+- 不存在 `POST /generate` 或 `POST /api/generate`。
+- 像素资产生成固定使用 `POST /api/pixel-gen`，再用 `GET /api/pixel-gen/jobs?id=<api_job_id>` 轮询。
+- 高清资产生成固定使用 `POST /api/hd-gen`，再用 `GET /api/hd-gen/jobs?id=<api_job_id>` 轮询。
+- 通用 Gemini 代理使用 `POST /api/gemini/...` 或封装命令 `gemini-generate-content`。
+- 如果调用方收到 404 且路径是 `/generate`，先修正 endpoint，不要把它解释为 API key 无效。
+
 可用能力概览：
 
 - `credits-balance`：查询当前账号剩余 credit，适合在批量生成前先确认额度是否充足。
@@ -142,6 +150,7 @@ If you need to customize the path or request body, check the `gemini-*` subcomma
 ## 5. 像素 Sprite / 角色 / 道具 / Icon 生成
 
 `pixel-gen` 是像素资产的默认入口。最常用的命令是 `pixel-gen-run`，它会自动完成提交、轮询和结果下载。
+底层 endpoint 是 `POST /api/pixel-gen`，不是 `/generate`。
 
 ```bash
 python3 skills/meowart_api.py \

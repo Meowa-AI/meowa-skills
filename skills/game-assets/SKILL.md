@@ -18,6 +18,7 @@ description: Create, edit, and pipeline game assets with MeowArt for pixel sprit
 
 ## 核心路由规则
 
+- 不要调用裸 `/generate` 或 `/api/generate`。MeowArt 后端没有这两个 endpoint；像素资产提交固定走 `POST /api/pixel-gen`，轮询固定走 `GET /api/pixel-gen/jobs?id=...`。如果看到 404 并提到 `/generate`，优先修正 skill/脚本 endpoint，而不是判断 API key 无效。
 - 只要用户目标明确是像素 sprite / 小图标 / 道具 / 角色 / 怪物 / NPC，默认先走 `pixel-gen-template-info` 选模板，再用 `pixel-gen-run`。触发词包括：像素图、pixel art、pixel、sprite、spritesheet、角色、怪物、NPC、道具、物品、icon、UI 小图标、game asset、透明素材。
 - 明确要非像素高清角色、高清 icon、高清物品包、透明 HD 资产时，走 `hd-gen-template-info` + `hd-gen-run`，不要退回通用 `gemini-generate-content`。
 - 明确要单张可平铺 texture / material tile / 地表纹理时，走 `texture-gen-run`。明确要 terrain tileset / dual-grid 15 tiles / 草地水面过渡图时，走 `tileset-gen-run`。只有“tile”是普通小道具或像素小图标时才走 `pixel-gen-run`。
