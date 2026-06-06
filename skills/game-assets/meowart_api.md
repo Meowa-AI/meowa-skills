@@ -1,4 +1,4 @@
-# MeowArt API 简明文档
+# Meowa API 简明文档
 
 常用脚本：
 
@@ -45,7 +45,7 @@
 
 ## 1. 鉴权
 
-在使用 MeowArt API 前，先登录 [https://meowa.ai/#/api-keys](https://meowa.ai/#/api-keys)，然后点击左侧的 `Create API Key` 按钮，创建一个 token。
+在使用 Meowa API 前，先登录 [https://meowa.ai/#/api-keys](https://meowa.ai/#/api-keys)，然后点击左侧的 `Create API Key` 按钮，创建一个 token。
 
 默认使用真实用户 API key：
 
@@ -128,6 +128,21 @@ python3 skills/meowart_api.py --bootstrap-force credits-balance
 这个机制更新的是 CLI runner。`SKILL.md` 的触发描述和路由说明仍然是 Codex
 启动时加载的内容；如果这些说明发生变化，仍需要执行 `skills update` 或重新安装
 skill，并重启 Codex。
+
+## 2.2 动态 Skill 指南
+
+`SKILL.md` 是稳定 loader。真正会频繁变化的命令选择策略、API 说明、模板建议
+通过动态指南获取：
+
+```bash
+python3 skills/meowart_api.py skill-doc --task "生成 64x64 像素道具"
+python3 skills/meowart_api.py skill-doc --topic pixel-gen
+python3 skills/meowart_api.py skill-doc-status --check
+```
+
+`skill-doc` 默认请求 Meowa 后端的公开只读文档接口，并缓存到
+`~/.cache/meowa-skills/game-assets/docs/`。如果网络不可用、接口异常或校验失败，
+会自动回退到当前 bundled `meowart_api.md`。
 
 ## 3. Credits
 

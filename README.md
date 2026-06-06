@@ -6,7 +6,7 @@ transparent PNGs, simple animations, UI mockups, sound effects, and
 loop-friendly game music drafts.
 
 This repository contains a Codex skill plus a small Python CLI wrapper around
-the MeowArt API. The skill teaches an agent how to choose the right generation
+the Meowa API. The skill teaches an agent how to choose the right generation
 path, keep pixel assets crisp, manage output directories, and validate generated
 files before handing them back to a game project.
 
@@ -34,7 +34,7 @@ files before handing them back to a game project.
         |-- SKILL.md          # Codex skill instructions
         |-- meowart_api.md    # Quick API usage guide
         |-- meowart_api.bootstrap.json
-        `-- meowart_api.py    # MeowArt API helper CLI
+        `-- meowart_api.py    # Meowa API helper CLI
 ```
 
 ## Install
@@ -42,7 +42,7 @@ files before handing them back to a game project.
 Clone the repository and copy the skill into your Codex skills directory:
 
 ```bash
-git clone https://github.com/MeowjitoAI/meowa-skills.git
+git clone https://github.com/Meowa-AI/meowa-skills.git
 cd meowa-skills
 
 export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
@@ -63,7 +63,7 @@ python3 skills/game-assets/meowart_api.py --help
 the checksummed manifest at:
 
 ```text
-https://raw.githubusercontent.com/MeowjitoAI/meowa-skills/main/skills/game-assets/meowart_api.bootstrap.json
+https://raw.githubusercontent.com/Meowa-AI/meowa-skills/main/skills/game-assets/meowart_api.bootstrap.json
 ```
 
 If the manifest advertises a newer runner, the script downloads the new
@@ -84,6 +84,21 @@ python3 skills/game-assets/meowart_api.py --bootstrap-force credits-balance
 
 The bootstrap updates the CLI runner only. Changes to `SKILL.md` routing
 instructions still require reinstalling/updating the skill and restarting Codex.
+
+## Dynamic Skill Guide
+
+`SKILL.md` is intentionally small and stable. Before choosing commands for a
+game asset task, ask the CLI for the current Meowa guide:
+
+```bash
+python3 skills/game-assets/meowart_api.py skill-doc --task "Create 64x64 pixel item icons"
+python3 skills/game-assets/meowart_api.py skill-doc --topic pixel-gen
+python3 skills/game-assets/meowart_api.py skill-doc-status --check
+```
+
+The guide is fetched from the public Meowa API, cached under
+`~/.cache/meowa-skills/game-assets/docs/`, and falls back to the bundled
+`meowart_api.md` if the network or API is unavailable.
 
 ## Authentication
 
@@ -305,7 +320,7 @@ Create a 30 second loop-friendly demo track for a rainy cyberpunk town scene.
 
 The skill will guide Codex to:
 
-- Pick the right MeowArt command for the requested asset type
+- Pick the right Meowa command for the requested asset type
 - Use dry runs before expensive generation when useful
 - Keep pixel art on stable canvas sizes
 - Prefer nearest-neighbor resizing for pixel assets
@@ -350,8 +365,8 @@ Typical saved files include:
 ## Documentation
 
 - [Skill instructions](skills/game-assets/SKILL.md)
-- [MeowArt API quick guide](skills/game-assets/meowart_api.md)
-- [MeowArt API helper CLI](skills/game-assets/meowart_api.py)
+- [Meowa API quick guide](skills/game-assets/meowart_api.md)
+- [Meowa API helper CLI](skills/game-assets/meowart_api.py)
 
 ## License
 

@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.05.31.1"
+MEOWART_API_CLI_VERSION = "2026.06.06.3"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -34,12 +34,12 @@ SUCCESS_ANIMATE_STATUSES = {"success", "completed"}
 LONG_INLINE_DATA_DISPLAY_LIMIT = 240
 AUTH_HEADER_HOST_SUFFIXES = ("meowa.ai", "generativelanguage.googleapis.com")
 MEOWART_ENDPOINT_HINT = (
-    "MeowArt does not expose /generate or /api/generate. "
+    "Meowa does not expose /generate or /api/generate. "
     "Use POST /api/pixel-gen for pixel sprites, POST /api/hd-gen for HD assets, "
     "or POST /api/gemini/... for generic image generation."
 )
 DEFAULT_BOOTSTRAP_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/MeowjitoAI/meowa-skills/main/"
+    "https://raw.githubusercontent.com/Meowa-AI/meowa-skills/main/"
     "skills/game-assets/meowart_api.bootstrap.json"
 )
 BOOTSTRAP_ENABLED_ENV = "MEOWART_BOOTSTRAP"
@@ -50,6 +50,11 @@ BOOTSTRAP_TIMEOUT_ENV = "MEOWART_BOOTSTRAP_TIMEOUT"
 BOOTSTRAP_VERBOSE_ENV = "MEOWART_BOOTSTRAP_VERBOSE"
 BOOTSTRAP_ALLOW_FILE_ENV = "MEOWART_BOOTSTRAP_ALLOW_FILE"
 BOOTSTRAP_MAX_BYTES = 5 * 1024 * 1024
+SKILL_DOC_URL_ENV = "MEOWA_SKILL_DOC_URL"
+SKILL_DOC_CACHE_DIR_ENV = "MEOWA_SKILL_DOC_CACHE_DIR"
+SKILL_DOC_CACHE_TTL_ENV = "MEOWA_SKILL_DOC_CACHE_TTL_SECONDS"
+SKILL_DOC_MAX_BYTES = 100 * 1024
+SKILL_DOC_DEFAULT_TTL_SECONDS = 24 * 60 * 60
 
 
 def _configure_stdio() -> None:
@@ -417,6 +422,239 @@ def _save_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _format_json_for_display(payload: Any) -> str:
     return json.dumps(_sanitize_for_meta(payload), ensure_ascii=False, indent=2)
+
+
+def _skill_doc_cache_dir() -> Path:
+    configured = os.environ.get(SKILL_DOC_CACHE_DIR_ENV, "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return _default_bootstrap_cache_dir() / "docs"
+
+
+def _skill_doc_cache_ttl_seconds() -> int:
+    raw = os.environ.get(SKILL_DOC_CACHE_TTL_ENV, "").strip()
+    if not raw:
+        return SKILL_DOC_DEFAULT_TTL_SECONDS
+    try:
+        return max(int(raw), 0)
+    except ValueError:
+        return SKILL_DOC_DEFAULT_TTL_SECONDS
+
+
+def _skill_doc_cache_key(topic: str = "") -> str:
+    cleaned = str(topic or "").strip().lower()
+    if not cleaned:
+        return "general"
+    return re.sub(r"[^a-z0-9_.-]+", "_", cleaned).strip("_.-") or "general"
+
+
+def _skill_doc_cache_path(topic: str = "") -> Path:
+    return _skill_doc_cache_dir() / f"{_skill_doc_cache_key(topic)}.json"
+
+
+def _local_skill_doc_path() -> Path:
+    return Path(__file__).resolve().parent / "meowart_api.md"
+
+
+def _normalize_meowa_brand_copy(content: str) -> str:
+    return re.sub(r"Meow(?:Art|art)", "Meowa", content)
+
+
+def _read_local_skill_doc() -> str:
+    return _normalize_meowa_brand_copy(_local_skill_doc_path().read_text(encoding="utf-8"))
+
+
+def _load_skill_doc_cache(topic: str = "") -> dict[str, Any] | None:
+    path = _skill_doc_cache_path(topic)
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    content = payload.get("content")
+    return payload if isinstance(content, str) and content else None
+
+
+def _skill_doc_cache_is_fresh(payload: dict[str, Any]) -> bool:
+    fetched_at = payload.get("fetched_at")
+    if not isinstance(fetched_at, (int, float)):
+        return False
+    ttl = _skill_doc_cache_ttl_seconds()
+    if ttl <= 0:
+        return False
+    return time.time() - float(fetched_at) <= ttl
+
+
+def _write_skill_doc_cache(topic: str, payload: dict[str, Any]) -> None:
+    cache_payload = dict(payload)
+    cache_payload["fetched_at"] = time.time()
+    _save_json(_skill_doc_cache_path(topic), cache_payload)
+
+
+def _skill_doc_endpoint(api_base: str) -> str:
+    configured = os.environ.get(SKILL_DOC_URL_ENV, "").strip()
+    if configured:
+        return configured
+    return _normalize_base_url(api_base, "/api/agent-skills/game-assets/doc")
+
+
+def _validate_remote_skill_doc(payload: dict[str, Any]) -> dict[str, Any]:
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("skill doc response missing markdown content")
+    if str(payload.get("format") or "").strip().lower() != "markdown":
+        raise ValueError("skill doc response format must be markdown")
+    if len(content.encode("utf-8")) > SKILL_DOC_MAX_BYTES:
+        raise ValueError(f"skill doc response too large: max {SKILL_DOC_MAX_BYTES} bytes")
+
+    sha256 = str(payload.get("sha256") or "").strip().lower()
+    actual_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    if sha256 and sha256 != actual_sha:
+        raise ValueError(f"skill doc sha256 mismatch: expected {sha256}, got {actual_sha}")
+
+    normalized = dict(payload)
+    normalized["content"] = _normalize_meowa_brand_copy(content)
+    normalized["sha256"] = actual_sha
+    return normalized
+
+
+def _fetch_remote_skill_doc(
+    *,
+    api_base: str,
+    topic: str = "",
+    task: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+    cached: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    url = _skill_doc_endpoint(api_base)
+    params: dict[str, str] = {}
+    if topic:
+        params["topic"] = topic
+    if task:
+        params["task"] = task
+
+    headers = {"Accept": "application/json"}
+    etag = str((cached or {}).get("etag") or "").strip()
+    if etag:
+        headers["If-None-Match"] = etag
+
+    response = requests.get(url, params=params or None, timeout=timeout, verify=verify, headers=headers)
+    if response.status_code == 304 and cached is not None:
+        refreshed = dict(cached)
+        refreshed["source"] = "cache-not-modified"
+        refreshed["fetched_at"] = time.time()
+        return refreshed
+    response.raise_for_status()
+    if len(response.content) > SKILL_DOC_MAX_BYTES * 2:
+        raise ValueError(f"skill doc response too large: {len(response.content)} bytes")
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("skill doc response must be a JSON object")
+
+    doc = _validate_remote_skill_doc(payload)
+    doc["source"] = "remote"
+    doc["source_url"] = url
+    doc["etag"] = response.headers.get("ETag", "")
+    return doc
+
+
+def _fallback_skill_doc(reason: str, *, topic: str = "") -> dict[str, Any]:
+    content = _read_local_skill_doc()
+    return {
+        "skill_name": "game-assets",
+        "skill_doc_version": "bundled",
+        "format": "markdown",
+        "content": content,
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "source": "bundled-fallback",
+        "topic": str(topic or "").strip() or None,
+        "fallback": True,
+        "warning": reason,
+    }
+
+
+def skill_doc(
+    *,
+    api_base: str,
+    topic: str = "",
+    task: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    cached = _load_skill_doc_cache(topic)
+    if cached is not None and not refresh and _skill_doc_cache_is_fresh(cached):
+        result = dict(cached)
+        result["source"] = "cache"
+        return result
+
+    try:
+        remote = _fetch_remote_skill_doc(
+            api_base=api_base,
+            topic=str(topic or "").strip(),
+            task=str(task or "").strip(),
+            timeout=timeout,
+            verify=verify,
+            cached=cached,
+        )
+        _write_skill_doc_cache(topic, remote)
+        return remote
+    except Exception as exc:
+        if cached is not None:
+            result = dict(cached)
+            result["source"] = "cache-after-remote-error"
+            result["warning"] = str(exc)
+            return result
+        return _fallback_skill_doc(str(exc), topic=topic)
+
+
+def skill_doc_status(
+    *,
+    api_base: str,
+    topic: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+    check_remote: bool = False,
+) -> dict[str, Any]:
+    cached = _load_skill_doc_cache(topic)
+    status: dict[str, Any] = {
+        "endpoint": _skill_doc_endpoint(api_base),
+        "cache_dir": str(_skill_doc_cache_dir()),
+        "cache_key": _skill_doc_cache_key(topic),
+        "cache_ttl_seconds": _skill_doc_cache_ttl_seconds(),
+        "cached": None,
+    }
+    if cached is not None:
+        status["cached"] = {
+            "skill_doc_version": cached.get("skill_doc_version"),
+            "sha256": cached.get("sha256"),
+            "source": cached.get("source"),
+            "fetched_at": cached.get("fetched_at"),
+            "fresh": _skill_doc_cache_is_fresh(cached),
+        }
+    if not check_remote:
+        return status
+    try:
+        remote = _fetch_remote_skill_doc(
+            api_base=api_base,
+            topic=topic,
+            timeout=timeout,
+            verify=verify,
+            cached=cached,
+        )
+        status["remote"] = {
+            "skill_doc_version": remote.get("skill_doc_version"),
+            "sha256": remote.get("sha256"),
+            "source": remote.get("source"),
+            "updated_at": remote.get("updated_at"),
+        }
+    except Exception as exc:
+        status["remote_error"] = str(exc)
+    return status
 
 
 def _timestamp_slug() -> str:
@@ -914,7 +1152,7 @@ def submit_pixel_gen(
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
     model_name: str = "",
-    resolution: str = "1K",
+    resolution: str = "",
     aspect_ratio: str = "1:1",
     temperature: float = 0.0,
     include_base64: bool = False,
@@ -927,7 +1165,6 @@ def submit_pixel_gen(
         "template_name": template_name,
         "template_config": json.dumps(template_config or {}, ensure_ascii=False),
         "requirement": requirement,
-        "resolution": resolution,
         "aspect_ratio": aspect_ratio,
         "temperature": str(temperature),
         "include_base64": "true" if include_base64 else "false",
@@ -1019,7 +1256,7 @@ def run_pixel_gen(
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
     model_name: str = "",
-    resolution: str = "1K",
+    resolution: str = "",
     aspect_ratio: str = "1:1",
     temperature: float = 0.0,
     include_base64: bool = False,
@@ -1037,7 +1274,6 @@ def run_pixel_gen(
         template_config=template_config,
         job_name=job_name,
         model_name=model_name,
-        resolution=resolution,
         aspect_ratio=aspect_ratio,
         temperature=temperature,
         include_base64=include_base64,
@@ -2335,7 +2571,7 @@ def _save_run_outputs(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Standalone MeowArt API test CLI.")
+    parser = argparse.ArgumentParser(description="Standalone Meowa API test CLI.")
     parser.add_argument("--version", action="version", version=f"meowart_api.py {MEOWART_API_CLI_VERSION}")
     parser.add_argument(
         "--no-bootstrap",
@@ -2474,6 +2710,21 @@ def parse_args() -> argparse.Namespace:
     bootstrap_status_parser = subparsers.add_parser("bootstrap-status", help="Show bootstrap runner update status")
     bootstrap_status_parser.add_argument("--check", action="store_true", help="Fetch and display the remote bootstrap manifest")
 
+    skill_doc_parser = subparsers.add_parser("skill-doc", help="Print the latest Meowa game-assets skill guide")
+    skill_doc_parser.add_argument("--topic", default="", help="Optional guide topic, such as pixel-gen, hd-gen, texture, or music")
+    skill_doc_parser.add_argument("--task", default="", help="Optional short description of the current user request")
+    skill_doc_parser.add_argument("--refresh", action="store_true", help="Ignore fresh cache and fetch the remote guide")
+    add_if_missing(skill_doc_parser, "--api-base", default=argparse.SUPPRESS, help="API base URL")
+    add_if_missing(skill_doc_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
+    add_if_missing(skill_doc_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
+
+    skill_doc_status_parser = subparsers.add_parser("skill-doc-status", help="Show Meowa game-assets skill guide cache status")
+    skill_doc_status_parser.add_argument("--topic", default="", help="Optional guide topic")
+    skill_doc_status_parser.add_argument("--check", action="store_true", help="Fetch and display remote guide status")
+    add_if_missing(skill_doc_status_parser, "--api-base", default=argparse.SUPPRESS, help="API base URL")
+    add_if_missing(skill_doc_status_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
+    add_if_missing(skill_doc_status_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
+
     pixel_templates = subparsers.add_parser("pixel-gen-template-info", help="Get pixel-gen template info")
     add_shared_path_args(pixel_templates)
 
@@ -2483,7 +2734,7 @@ def parse_args() -> argparse.Namespace:
     pixel_submit.add_argument("--requirement", required=True)
     pixel_submit.add_argument("--template-config", default="{}", help="JSON object string")
     pixel_submit.add_argument("--job-name", default="")
-    pixel_submit.add_argument("--resolution", default="1K")
+    pixel_submit.add_argument("--resolution", default="", help=argparse.SUPPRESS)
     pixel_submit.add_argument("--aspect-ratio", default="1:1")
     pixel_submit.add_argument("--reference-file", default="", help="Optional user reference image sent as reference_file")
 
@@ -2794,8 +3045,39 @@ def main() -> int:
     _configure_stdio()
     _bootstrap_maybe_exec(sys.argv)
     args = parse_args()
+    verify = not args.insecure
     if args.command == "bootstrap-status":
-        print(_format_json_for_display(bootstrap_status(check_remote=args.check)))
+        payload = bootstrap_status(check_remote=args.check)
+        payload["skill_doc"] = skill_doc_status(
+            api_base=args.api_base,
+            timeout=args.timeout,
+            verify=verify,
+            check_remote=args.check,
+        )
+        print(_format_json_for_display(payload))
+        return 0
+    if args.command == "skill-doc":
+        payload = skill_doc(
+            api_base=args.api_base,
+            topic=args.topic,
+            task=args.task,
+            timeout=args.timeout,
+            verify=verify,
+            refresh=args.refresh,
+        )
+        warning = str(payload.get("warning") or "").strip()
+        if warning:
+            print(f"[WARN] skill doc fallback: {warning}", file=sys.stderr)
+        print(str(payload.get("content") or ""))
+        return 0
+    if args.command == "skill-doc-status":
+        print(_format_json_for_display(skill_doc_status(
+            api_base=args.api_base,
+            topic=args.topic,
+            timeout=args.timeout,
+            verify=verify,
+            check_remote=args.check,
+        )))
         return 0
 
     started_at = datetime.now().isoformat(timespec="seconds")
@@ -2808,7 +3090,6 @@ def main() -> int:
             if needs_api_key
             else str(args.api_key or "").strip()
         )
-        verify = not args.insecure
 
         if args.command == "pixel-gen-template-info":
             payload = pixel_gen_template_info(
@@ -2838,7 +3119,6 @@ def main() -> int:
                 requirement=args.requirement,
                 template_config=_parse_json_arg(args.template_config, name="template_config"),
                 job_name=args.job_name,
-                resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
                 reference_file=args.reference_file,
                 timeout=args.timeout,
@@ -2854,7 +3134,6 @@ def main() -> int:
                     "requirement": args.requirement,
                     "template_config": _parse_json_arg(args.template_config, name="template_config"),
                     "job_name": args.job_name,
-                    "resolution": args.resolution,
                     "aspect_ratio": args.aspect_ratio,
                     "reference_file": args.reference_file,
                 },
@@ -2872,7 +3151,6 @@ def main() -> int:
                 "requirement": args.requirement,
                 "template_config": template_config,
                 "job_name": args.job_name,
-                "resolution": args.resolution,
                 "aspect_ratio": args.aspect_ratio,
                 "reference_file": args.reference_file,
             }
@@ -2904,7 +3182,6 @@ def main() -> int:
                 requirement=args.requirement,
                 template_config=template_config,
                 job_name=args.job_name,
-                resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
                 reference_file=args.reference_file,
                 timeout=args.timeout,
