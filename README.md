@@ -194,6 +194,17 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/night_market
 ```
 
+Use one or more reference images when the general Gemini request should follow an existing asset's palette, composition, or style:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  gemini-generate-content \
+  --text "Generate a matching 16:9 background concept using this character's palette." \
+  --image-file ./outputs/character/reference.png \
+  --generation-config '{"responseModalities":["TEXT","IMAGE"],"imageConfig":{"aspectRatio":"16:9","imageSize":"2K"}}' \
+  --output-dir ./outputs/matching_background
+```
+
 For pixel sprites, props, icons, small tile sprites, or character assets, use
 `pixel-gen-template-info` and `pixel-gen-run` first. Only use general generation
 as a fallback, then run `pixelate-run` before treating the result as a final

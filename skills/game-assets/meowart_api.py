@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.06.11.1"
+MEOWART_API_CLI_VERSION = "2026.06.11.2"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -1309,6 +1309,30 @@ def image_file_to_data_url(image_path: str) -> str:
     mime = _mime_for_path(path)
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def image_file_to_inline_data_part(image_path: str) -> dict[str, Any]:
+    path = Path(image_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"image not found: {path}")
+    return {
+        "inline_data": {
+            "mime_type": _mime_for_path(path),
+            "data": base64.b64encode(path.read_bytes()).decode("ascii"),
+        }
+    }
+
+
+def build_gemini_generate_content_contents(*, text: str = "", image_files: list[str] | None = None) -> list[dict[str, Any]]:
+    parts: list[dict[str, Any]] = []
+    if str(text or ""):
+        parts.append({"text": str(text)})
+    for raw_path in image_files or []:
+        if str(raw_path or "").strip():
+            parts.append(image_file_to_inline_data_part(raw_path))
+    if not parts:
+        raise ValueError("gemini-generate-content requires --text or at least one --image-file")
+    return [{"parts": parts}]
 
 
 def gemini_proxy_request(
@@ -3550,7 +3574,16 @@ def parse_args() -> argparse.Namespace:
     gemini_generate = subparsers.add_parser("gemini-generate-content", help="Call Gemini generateContent")
     add_shared_path_args(gemini_generate)
     gemini_generate.add_argument("--model", default=DEFAULT_GEMINI_MODEL)
-    gemini_generate.add_argument("--text", required=True, help="Prompt text")
+    gemini_generate.add_argument("--text", default="", help="Prompt text; optional when --image-file is provided")
+    gemini_generate.add_argument(
+        "--image-file",
+        "--reference-image",
+        "--reference-file",
+        dest="image_files",
+        action="append",
+        default=[],
+        help="Reference image file sent as inline_data; can be repeated",
+    )
     gemini_generate.add_argument("--generation-config", default="", help="JSON object string")
 
     credits_balance = subparsers.add_parser("credits-balance", help="Get current credits balance")
@@ -5071,11 +5104,15 @@ def main() -> int:
 
         if args.command == "gemini-generate-content":
             generation_config = _parse_json_arg(args.generation_config or "{}", name="generation_config")
+            contents = build_gemini_generate_content_contents(
+                text=args.text,
+                image_files=list(args.image_files or []),
+            )
             payload = gemini_generate_content(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 model=args.model,
-                contents=[{"parts": [{"text": args.text}]}],
+                contents=contents,
                 generation_config=generation_config or None,
                 timeout=args.timeout,
                 verify=verify,
@@ -5095,6 +5132,7 @@ def main() -> int:
                 request_payload={
                     "model": args.model,
                     "text": args.text,
+                    "image_files": list(args.image_files or []),
                     "generation_config": generation_config,
                 },
                 response_payload=payload,

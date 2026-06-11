@@ -1,6 +1,6 @@
 ---
 name: game-assets
-version: "2026.06.11.1"
+version: "2026.06.11.2"
 description: Create, edit, and pipeline game assets with Meowa for pixel sprites, HD assets, backgrounds, UI mockups, seamless loops, texture tiles, dual-grid tilesets, reusable map presets, isometric and hex map tiles, background removal, pixel cleanup, simple animation, sound effects, and music/BGM generation. Use when Codex needs to produce or refine game art or audio in this project, especially when choosing Meowa commands, searching preset map assets before generation, sizing canvases, selecting templates, generating music or SFX audio, or turning generated assets into game-ready files.
 ---
 

@@ -166,6 +166,16 @@ python3 skills/meowart_api.py \
   --text "Write a one-line description of a cream sofa"
 ```
 
+Reference images can be passed as inline Gemini image parts. `--image-file` can be repeated; `--reference-image` and `--reference-file` are aliases:
+
+```bash
+python3 skills/meowart_api.py \
+  gemini-generate-content \
+  --text "Generate a matching 16:9 background concept using this character's palette." \
+  --image-file ./reference_character.png \
+  --generation-config '{"responseModalities":["TEXT","IMAGE"],"imageConfig":{"aspectRatio":"16:9","imageSize":"2K"}}'
+```
+
 If you need to customize the path or request body, check the `gemini-*` subcommands in `skills/meowart_api.py`.
 
 ## 5. 像素 Sprite / 角色 / 道具 / Icon 生成
