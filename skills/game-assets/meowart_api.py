@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.06.06.3"
+MEOWART_API_CLI_VERSION = "2026.06.11.1"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -55,6 +55,37 @@ SKILL_DOC_CACHE_DIR_ENV = "MEOWA_SKILL_DOC_CACHE_DIR"
 SKILL_DOC_CACHE_TTL_ENV = "MEOWA_SKILL_DOC_CACHE_TTL_SECONDS"
 SKILL_DOC_MAX_BYTES = 100 * 1024
 SKILL_DOC_DEFAULT_TTL_SECONDS = 24 * 60 * 60
+MAP_PRESET_CATALOG_URL_ENV = "MEOWA_MAP_PRESET_CATALOG_URL"
+MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
+MAP_WORKFLOW_ENDPOINTS = {
+    "pixel_isometric_gen": "/api/workflows/pixel_isometric_gen/run",
+    "pixel_hex_isometric_gen": "/api/workflows/pixel_hex_isometric_gen/run",
+    "hd_isometric_gen": "/api/workflows/hd_isometric_gen/run",
+    "hd_hex_isometric_gen": "/api/workflows/hd_hex_isometric_gen/run",
+}
+MAP_WORKFLOW_COMMANDS = {
+    "isometric-gen-submit": "pixel_isometric_gen",
+    "pixel-isometric-gen-submit": "pixel_isometric_gen",
+    "isometric-gen-run": "pixel_isometric_gen",
+    "pixel-isometric-gen-run": "pixel_isometric_gen",
+    "isometric-gen-poll": "pixel_isometric_gen",
+    "pixel-isometric-gen-poll": "pixel_isometric_gen",
+    "hex-isometric-gen-submit": "pixel_hex_isometric_gen",
+    "pixel-hex-isometric-gen-submit": "pixel_hex_isometric_gen",
+    "hex-isometric-gen-run": "pixel_hex_isometric_gen",
+    "pixel-hex-isometric-gen-run": "pixel_hex_isometric_gen",
+    "hex-isometric-gen-poll": "pixel_hex_isometric_gen",
+    "pixel-hex-isometric-gen-poll": "pixel_hex_isometric_gen",
+    "hd-isometric-gen-submit": "hd_isometric_gen",
+    "hd-isometric-gen-run": "hd_isometric_gen",
+    "hd-isometric-gen-poll": "hd_isometric_gen",
+    "hd-hex-isometric-gen-submit": "hd_hex_isometric_gen",
+    "hd-hex-isometric-gen-run": "hd_hex_isometric_gen",
+    "hd-hex-isometric-gen-poll": "hd_hex_isometric_gen",
+}
+MAP_WORKFLOW_POLL_COMMANDS = {
+    command for command in MAP_WORKFLOW_COMMANDS if command.endswith("-poll")
+}
 
 
 def _configure_stdio() -> None:
@@ -655,6 +686,279 @@ def skill_doc_status(
     except Exception as exc:
         status["remote_error"] = str(exc)
     return status
+
+
+def _map_preset_catalog_endpoint(api_base: str) -> str:
+    configured = os.environ.get(MAP_PRESET_CATALOG_URL_ENV, "").strip()
+    if configured:
+        return configured
+    return _normalize_base_url(api_base, "/api/agent-skills/game-assets/map-presets")
+
+
+def fetch_map_preset_catalog(
+    *,
+    api_base: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    url = _map_preset_catalog_endpoint(api_base)
+    response, payload = _request_json(
+        method="GET",
+        url=url,
+        headers={"Accept": "application/json"},
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    if len(response.content) > MAP_PRESET_CATALOG_MAX_BYTES:
+        raise RuntimeError(f"map preset catalog too large: {len(response.content)} bytes")
+    presets = payload.get("presets")
+    if not isinstance(presets, list):
+        raise ValueError("map preset catalog response missing presets list")
+    return payload
+
+
+def _preset_text_blob(preset: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in (
+        "id",
+        "catalogId",
+        "workflowId",
+        "workflowName",
+        "templateId",
+        "templateName",
+        "templateDescription",
+        "group",
+        "filename",
+        "label",
+        "tileSize",
+        "assetKind",
+    ):
+        value = preset.get(key)
+        if value:
+            parts.append(str(value))
+    for value in preset.get("tags") or []:
+        parts.append(str(value))
+    metadata = preset.get("metadata")
+    if isinstance(metadata, dict):
+        for value in metadata.values():
+            if value:
+                parts.append(str(value))
+    return " ".join(parts).lower()
+
+
+def _query_tokens(query: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", str(query or "").strip().lower())
+    return [token for token in normalized.split(" ") if token]
+
+
+def _preset_matches_filters(
+    preset: dict[str, Any],
+    *,
+    workflow_id: str = "",
+    template_id: str = "",
+    tile_size: str = "",
+    asset_kind: str = "",
+    group: str = "",
+) -> bool:
+    filters = {
+        "workflowId": workflow_id,
+        "templateId": template_id,
+        "tileSize": tile_size,
+        "assetKind": asset_kind,
+        "group": group,
+    }
+    for key, raw_expected in filters.items():
+        expected = str(raw_expected or "").strip()
+        if expected and str(preset.get(key) or "").strip() != expected:
+            return False
+    return True
+
+
+def _preset_search_score(preset: dict[str, Any], tokens: list[str]) -> int:
+    if not tokens:
+        return 0
+    score = 0
+    weighted_fields = (
+        ("templateId", 8),
+        ("templateName", 6),
+        ("group", 4),
+        ("filename", 4),
+        ("templateDescription", 3),
+        ("label", 3),
+    )
+    for token in tokens:
+        for key, weight in weighted_fields:
+            if token in str(preset.get(key) or "").lower():
+                score += weight
+    return score
+
+
+def search_map_presets(
+    *,
+    api_base: str,
+    query: str = "",
+    workflow_id: str = "",
+    template_id: str = "",
+    tile_size: str = "",
+    asset_kind: str = "",
+    group: str = "",
+    limit: int = 20,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    catalog = fetch_map_preset_catalog(api_base=api_base, timeout=timeout, verify=verify)
+    tokens = _query_tokens(query)
+    matches: list[dict[str, Any]] = []
+    for preset in catalog.get("presets") or []:
+        if not isinstance(preset, dict):
+            continue
+        if not _preset_matches_filters(
+            preset,
+            workflow_id=workflow_id,
+            template_id=template_id,
+            tile_size=tile_size,
+            asset_kind=asset_kind,
+            group=group,
+        ):
+            continue
+        text_blob = _preset_text_blob(preset)
+        if tokens and not all(token in text_blob for token in tokens):
+            continue
+        enriched = dict(preset)
+        enriched["_score"] = _preset_search_score(enriched, tokens)
+        matches.append(enriched)
+
+    matches.sort(
+        key=lambda item: (
+            -int(item.get("_score") or 0),
+            str(item.get("workflowId") or ""),
+            str(item.get("templateId") or ""),
+            str(item.get("group") or ""),
+            str(item.get("filename") or ""),
+        )
+    )
+    capped_limit = max(int(limit or 20), 1)
+    return {
+        "catalogId": catalog.get("catalogId"),
+        "version": catalog.get("version"),
+        "query": query,
+        "filters": {
+            "workflowId": workflow_id,
+            "templateId": template_id,
+            "tileSize": tile_size,
+            "assetKind": asset_kind,
+            "group": group,
+        },
+        "count": len(matches),
+        "matches": matches[:capped_limit],
+    }
+
+
+def _absolute_url(api_base: str, value: str) -> str:
+    raw = str(value or "").strip()
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if raw.startswith("/"):
+        return _normalize_base_url(api_base, raw)
+    return raw
+
+
+def _preset_download_filename(preset: dict[str, Any], index: int) -> str:
+    filename = str(preset.get("filename") or "preset.png").strip() or "preset.png"
+    suffix = Path(filename).suffix or ".png"
+    stem = _safe_slug(
+        "_".join(
+            part
+            for part in (
+                str(preset.get("workflowId") or ""),
+                str(preset.get("templateId") or ""),
+                str(preset.get("group") or ""),
+                Path(filename).stem,
+            )
+            if part
+        )
+    )
+    return f"{index:02d}_{stem}{suffix}"
+
+
+def download_map_presets(
+    *,
+    api_base: str,
+    query: str = "",
+    preset_ids: list[str] | None = None,
+    workflow_id: str = "",
+    template_id: str = "",
+    tile_size: str = "",
+    asset_kind: str = "",
+    group: str = "",
+    limit: int = 20,
+    output_dir: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if preset_ids:
+        catalog = fetch_map_preset_catalog(api_base=api_base, timeout=timeout, verify=verify)
+        wanted = {str(preset_id).strip() for preset_id in preset_ids if str(preset_id).strip()}
+        matches = [
+            preset for preset in catalog.get("presets") or []
+            if isinstance(preset, dict) and str(preset.get("id") or "") in wanted
+        ]
+        search_payload = {
+            "catalogId": catalog.get("catalogId"),
+            "version": catalog.get("version"),
+            "query": "",
+            "filters": {"ids": sorted(wanted)},
+            "count": len(matches),
+            "matches": matches[: max(int(limit or len(matches) or 1), 1)],
+        }
+    else:
+        search_payload = search_map_presets(
+            api_base=api_base,
+            query=query,
+            workflow_id=workflow_id,
+            template_id=template_id,
+            tile_size=tile_size,
+            asset_kind=asset_kind,
+            group=group,
+            limit=limit,
+            timeout=timeout,
+            verify=verify,
+        )
+        matches = list(search_payload.get("matches") or [])
+
+    if not matches:
+        raise RuntimeError("no map preset matched the requested filters")
+
+    target_dir = Path(output_dir).expanduser()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    _save_json(target_dir / "map_preset_search.json", _sanitize_for_meta(search_payload))
+
+    downloads: list[dict[str, Any]] = [{"type": "json", "path": str(target_dir / "map_preset_search.json")}]
+    for index, preset in enumerate(matches[: max(int(limit or len(matches)), 1)], start=1):
+        if not isinstance(preset, dict):
+            continue
+        source_url = _absolute_url(
+            api_base,
+            str(preset.get("downloadPath") or preset.get("downloadUrl") or preset.get("url") or ""),
+        )
+        if not source_url:
+            print(f"[WARN] preset has no downloadable URL: {preset.get('id')}", file=sys.stderr)
+            continue
+        target_path = target_dir / _preset_download_filename(preset, index)
+        mime_type = _download_file(source_url, target_path, timeout=timeout, verify=verify)
+        downloads.append(
+            {
+                "type": "map_preset",
+                "preset_id": preset.get("id"),
+                "source_url": source_url,
+                "mime_type": mime_type,
+                "path": str(target_path),
+            }
+        )
+        print(f"[INFO] downloaded={target_path}")
+    return search_payload, downloads
 
 
 def _timestamp_slug() -> str:
@@ -2342,6 +2646,156 @@ def run_tileset_generator(
     return submit_payload, final_payload
 
 
+def _append_reference_image_files(files: list[tuple[str, tuple[str, bytes, str]]], reference_images: list[str] | None) -> None:
+    for raw_path in reference_images or []:
+        path = Path(raw_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"reference image not found: {path}")
+        files.append(("reference_images", (path.name, path.read_bytes(), _mime_for_path(path))))
+
+
+def _optional_bool_form_value(value: bool | None) -> str | None:
+    if value is None:
+        return None
+    return "true" if bool(value) else "false"
+
+
+def submit_map_workflow(
+    *,
+    api_base: str,
+    api_key: str,
+    workflow_id: str,
+    prompt: str,
+    reference_images: list[str] | None = None,
+    mode: str = "standard",
+    template: str = "",
+    similar_tiles: bool | None = None,
+    tile_only: bool | None = None,
+    road_template_id: str = "",
+    road_width: int | None = None,
+    style_name: str = "",
+    style_description: str = "",
+    top_left: str = "",
+    top_right: str = "",
+    bottom_left: str = "",
+    bottom_right: str = "",
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    if workflow_id not in MAP_WORKFLOW_ENDPOINTS:
+        raise ValueError(f"unsupported map workflow: {workflow_id}")
+
+    data: dict[str, str] = {
+        "prompt": prompt,
+        "mode": mode,
+    }
+    if template:
+        data["template"] = template
+    for key, value in {
+        "similar_tiles": _optional_bool_form_value(similar_tiles),
+        "tile_only": _optional_bool_form_value(tile_only),
+        "road_template_id": road_template_id,
+        "style_name": style_name,
+        "style_description": style_description,
+        "top_left": top_left,
+        "top_right": top_right,
+        "bottom_left": bottom_left,
+        "bottom_right": bottom_right,
+    }.items():
+        if value not in (None, ""):
+            data[key] = str(value)
+    if road_width is not None:
+        data["road_width"] = str(road_width)
+    if project_id is not None:
+        data["project_id"] = project_id
+    if thread_id is not None:
+        data["thread_id"] = thread_id
+
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    _append_reference_image_files(files, reference_images)
+
+    url = _normalize_base_url(api_base, MAP_WORKFLOW_ENDPOINTS[workflow_id])
+    response, payload = _request_json(
+        method="POST",
+        url=url,
+        headers=_base_headers(api_key),
+        data=data,
+        files=files or None,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def run_map_workflow(
+    *,
+    api_base: str,
+    api_key: str,
+    workflow_id: str,
+    prompt: str,
+    reference_images: list[str] | None = None,
+    mode: str = "standard",
+    template: str = "",
+    similar_tiles: bool | None = None,
+    tile_only: bool | None = None,
+    road_template_id: str = "",
+    road_width: int | None = None,
+    style_name: str = "",
+    style_description: str = "",
+    top_left: str = "",
+    top_right: str = "",
+    bottom_left: str = "",
+    bottom_right: str = "",
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_map_workflow(
+        api_base=api_base,
+        api_key=api_key,
+        workflow_id=workflow_id,
+        prompt=prompt,
+        reference_images=reference_images,
+        mode=mode,
+        template=template,
+        similar_tiles=similar_tiles,
+        tile_only=tile_only,
+        road_template_id=road_template_id,
+        road_width=road_width,
+        style_name=style_name,
+        style_description=style_description,
+        top_left=top_left,
+        top_right=top_right,
+        bottom_left=bottom_left,
+        bottom_right=bottom_right,
+        project_id=project_id,
+        thread_id=thread_id,
+        timeout=timeout,
+        verify=verify,
+    )
+    api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
+    if api_job_id:
+        print(f"[INFO] submitted api_job_id={api_job_id}")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload=submit_payload,
+        label=workflow_id,
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
+
+
 def submit_music_generator(
     *,
     api_base: str,
@@ -2707,6 +3161,45 @@ def parse_args() -> argparse.Namespace:
         add_if_missing(command_parser, "--no-download", action="store_true", default=argparse.SUPPRESS, help="Skip downloading remote files")
         add_if_missing(command_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
 
+    def add_map_preset_filter_args(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument("--query", default="", help="Search text, e.g. ocean, desert, grass, modern, road")
+        command_parser.add_argument("--workflow-id", default="", help="Optional workflow id filter")
+        command_parser.add_argument("--template-id", default="", help="Optional template id filter")
+        command_parser.add_argument("--tile-size", default="", help="Optional tile size filter, e.g. 1x1, 2x2, 7-cell")
+        command_parser.add_argument("--asset-kind", default="", help="Optional asset kind filter: reference or template")
+        command_parser.add_argument("--group", default="", help="Optional preset group filter")
+        command_parser.add_argument("--limit", type=int, default=20)
+
+    def add_map_workflow_args(
+        command_parser: argparse.ArgumentParser,
+        *,
+        modes: tuple[str, ...],
+        include_template: bool = False,
+        include_road: bool = False,
+        include_style_quad: bool = False,
+    ) -> None:
+        command_parser.add_argument("--prompt", required=True, help="Map tile requirement")
+        command_parser.add_argument("--reference-image", action="append", default=[], help="Reference image; can be repeated")
+        command_parser.add_argument("--mode", default="standard", choices=modes)
+        if include_template:
+            command_parser.add_argument("--template", default="", help="HD map template id")
+        command_parser.add_argument("--similar-tiles", action="store_true", default=None)
+        command_parser.add_argument("--no-similar-tiles", action="store_false", dest="similar_tiles", default=None)
+        command_parser.add_argument("--tile-only", action="store_true", default=None)
+        command_parser.add_argument("--no-tile-only", action="store_false", dest="tile_only", default=None)
+        if include_road:
+            command_parser.add_argument("--road-template-id", default="")
+            command_parser.add_argument("--road-width", type=int, default=None)
+        if include_style_quad:
+            command_parser.add_argument("--style-name", default="")
+            command_parser.add_argument("--style-description", default="")
+            command_parser.add_argument("--top-left", default="")
+            command_parser.add_argument("--top-right", default="")
+            command_parser.add_argument("--bottom-left", default="")
+            command_parser.add_argument("--bottom-right", default="")
+        command_parser.add_argument("--project-id", default=None)
+        command_parser.add_argument("--thread-id", default=None)
+
     bootstrap_status_parser = subparsers.add_parser("bootstrap-status", help="Show bootstrap runner update status")
     bootstrap_status_parser.add_argument("--check", action="store_true", help="Fetch and display the remote bootstrap manifest")
 
@@ -2724,6 +3217,16 @@ def parse_args() -> argparse.Namespace:
     add_if_missing(skill_doc_status_parser, "--api-base", default=argparse.SUPPRESS, help="API base URL")
     add_if_missing(skill_doc_status_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
     add_if_missing(skill_doc_status_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
+
+    map_preset_search = subparsers.add_parser("map-reference-search", aliases=["map-preset-search"], help="Search reusable map preset images")
+    add_shared_path_args(map_preset_search)
+    add_map_preset_filter_args(map_preset_search)
+    map_preset_search.add_argument("--download", action="store_true", help="Download matched presets instead of only printing JSON")
+
+    map_preset_download = subparsers.add_parser("map-reference-download", aliases=["map-preset-download"], help="Download map presets by id or search filters")
+    add_shared_path_args(map_preset_download)
+    add_map_preset_filter_args(map_preset_download)
+    map_preset_download.add_argument("--preset-id", action="append", default=[], help="Preset id to download; can be repeated")
 
     pixel_templates = subparsers.add_parser("pixel-gen-template-info", help="Get pixel-gen template info")
     add_shared_path_args(pixel_templates)
@@ -2920,6 +3423,102 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(tileset_poll)
     tileset_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
+    isometric_submit = subparsers.add_parser(
+        "isometric-gen-submit",
+        aliases=["pixel-isometric-gen-submit"],
+        help="Submit pixel_isometric_gen",
+    )
+    add_shared_path_args(isometric_submit)
+    add_map_workflow_args(
+        isometric_submit,
+        modes=("standard", "edit", "tetraploid", "road"),
+        include_road=True,
+    )
+
+    isometric_run = subparsers.add_parser(
+        "isometric-gen-run",
+        aliases=["pixel-isometric-gen-run"],
+        help="Submit and wait for pixel_isometric_gen",
+    )
+    for action in isometric_submit._actions[1:]:
+        if action.dest not in {"help"}:
+            isometric_run._add_action(action)
+    add_shared_runtime_args(isometric_run)
+
+    isometric_poll = subparsers.add_parser(
+        "isometric-gen-poll",
+        aliases=["pixel-isometric-gen-poll"],
+        help="Poll one pixel_isometric_gen workflow job",
+    )
+    add_shared_path_args(isometric_poll)
+    isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
+    hex_isometric_submit = subparsers.add_parser(
+        "hex-isometric-gen-submit",
+        aliases=["pixel-hex-isometric-gen-submit"],
+        help="Submit pixel_hex_isometric_gen",
+    )
+    add_shared_path_args(hex_isometric_submit)
+    add_map_workflow_args(
+        hex_isometric_submit,
+        modes=("standard", "edit", "tetraploid", "heptaploid"),
+    )
+
+    hex_isometric_run = subparsers.add_parser(
+        "hex-isometric-gen-run",
+        aliases=["pixel-hex-isometric-gen-run"],
+        help="Submit and wait for pixel_hex_isometric_gen",
+    )
+    for action in hex_isometric_submit._actions[1:]:
+        if action.dest not in {"help"}:
+            hex_isometric_run._add_action(action)
+    add_shared_runtime_args(hex_isometric_run)
+
+    hex_isometric_poll = subparsers.add_parser(
+        "hex-isometric-gen-poll",
+        aliases=["pixel-hex-isometric-gen-poll"],
+        help="Poll one pixel_hex_isometric_gen workflow job",
+    )
+    add_shared_path_args(hex_isometric_poll)
+    hex_isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
+    hd_isometric_submit = subparsers.add_parser("hd-isometric-gen-submit", help="Submit hd_isometric_gen")
+    add_shared_path_args(hd_isometric_submit)
+    add_map_workflow_args(
+        hd_isometric_submit,
+        modes=("standard", "tetraploid", "style_quad"),
+        include_template=True,
+        include_style_quad=True,
+    )
+
+    hd_isometric_run = subparsers.add_parser("hd-isometric-gen-run", help="Submit and wait for hd_isometric_gen")
+    for action in hd_isometric_submit._actions[1:]:
+        if action.dest not in {"help"}:
+            hd_isometric_run._add_action(action)
+    add_shared_runtime_args(hd_isometric_run)
+
+    hd_isometric_poll = subparsers.add_parser("hd-isometric-gen-poll", help="Poll one hd_isometric_gen workflow job")
+    add_shared_path_args(hd_isometric_poll)
+    hd_isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
+    hd_hex_isometric_submit = subparsers.add_parser("hd-hex-isometric-gen-submit", help="Submit hd_hex_isometric_gen")
+    add_shared_path_args(hd_hex_isometric_submit)
+    add_map_workflow_args(
+        hd_hex_isometric_submit,
+        modes=("standard", "tetraploid"),
+        include_template=True,
+    )
+
+    hd_hex_isometric_run = subparsers.add_parser("hd-hex-isometric-gen-run", help="Submit and wait for hd_hex_isometric_gen")
+    for action in hd_hex_isometric_submit._actions[1:]:
+        if action.dest not in {"help"}:
+            hd_hex_isometric_run._add_action(action)
+    add_shared_runtime_args(hd_hex_isometric_run)
+
+    hd_hex_isometric_poll = subparsers.add_parser("hd-hex-isometric-gen-poll", help="Poll one hd_hex_isometric_gen workflow job")
+    add_shared_path_args(hd_hex_isometric_poll)
+    hd_hex_isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
     music_submit = subparsers.add_parser("music-submit", help="Submit a music_generator job")
     add_shared_path_args(music_submit)
     music_submit.add_argument("--prompt", default="", help="Music requirement text; optional when reference images are provided")
@@ -3084,12 +3683,128 @@ def main() -> int:
     run_dir = _create_run_dir(args.work_dir, args.command)
     effective_output_dir = _resolve_output_dir(args.output_dir, run_dir)
     try:
-        needs_api_key = not (args.command == "pixel-gen-run" and getattr(args, "dry_run", False))
+        no_auth_commands = {
+            "map-reference-search",
+            "map-preset-search",
+            "map-reference-download",
+            "map-preset-download",
+        }
+        needs_api_key = args.command not in no_auth_commands and not (
+            args.command == "pixel-gen-run" and getattr(args, "dry_run", False)
+        )
         args.api_key = (
             _resolve_auth_token(args.api_key, getattr(args, "dev_key", ""))
             if needs_api_key
             else str(args.api_key or "").strip()
         )
+
+        if args.command in {"map-reference-search", "map-preset-search"}:
+            if args.download:
+                search_payload, downloads = download_map_presets(
+                    api_base=args.api_base,
+                    query=args.query,
+                    workflow_id=args.workflow_id,
+                    template_id=args.template_id,
+                    tile_size=args.tile_size,
+                    asset_kind=args.asset_kind,
+                    group=args.group,
+                    limit=args.limit,
+                    output_dir=str(effective_output_dir),
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                _write_meta(
+                    run_dir=run_dir,
+                    started_at=started_at,
+                    finished_at=datetime.now().isoformat(timespec="seconds"),
+                    args=args,
+                    request_payload={
+                        "query": args.query,
+                        "workflow_id": args.workflow_id,
+                        "template_id": args.template_id,
+                        "tile_size": args.tile_size,
+                        "asset_kind": args.asset_kind,
+                        "group": args.group,
+                        "limit": args.limit,
+                    },
+                    response_payload=search_payload,
+                    downloads=downloads,
+                    effective_output_dir=str(effective_output_dir),
+                )
+                print(f"[INFO] saved_dir={effective_output_dir}")
+                print(_format_json_for_display(search_payload))
+                return 0
+
+            payload = search_map_presets(
+                api_base=args.api_base,
+                query=args.query,
+                workflow_id=args.workflow_id,
+                template_id=args.template_id,
+                tile_size=args.tile_size,
+                asset_kind=args.asset_kind,
+                group=args.group,
+                limit=args.limit,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload={
+                    "query": args.query,
+                    "workflow_id": args.workflow_id,
+                    "template_id": args.template_id,
+                    "tile_size": args.tile_size,
+                    "asset_kind": args.asset_kind,
+                    "group": args.group,
+                    "limit": args.limit,
+                },
+                response_payload=payload,
+                downloads=[],
+                effective_output_dir=str(effective_output_dir),
+            )
+            print(_format_json_for_display(payload))
+            return 0
+
+        if args.command in {"map-reference-download", "map-preset-download"}:
+            search_payload, downloads = download_map_presets(
+                api_base=args.api_base,
+                query=args.query,
+                preset_ids=list(args.preset_id or []),
+                workflow_id=args.workflow_id,
+                template_id=args.template_id,
+                tile_size=args.tile_size,
+                asset_kind=args.asset_kind,
+                group=args.group,
+                limit=args.limit,
+                output_dir=str(effective_output_dir),
+                timeout=args.timeout,
+                verify=verify,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload={
+                    "preset_ids": list(args.preset_id or []),
+                    "query": args.query,
+                    "workflow_id": args.workflow_id,
+                    "template_id": args.template_id,
+                    "tile_size": args.tile_size,
+                    "asset_kind": args.asset_kind,
+                    "group": args.group,
+                    "limit": args.limit,
+                },
+                response_payload=search_payload,
+                downloads=downloads,
+                effective_output_dir=str(effective_output_dir),
+            )
+            print(f"[INFO] saved_dir={effective_output_dir}")
+            print(_format_json_for_display(search_payload))
+            return 0
 
         if args.command == "pixel-gen-template-info":
             payload = pixel_gen_template_info(
@@ -3873,7 +4588,13 @@ def main() -> int:
             print(_format_json_for_display(final_payload))
             return 0
 
-        if args.command in {"sound-poll", "sfx-poll", "sound-effect-poll", "texture-gen-poll", "tileset-gen-poll"}:
+        if args.command in {
+            "sound-poll",
+            "sfx-poll",
+            "sound-effect-poll",
+            "texture-gen-poll",
+            "tileset-gen-poll",
+        } or args.command in MAP_WORKFLOW_POLL_COMMANDS:
             payload = poll_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -4056,6 +4777,116 @@ def main() -> int:
                 background_texture=args.background_texture,
                 texture_reference_size=args.texture_reference_size,
                 texture_reference_mode=args.texture_reference_mode,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=slug_seed,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload={"submit": submit_payload, "final": final_payload},
+                downloads=downloads,
+                effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command in MAP_WORKFLOW_COMMANDS and args.command not in MAP_WORKFLOW_POLL_COMMANDS:
+            workflow_id = MAP_WORKFLOW_COMMANDS[args.command]
+            reference_images = list(getattr(args, "reference_image", []) or [])
+            request_payload = {
+                "workflow_id": workflow_id,
+                "prompt": args.prompt,
+                "reference_images": reference_images,
+                "mode": args.mode,
+                "template": getattr(args, "template", ""),
+                "similar_tiles": getattr(args, "similar_tiles", None),
+                "tile_only": getattr(args, "tile_only", None),
+                "road_template_id": getattr(args, "road_template_id", ""),
+                "road_width": getattr(args, "road_width", None),
+                "style_name": getattr(args, "style_name", ""),
+                "style_description": getattr(args, "style_description", ""),
+                "top_left": getattr(args, "top_left", ""),
+                "top_right": getattr(args, "top_right", ""),
+                "bottom_left": getattr(args, "bottom_left", ""),
+                "bottom_right": getattr(args, "bottom_right", ""),
+                "project_id": args.project_id,
+                "thread_id": args.thread_id,
+            }
+            if args.command.endswith("-submit"):
+                payload = submit_map_workflow(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    workflow_id=workflow_id,
+                    prompt=args.prompt,
+                    reference_images=reference_images,
+                    mode=args.mode,
+                    template=getattr(args, "template", ""),
+                    similar_tiles=getattr(args, "similar_tiles", None),
+                    tile_only=getattr(args, "tile_only", None),
+                    road_template_id=getattr(args, "road_template_id", ""),
+                    road_width=getattr(args, "road_width", None),
+                    style_name=getattr(args, "style_name", ""),
+                    style_description=getattr(args, "style_description", ""),
+                    top_left=getattr(args, "top_left", ""),
+                    top_right=getattr(args, "top_right", ""),
+                    bottom_left=getattr(args, "bottom_left", ""),
+                    bottom_right=getattr(args, "bottom_right", ""),
+                    project_id=args.project_id,
+                    thread_id=args.thread_id,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                _write_meta(
+                    run_dir=run_dir,
+                    started_at=started_at,
+                    finished_at=datetime.now().isoformat(timespec="seconds"),
+                    args=args,
+                    request_payload=request_payload,
+                    response_payload=payload,
+                    downloads=[],
+                    effective_output_dir=str(effective_output_dir),
+                )
+                print(_format_json_for_display(payload))
+                return 0
+
+            slug_seed = args.prompt or workflow_id
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            submit_payload, final_payload = run_map_workflow(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                workflow_id=workflow_id,
+                prompt=args.prompt,
+                reference_images=reference_images,
+                mode=args.mode,
+                template=getattr(args, "template", ""),
+                similar_tiles=getattr(args, "similar_tiles", None),
+                tile_only=getattr(args, "tile_only", None),
+                road_template_id=getattr(args, "road_template_id", ""),
+                road_width=getattr(args, "road_width", None),
+                style_name=getattr(args, "style_name", ""),
+                style_description=getattr(args, "style_description", ""),
+                top_left=getattr(args, "top_left", ""),
+                top_right=getattr(args, "top_right", ""),
+                bottom_left=getattr(args, "bottom_left", ""),
+                bottom_right=getattr(args, "bottom_right", ""),
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,

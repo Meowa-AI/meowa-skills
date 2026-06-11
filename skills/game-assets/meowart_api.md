@@ -24,6 +24,11 @@
 - `self-loop-run`：基于现有图片生成 self-loop 无缝循环图。目前支持横向或纵向无缝拼接，适合用于横版卷轴背景、纵向场景和可重复平铺的纹理。
 - `texture-gen-run`：生成单张像素纹理 texture，适合水面、石块、墙面、木板、岩浆等可平铺地表或材质；默认追加四方连续后处理。
 - `tileset-gen-run`：生成 dual-grid 15 地形过渡 tileset，适合草地/水面、石地/岩浆等前景和背景 terrain 过渡。
+- `map-reference-search` / `map-reference-download`：搜索并下载 Meowa 内置地图 preset 图片。地图类需求必须先查这里；如果已有合适图片，直接用 preset，不要再生成。
+- `isometric-gen-run`：生成像素等角地图块，后端 workflow 为 `pixel_isometric_gen`。
+- `hex-isometric-gen-run`：生成像素六角等角地图块，后端 workflow 为 `pixel_hex_isometric_gen`。
+- `hd-isometric-gen-run`：生成高清等角地图块，后端 workflow 为 `hd_isometric_gen`。
+- `hd-hex-isometric-gen-run`：生成高清六角等角地图块，后端 workflow 为 `hd_hex_isometric_gen`。
 - `remove-background-run`：对现有图片做去背景处理
   - 像素图片使用 `pixel` 模式，只支持去白色背景。支持任意尺寸输入，最好提前做过 pixelate，且不需要提前缩放到 nano banana尺寸。
   - 普通图片使用 `hd`，支持任意背景色
@@ -38,6 +43,7 @@
 - 明确要高清非像素角色、透明 PNG、高清 icon 或物品包时：先执行 `hd-gen-template-info`，再用 `hd-gen-run`。
 - 明确要可平铺 texture / material tile / 地表纹理时：执行 `texture-gen-run`。
 - 明确要 terrain tileset / dual-grid 地形过渡图时：执行 `tileset-gen-run`。
+- 明确要地图块、isometric tile、hex tile、HD isometric map、地图 preset 时：先执行 `map-reference-search`。命中合适结果时执行 `map-reference-download` 或 `map-reference-search --download`，直接交付 preset；只有没有合适 preset 时才执行对应的 `*-isometric-gen-run` 生成。
 - 明确要 SFX、音效、UI click、攻击、拾取、爆炸、技能音时：执行 `sound-run` 或 `sfx-run`。
 - 不要因为需求写了“人物”“背景”“场景”就直接使用 `gemini-generate-content`。如果最终要求是像素资产，`pixel-gen-run` 优先。
 - 只有非像素概念图、高清插画、完整大背景概念稿、UI 整体视觉稿，或明确没有合适 pixel template 时，才使用 `gemini-generate-content`。
@@ -408,7 +414,101 @@ python3 skills/meowart_api.py \
 - `--texture-reference-size 64`
 - `--texture-reference-mode white_region_fill|texture_block_fill`
 
-## 12. Animate
+## 12. Map Presets And Isometric Map Generators
+
+地图生成前必须先搜索内置 preset。命中合适图片时直接下载复用：
+
+```bash
+python3 skills/meowart_api.py \
+  map-reference-search \
+  --query "ocean water" \
+  --workflow-id pixel_isometric_gen \
+  --tile-size 1x1 \
+  --limit 8
+```
+
+直接下载搜索结果：
+
+```bash
+python3 skills/meowart_api.py \
+  map-reference-search \
+  --query "desert" \
+  --workflow-id pixel_hex_isometric_gen \
+  --download \
+  --limit 6 \
+  --output-dir ./outputs/desert_hex_presets
+```
+
+也可以按 preset id 下载：
+
+```bash
+python3 skills/meowart_api.py \
+  map-reference-download \
+  --preset-id pixel-isometric-xxxxxxxxxxxxxxxx \
+  --output-dir ./outputs/map_presets
+```
+
+没有合适 preset 时再生成新的等角地图块。像素等角小地块通常需要两张参考图：
+
+```bash
+python3 skills/meowart_api.py \
+  isometric-gen-run \
+  --prompt "two cozy forest RPG isometric pixel tiles with mossy stones" \
+  --reference-image ./preset_01.png \
+  --reference-image ./preset_02.png \
+  --similar-tiles \
+  --output-dir ./outputs/forest_isometric
+```
+
+像素六角等角地图块：
+
+```bash
+python3 skills/meowart_api.py \
+  hex-isometric-gen-run \
+  --prompt "two ocean hex isometric pixel tiles with coral and shallow water" \
+  --reference-image ./hex_01.png \
+  --reference-image ./hex_02.png \
+  --similar-tiles \
+  --output-dir ./outputs/ocean_hex
+```
+
+高清等角地图块可以直接用后端模板参考图；大块模式可传 2 到 4 张参考图：
+
+```bash
+python3 skills/meowart_api.py \
+  hd-isometric-gen-run \
+  --prompt "modern hospital block with clean roads and plaza" \
+  --template modern \
+  --mode standard \
+  --similar-tiles \
+  --output-dir ./outputs/modern_hd_isometric
+```
+
+高清六角等角地图块：
+
+```bash
+python3 skills/meowart_api.py \
+  hd-hex-isometric-gen-run \
+  --prompt "clean sci-fi hex platform with glowing edge lights" \
+  --template clean_scifi \
+  --mode standard \
+  --similar-tiles \
+  --output-dir ./outputs/scifi_hd_hex
+```
+
+常用参数：
+
+- `map-reference-search --query "关键词"`：搜索内置 preset，关键词可用 `ocean`、`desert`、`grassland`、`modern`、`clay`、`hex` 等。
+- `--workflow-id pixel_isometric_gen|pixel_hex_isometric_gen|hd_isometric_gen|hd_hex_isometric_gen|tileset_gen`
+- `--template-id ocean|desert|grassland|modern|clay|clean_scifi|...`
+- `--tile-size 1x1|2x2|7-cell|tileset-template`
+- `--asset-kind reference|template`
+- `isometric-gen-run --mode standard|edit|tetraploid|road`
+- `hex-isometric-gen-run --mode standard|edit|tetraploid|heptaploid`
+- `hd-isometric-gen-run --mode standard|tetraploid|style_quad`
+- `hd-hex-isometric-gen-run --mode standard|tetraploid`
+
+## 13. Animate
 
 ```bash
 python3 skills/meowart_api.py \

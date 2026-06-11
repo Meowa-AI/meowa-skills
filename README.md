@@ -2,6 +2,7 @@
 
 Create game-ready 2D assets with Meowa from inside Codex: pixel sprites, HD
 assets, props, backgrounds, seamless loops, texture tiles, terrain tilesets,
+reusable map presets, isometric and hex map tiles,
 transparent PNGs, simple animations, UI mockups, sound effects, and
 loop-friendly game music drafts.
 
@@ -17,6 +18,7 @@ files before handing them back to a game project.
 - Backgrounds, scene concepts, and 16:9 or other fixed-ratio game art
 - Seamless horizontal, vertical, or four-way looping backgrounds and textures
 - Single texture tiles and dual-grid terrain tilesets
+- Reusable map preset images and generated isometric/hex map tiles
 - Transparent PNG assets through pixel or HD background removal
 - Pixel-cleaned versions of larger AI-generated images
 - Short character or object animations as WebP, GIF, or spritesheets
@@ -227,6 +229,29 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/grass_water_tileset
 ```
 
+Search reusable map presets before generating new map tiles:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  map-reference-search \
+  --query "ocean water" \
+  --workflow-id pixel_isometric_gen \
+  --tile-size 1x1 \
+  --limit 8
+```
+
+Generate new map tiles only when the preset catalog does not contain a suitable asset:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  isometric-gen-run \
+  --prompt "two cozy forest RPG isometric pixel tiles with mossy stones" \
+  --reference-image ./preset_01.png \
+  --reference-image ./preset_02.png \
+  --similar-tiles \
+  --output-dir ./outputs/forest_isometric
+```
+
 Remove a white background from a pixel sprite:
 
 ```bash
@@ -358,6 +383,7 @@ Typical saved files include:
 - For batch templates, write the whole batch request, not a single-object prompt.
 - For HD assets, choose an HD template first instead of using generic image generation.
 - For texture tiles and terrain tilesets, use `texture-gen-run` or `tileset-gen-run` before falling back to generic image generation.
+- For map tile requests, run `map-reference-search` first. If a preset matches, download and use it directly; generate with `isometric-gen-run`, `hex-isometric-gen-run`, `hd-isometric-gen-run`, or `hd-hex-isometric-gen-run` only when no preset fits.
 - For sound effects, keep prompts concrete and short, then use `--sound-pack` or `--variants` only when you really need multiple outputs.
 - For music, start with prompt-only mode, then generate a 30 second demo before a full track.
 - Always inspect generated assets before committing them to a game pipeline.
