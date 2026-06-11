@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.06.11.2"
+MEOWART_API_CLI_VERSION = "2026.06.11.3"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -1485,6 +1485,7 @@ def submit_pixel_gen(
     temperature: float = 0.0,
     include_base64: bool = False,
     reference_file: str = "",
+    reference_files: list[str] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -1501,12 +1502,21 @@ def submit_pixel_gen(
         data["job_name"] = job_name
     if model_name:
         data["model_name"] = model_name
-    files = None
+    files: list[tuple[str, tuple[str, bytes, str]]] | None = None
     if str(reference_file or "").strip():
         path = Path(reference_file).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(f"reference file not found: {path}")
-        files = {"reference_file": (path.name, path.read_bytes(), _mime_for_path(path))}
+        files = [("reference_file", (path.name, path.read_bytes(), _mime_for_path(path)))]
+    for raw_path in reference_files or []:
+        if not str(raw_path or "").strip():
+            continue
+        path = Path(raw_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"reference file not found: {path}")
+        if files is None:
+            files = []
+        files.append(("reference_files", (path.name, path.read_bytes(), _mime_for_path(path))))
 
     response, payload = _request_json(
         method="POST",
@@ -1589,6 +1599,7 @@ def run_pixel_gen(
     temperature: float = 0.0,
     include_base64: bool = False,
     reference_file: str = "",
+    reference_files: list[str] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -1606,6 +1617,7 @@ def run_pixel_gen(
         temperature=temperature,
         include_base64=include_base64,
         reference_file=reference_file,
+        reference_files=reference_files,
         timeout=timeout,
         verify=verify,
     )
@@ -3264,6 +3276,7 @@ def parse_args() -> argparse.Namespace:
     pixel_submit.add_argument("--resolution", default="", help=argparse.SUPPRESS)
     pixel_submit.add_argument("--aspect-ratio", default="1:1")
     pixel_submit.add_argument("--reference-file", default="", help="Optional user reference image sent as reference_file")
+    pixel_submit.add_argument("--reference-files", action="append", default=[], help="Optional user reference image; can be repeated")
 
     pixel_run = subparsers.add_parser("pixel-gen-run", help="Submit and wait for pixel-gen")
     for action in pixel_submit._actions[1:]:
@@ -3869,6 +3882,7 @@ def main() -> int:
                 job_name=args.job_name,
                 aspect_ratio=args.aspect_ratio,
                 reference_file=args.reference_file,
+                reference_files=list(args.reference_files or []),
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -3884,6 +3898,7 @@ def main() -> int:
                     "job_name": args.job_name,
                     "aspect_ratio": args.aspect_ratio,
                     "reference_file": args.reference_file,
+                    "reference_files": list(args.reference_files or []),
                 },
                 response_payload=payload,
                 downloads=[],
@@ -3901,6 +3916,7 @@ def main() -> int:
                 "job_name": args.job_name,
                 "aspect_ratio": args.aspect_ratio,
                 "reference_file": args.reference_file,
+                "reference_files": list(args.reference_files or []),
             }
             predicted_output_dir = _predict_saved_dir(effective_output_dir, args.job_name or args.requirement)
             print(f"[INFO] planned_output_dir={predicted_output_dir}")
@@ -3932,6 +3948,7 @@ def main() -> int:
                 job_name=args.job_name,
                 aspect_ratio=args.aspect_ratio,
                 reference_file=args.reference_file,
+                reference_files=list(args.reference_files or []),
                 timeout=args.timeout,
                 verify=verify,
             )

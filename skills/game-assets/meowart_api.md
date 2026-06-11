@@ -18,7 +18,7 @@
 可用能力概览：
 
 - `credits-balance`：查询当前账号剩余 credit，适合在批量生成前先确认额度是否充足。
-- `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、UI 小图标这类固定尺寸 Sprite；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
+- `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、UI 小图标、通用大尺寸像素角色和多比例像素资产；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
 - `hd-gen-run`：高清非像素资产入口。基于 HD 模板生成透明 PNG 角色、图标、物品包等；命令会自动提交、轮询并保存结果。
 - `gemini-generate-content`：通用生成入口（nano banana），适合非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿。不要把它作为像素 sprite、像素角色、像素道具、像素 icon 的默认入口；像素资产只有没有合适模板或用户明确不用模板时才 fallback 到这里。
 - `self-loop-run`：基于现有图片生成 self-loop 无缝循环图。目前支持横向或纵向无缝拼接，适合用于横版卷轴背景、纵向场景和可重复平铺的纹理。
@@ -32,7 +32,7 @@
 - `remove-background-run`：对现有图片做去背景处理
   - 像素图片使用 `pixel` 模式，只支持去白色背景。支持任意尺寸输入，最好提前做过 pixelate，且不需要提前缩放到 nano banana尺寸。
   - 普通图片使用 `hd`，支持任意背景色
-- `pixelate-run`：把较大的图片重新收敛成更干净的像素风输出，适合在 AI 先生成大图后，将其变为完美像素的 Spite。
+- `pixelate-run`：把较大的图片重新收敛成更干净的像素风输出，适合在 AI 先生成大图后，将其变为完美像素的 Sprite。
 - `animate-run`：基于单张角色图生成动作动画，适合做角色待机、跑步、跳跃、弹跳这类短循环动画。
 - `sound-run` / `sfx-run`：生成短音效，适合 UI 点击、攻击、拾取、爆炸、技能、环境短音；支持单条、音效包、同音效多版本。
 - `music-run`：生成结构化音乐描述，可选继续生成音乐音频；适合游戏 BGM、主题曲、场景音乐方向测试。
@@ -40,6 +40,7 @@
 ## 0. 命令选择
 
 - 明确要像素图、pixel art、sprite、角色、怪物、道具、物品、icon、UI 小图标时：先执行 `pixel-gen-template-info`，再用合适模板执行 `pixel-gen-run`。
+- 明确要通用像素角色、大尺寸像素角色、非 1:1 比例像素角色/物件、或没有命中特定内容模板的像素资产时：优先选择 `workflow_id` 为 `pixel_gen_general` 的模板，例如 `large_3_4`、`large_9_16`、`large_16_9`、`xlarge_1_2`，仍然使用 `pixel-gen-run`，不要改走 `gemini-generate-content`。
 - 明确要高清非像素角色、透明 PNG、高清 icon 或物品包时：先执行 `hd-gen-template-info`，再用 `hd-gen-run`。
 - 明确要可平铺 texture / material tile / 地表纹理时：执行 `texture-gen-run`。
 - 明确要 terrain tileset / dual-grid 地形过渡图时：执行 `tileset-gen-run`。
@@ -199,10 +200,11 @@ python3 skills/meowart_api.py \
 - `--dry-run`
 - `--output-dir ./outputs/pixel_gen`
 - `--reference-file ./reference.png`
+- `--reference-files ./ref2.png`，可重复，适合 `pixel_gen_general` 这类需要多张用户参考图的场景
 
 `--dry-run` 只打印计划提交的 request 和预计输出目录，不提交任务、不消耗额度，也不需要 API key。它适合在正式生成前确认模板、尺寸、输出路径是否符合预期。
 
-如果需要让服务端根据用户参考图解析需求或保持色彩/造型倾向，可以传 `--reference-file`。该参数会作为 `/api/pixel-gen` 的 `reference_file` multipart 字段上传。
+如果需要让服务端根据用户参考图解析需求或保持色彩/造型倾向，可以传 `--reference-file`。需要多张参考图时，继续追加 `--reference-files`。这些参数会分别作为 `/api/pixel-gen` 的 `reference_file` 和 `reference_files` multipart 字段上传。
 
 现在脚本也兼容把通用参数写在子命令后面，例如 `--api-base`、`--api-key`、`--timeout`、`--max-wait`、`--poll-interval`、`--output-dir`、`--work-dir`、`--no-download`、`--insecure`。下面两种写法都可以：
 
@@ -223,7 +225,9 @@ python3 skills/meowart_api.py pixel-gen-run --timeout 120 --output-dir ./outputs
 ### 模板选择建议
 
 - 物品、Icon、小动物：推荐优先使用 `food`、`object` 模板，单次通常可以生成 `8` 个 `64x64` 像素对象。
-- 人物、主角、怪物角色：推荐优先使用 `pixel_char` 模板，单次通常可以生成 `2` 个 `128x128` 对象。
+- 人物、主角、怪物角色：小尺寸批量角色优先使用 `pixel_char` 模板，单次通常可以生成 `2` 个 `128x128` 对象；大尺寸 1:1 角色优先看 `large_portrait`；通用像素角色、大尺寸非 1:1 角色或没有命中特定角色模板时，优先选择 `pixel_gen_general` 模板。
+- `pixel_gen_general` 模板是通用像素生成链路：`16_9`、`4_3`、`3_4`、`9_16` 适合中等尺寸两图输出；`large_16_9`、`large_4_3`、`large_3_4`、`large_9_16` 适合大尺寸两图输出；`xlarge_1_2`、`xlarge_2_1`、`xlarge_2_3`、`xlarge_3_2` 适合单张超大比例输出。
+- 选择 `pixel_gen_general` 时，模板名里的比例就是最终资产方向：竖版角色常用 `large_3_4`、`large_9_16` 或 `xlarge_1_2`，横版角色/载具/场景物件常用 `large_4_3`、`large_16_9` 或 `xlarge_2_1`。
 - 具体模板名称、输出尺寸和数量以 `pixel-gen-template-info` 返回为准；如果模板列表变化，优先相信接口返回。
 - 批量生成时，可以在 `--requirement` 里分别描述多个对象的外观，也可以一句话描述整体需求，让服务端按模板数量补充变体。尽量一次性生成模板支持的最大数量，因为价格和质量通常没有区别，多生成一些更方便挑选。
 
@@ -239,6 +243,40 @@ python3 skills/meowart_api.py pixel-gen-run --timeout 120 --output-dir ./outputs
 - 不要把“生成一个角色”的说法机械地套到批量模板上；单体模板和批量模板的 `requirement` 写法应该不同。
 
 推荐示例：
+
+通用大尺寸像素角色：
+
+```bash
+python3 skills/meowart_api.py \
+  pixel-gen-run \
+  --template-name "large_3_4" \
+  --requirement "two full-body fantasy pixel characters: a silver-armored knight and a red-robed fire mage" \
+  --output-dir ./outputs/pixel_general_characters
+```
+
+通用横版像素角色或物件：
+
+```bash
+python3 skills/meowart_api.py \
+  pixel-gen-run \
+  --template-name "large_16_9" \
+  --requirement "two side-view pixel airships with brass hulls and blue crystal engines" \
+  --output-dir ./outputs/pixel_general_airships
+```
+
+带多张参考图的 `pixel_gen_general`：
+
+```bash
+python3 skills/meowart_api.py \
+  pixel-gen-run \
+  --template-name "xlarge_1_2" \
+  --requirement "one tall full-body pixel heroine, preserve the outfit silhouette and color palette from the references" \
+  --reference-file ./ref_pose.png \
+  --reference-files ./ref_palette.png \
+  --output-dir ./outputs/pixel_xlarge_heroine
+```
+
+普通批量 sprite：
 
 ```bash
 python3 skills/meowart_api.py \

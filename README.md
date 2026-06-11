@@ -13,7 +13,7 @@ files before handing them back to a game project.
 
 ## What It Can Generate
 
-- Pixel characters, enemies, props, items, icons, and sprite batches
+- Pixel characters, enemies, props, items, icons, sprite batches, and general large pixel assets in multiple aspect ratios
 - HD transparent characters, icons, props, and asset packs
 - Backgrounds, scene concepts, and 16:9 or other fixed-ratio game art
 - Seamless horizontal, vertical, or four-way looping backgrounds and textures
@@ -173,6 +173,28 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/fox_rogue
 ```
 
+Generate general large pixel characters with `pixel_gen_general`:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  pixel-gen-run \
+  --template-name "large_3_4" \
+  --requirement "two full-body fantasy pixel characters: a silver-armored knight and a red-robed fire mage" \
+  --output-dir ./outputs/pixel_general_characters
+```
+
+Generate one extra-tall pixel character from multiple references:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  pixel-gen-run \
+  --template-name "xlarge_1_2" \
+  --requirement "one tall full-body pixel heroine, preserve the outfit silhouette and color palette from the references" \
+  --reference-file ./ref_pose.png \
+  --reference-files ./ref_palette.png \
+  --output-dir ./outputs/pixel_xlarge_heroine
+```
+
 Generate a transparent HD character:
 
 ```bash
@@ -205,10 +227,13 @@ python3 skills/game-assets/meowart_api.py \
   --output-dir ./outputs/matching_background
 ```
 
-For pixel sprites, props, icons, small tile sprites, or character assets, use
-`pixel-gen-template-info` and `pixel-gen-run` first. Only use general generation
-as a fallback, then run `pixelate-run` before treating the result as a final
-pixel asset.
+For pixel sprites, props, icons, small tile sprites, character assets, or
+general large pixel assets, use `pixel-gen-template-info` and `pixel-gen-run`
+first. Prefer `pixel_gen_general` templates such as `large_3_4`,
+`large_16_9`, `xlarge_1_2`, or `xlarge_2_1` when the request asks for a
+general pixel character or object that does not fit a specific content
+template. Only use general Gemini generation as a fallback, then run
+`pixelate-run` before treating the result as a final pixel asset.
 
 Create a seamless horizontal loop from an existing background:
 
@@ -392,6 +417,7 @@ Typical saved files include:
 - For pixel sprites, avoid non-integer scaling and use nearest-neighbor sampling.
 - For local edits, keep input and output canvas dimensions stable.
 - For batch templates, write the whole batch request, not a single-object prompt.
+- For general large pixel characters or non-1:1 pixel assets, choose a `pixel_gen_general` template before falling back to Gemini.
 - For HD assets, choose an HD template first instead of using generic image generation.
 - For texture tiles and terrain tilesets, use `texture-gen-run` or `tileset-gen-run` before falling back to generic image generation.
 - For map tile requests, run `map-reference-search` first. If a preset matches, download and use it directly; generate with `isometric-gen-run`, `hex-isometric-gen-run`, `hd-isometric-gen-run`, or `hd-hex-isometric-gen-run` only when no preset fits.
