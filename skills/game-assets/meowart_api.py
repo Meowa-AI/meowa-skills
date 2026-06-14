@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.06.11.3"
+MEOWART_API_CLI_VERSION = "2026.06.14.1"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -85,6 +85,22 @@ MAP_WORKFLOW_COMMANDS = {
 }
 MAP_WORKFLOW_POLL_COMMANDS = {
     command for command in MAP_WORKFLOW_COMMANDS if command.endswith("-poll")
+}
+CHARACTER_MULTI_VIEW_ENDPOINT = "/api/workflows/character_multi_view_generator/run"
+CHARACTER_MULTI_VIEW_SUBMIT_COMMANDS = {
+    "character-multi-view-submit",
+    "character-8-direction-submit",
+    "character-eight-direction-submit",
+}
+CHARACTER_MULTI_VIEW_RUN_COMMANDS = {
+    "character-multi-view-run",
+    "character-8-direction-run",
+    "character-eight-direction-run",
+}
+CHARACTER_MULTI_VIEW_POLL_COMMANDS = {
+    "character-multi-view-poll",
+    "character-8-direction-poll",
+    "character-eight-direction-poll",
 }
 
 
@@ -2587,6 +2603,14 @@ def submit_tileset_generator(
     api_key: str,
     prompt: str = "",
     tileset_mode: str = "dual-grid-15",
+    terrain_mode: str = "dual",
+    single_terrain_region: str = "",
+    single_terrain_show_base_color: bool = False,
+    single_terrain_boundary_gap: int | None = None,
+    single_terrain_remove_background: bool = True,
+    foreground_color: str = "",
+    background_color: str = "",
+    terrain_color: str = "",
     foreground_texture: str = "",
     background_texture: str = "",
     texture_reference_size: int | None = None,
@@ -2599,8 +2623,21 @@ def submit_tileset_generator(
     data: dict[str, str] = {
         "prompt": prompt,
         "tileset_mode": tileset_mode,
+        "terrain_mode": terrain_mode,
+        "single_terrain_show_base_color": "true" if single_terrain_show_base_color else "false",
+        "single_terrain_remove_background": "true" if single_terrain_remove_background else "false",
         "texture_reference_mode": texture_reference_mode,
     }
+    if str(single_terrain_region or "").strip():
+        data["single_terrain_region"] = str(single_terrain_region).strip()
+    if single_terrain_boundary_gap is not None:
+        data["single_terrain_boundary_gap"] = str(single_terrain_boundary_gap)
+    if str(foreground_color or "").strip():
+        data["foreground_color"] = str(foreground_color).strip()
+    if str(background_color or "").strip():
+        data["background_color"] = str(background_color).strip()
+    if str(terrain_color or "").strip():
+        data["terrain_color"] = str(terrain_color).strip()
     if texture_reference_size is not None:
         data["texture_reference_size"] = str(texture_reference_size)
     if project_id is not None:
@@ -2641,6 +2678,14 @@ def run_tileset_generator(
     api_key: str,
     prompt: str = "",
     tileset_mode: str = "dual-grid-15",
+    terrain_mode: str = "dual",
+    single_terrain_region: str = "",
+    single_terrain_show_base_color: bool = False,
+    single_terrain_boundary_gap: int | None = None,
+    single_terrain_remove_background: bool = True,
+    foreground_color: str = "",
+    background_color: str = "",
+    terrain_color: str = "",
     foreground_texture: str = "",
     background_texture: str = "",
     texture_reference_size: int | None = None,
@@ -2657,6 +2702,14 @@ def run_tileset_generator(
         api_key=api_key,
         prompt=prompt,
         tileset_mode=tileset_mode,
+        terrain_mode=terrain_mode,
+        single_terrain_region=single_terrain_region,
+        single_terrain_show_base_color=single_terrain_show_base_color,
+        single_terrain_boundary_gap=single_terrain_boundary_gap,
+        single_terrain_remove_background=single_terrain_remove_background,
+        foreground_color=foreground_color,
+        background_color=background_color,
+        terrain_color=terrain_color,
         foreground_texture=foreground_texture,
         background_texture=background_texture,
         texture_reference_size=texture_reference_size,
@@ -2674,6 +2727,129 @@ def run_tileset_generator(
         api_key=api_key,
         submit_payload=submit_payload,
         label="tileset-gen",
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
+
+
+def _normalize_character_multi_view_mode(mode: str) -> str:
+    normalized = str(mode or "pixel").strip().lower() or "pixel"
+    if normalized not in {"pixel", "hd"}:
+        raise ValueError("mode must be one of: pixel, hd")
+    return normalized
+
+
+def _normalize_character_multi_view_canvas_resolution(canvas_resolution: str) -> str:
+    normalized = str(canvas_resolution or "AUTO").strip().upper() or "AUTO"
+    if normalized not in {"AUTO", "1K", "2K", "4K"}:
+        raise ValueError("canvas_resolution must be AUTO, 1K, 2K, or 4K")
+    return normalized
+
+
+def _normalize_character_multi_view_output_size(output_size: int | None) -> int | None:
+    if output_size is None:
+        return None
+    parsed = int(output_size)
+    if parsed <= 0:
+        raise ValueError("output_size must be greater than 0")
+    return parsed
+
+
+def _normalize_character_multi_view_temperature(temperature: float) -> float:
+    parsed = float(temperature)
+    if parsed < 0.0 or parsed > 1.0:
+        raise ValueError("temperature must be between 0 and 1")
+    return parsed
+
+
+def submit_character_multi_view_generator(
+    *,
+    api_base: str,
+    api_key: str,
+    reference_image: str,
+    mode: str = "pixel",
+    canvas_resolution: str = "AUTO",
+    output_size: int | None = None,
+    temperature: float = 0.0,
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    path = Path(reference_image).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"reference image not found: {path}")
+
+    normalized_mode = _normalize_character_multi_view_mode(mode)
+    normalized_output_size = _normalize_character_multi_view_output_size(output_size)
+    data: dict[str, str] = {
+        "pixel": "true" if normalized_mode == "pixel" else "false",
+        "canvas_resolution": _normalize_character_multi_view_canvas_resolution(canvas_resolution),
+        "temperature": str(_normalize_character_multi_view_temperature(temperature)),
+    }
+    if normalized_output_size is not None:
+        data["output_size"] = str(normalized_output_size)
+    if project_id is not None:
+        data["project_id"] = project_id
+    if thread_id is not None:
+        data["thread_id"] = thread_id
+
+    files = {"reference_image": (path.name, path.read_bytes(), _mime_for_path(path))}
+    url = _normalize_base_url(api_base, CHARACTER_MULTI_VIEW_ENDPOINT)
+    response, payload = _request_json(
+        method="POST",
+        url=url,
+        headers=_base_headers(api_key),
+        data=data,
+        files=files,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def run_character_multi_view_generator(
+    *,
+    api_base: str,
+    api_key: str,
+    reference_image: str,
+    mode: str = "pixel",
+    canvas_resolution: str = "AUTO",
+    output_size: int | None = None,
+    temperature: float = 0.0,
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_character_multi_view_generator(
+        api_base=api_base,
+        api_key=api_key,
+        reference_image=reference_image,
+        mode=mode,
+        canvas_resolution=canvas_resolution,
+        output_size=output_size,
+        temperature=temperature,
+        project_id=project_id,
+        thread_id=thread_id,
+        timeout=timeout,
+        verify=verify,
+    )
+    api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
+    if api_job_id:
+        print(f"[INFO] submitted api_job_id={api_job_id}")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload=submit_payload,
+        label="character-multi-view",
         timeout=timeout,
         max_wait=max_wait,
         poll_interval=poll_interval,
@@ -3350,6 +3526,44 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(hd_cancel)
     hd_cancel.add_argument("--api-job-id", required=True)
 
+    character_multi_view_submit = subparsers.add_parser(
+        "character-multi-view-submit",
+        aliases=["character-8-direction-submit", "character-eight-direction-submit"],
+        help="Submit character_multi_view_generator",
+    )
+    add_shared_path_args(character_multi_view_submit)
+    character_multi_view_submit.add_argument(
+        "--reference-image",
+        "--image-file",
+        dest="reference_image",
+        required=True,
+        help="Existing character reference image",
+    )
+    character_multi_view_submit.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    character_multi_view_submit.add_argument("--canvas-resolution", default="AUTO", choices=["AUTO", "1K", "2K", "4K"])
+    character_multi_view_submit.add_argument("--output-size", type=int, default=None, help="Optional final square sprite size")
+    character_multi_view_submit.add_argument("--temperature", type=float, default=0.0)
+    character_multi_view_submit.add_argument("--project-id", default=None)
+    character_multi_view_submit.add_argument("--thread-id", default=None)
+
+    character_multi_view_run = subparsers.add_parser(
+        "character-multi-view-run",
+        aliases=["character-8-direction-run", "character-eight-direction-run"],
+        help="Submit and wait for character_multi_view_generator",
+    )
+    for action in character_multi_view_submit._actions[1:]:
+        if action.dest not in {"help"}:
+            character_multi_view_run._add_action(action)
+    add_shared_runtime_args(character_multi_view_run)
+
+    character_multi_view_poll = subparsers.add_parser(
+        "character-multi-view-poll",
+        aliases=["character-8-direction-poll", "character-eight-direction-poll"],
+        help="Poll one character_multi_view_generator workflow job",
+    )
+    add_shared_path_args(character_multi_view_poll)
+    character_multi_view_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
     remove_bg_submit = subparsers.add_parser("remove-background-submit", help="Submit a remove-background job")
     add_shared_path_args(remove_bg_submit)
     remove_bg_submit.add_argument("--image-file", required=True)
@@ -3443,6 +3657,16 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(tileset_submit)
     tileset_submit.add_argument("--prompt", default="", help="Foreground/background terrain requirement")
     tileset_submit.add_argument("--tileset-mode", default="dual-grid-15")
+    tileset_submit.add_argument("--terrain-mode", default="dual", choices=["dual", "single"])
+    tileset_submit.add_argument("--single-terrain-region", default="", choices=["", "foreground", "background"])
+    tileset_submit.add_argument("--single-terrain-base-color", action="store_true", dest="single_terrain_show_base_color", default=False)
+    tileset_submit.add_argument("--no-single-terrain-base-color", action="store_false", dest="single_terrain_show_base_color")
+    tileset_submit.add_argument("--single-terrain-boundary-gap", type=int, default=None)
+    tileset_submit.add_argument("--single-terrain-remove-background", action="store_true", dest="single_terrain_remove_background", default=True)
+    tileset_submit.add_argument("--no-single-terrain-remove-background", action="store_false", dest="single_terrain_remove_background")
+    tileset_submit.add_argument("--foreground-color", default="", help="Optional exact foreground guide color, e.g. #67B84F")
+    tileset_submit.add_argument("--background-color", default="", help="Optional exact background guide color, e.g. #3D8EDB")
+    tileset_submit.add_argument("--terrain-color", default="", help="Optional exact single-terrain guide color")
     tileset_submit.add_argument("--foreground-texture", default="", help="Optional foreground texture reference image")
     tileset_submit.add_argument("--background-texture", default="", help="Optional background texture reference image")
     tileset_submit.add_argument("--texture-reference-size", type=int, default=None)
@@ -4644,7 +4868,7 @@ def main() -> int:
             "sound-effect-poll",
             "texture-gen-poll",
             "tileset-gen-poll",
-        } or args.command in MAP_WORKFLOW_POLL_COMMANDS:
+        } or args.command in MAP_WORKFLOW_POLL_COMMANDS or args.command in CHARACTER_MULTI_VIEW_POLL_COMMANDS:
             payload = poll_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -4678,6 +4902,93 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
+            return 0
+
+        if args.command in CHARACTER_MULTI_VIEW_SUBMIT_COMMANDS:
+            request_payload = {
+                "reference_image": args.reference_image,
+                "mode": args.mode,
+                "canvas_resolution": args.canvas_resolution,
+                "output_size": args.output_size,
+                "temperature": args.temperature,
+                "project_id": args.project_id,
+                "thread_id": args.thread_id,
+            }
+            payload = submit_character_multi_view_generator(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                reference_image=args.reference_image,
+                mode=args.mode,
+                canvas_resolution=args.canvas_resolution,
+                output_size=args.output_size,
+                temperature=args.temperature,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload=payload,
+                downloads=[],
+                effective_output_dir=str(effective_output_dir),
+            )
+            print(_format_json_for_display(payload))
+            return 0
+
+        if args.command in CHARACTER_MULTI_VIEW_RUN_COMMANDS:
+            slug_seed = f"{Path(args.reference_image).stem}_{args.mode}_multi_view"
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            request_payload = {
+                "reference_image": args.reference_image,
+                "mode": args.mode,
+                "canvas_resolution": args.canvas_resolution,
+                "output_size": args.output_size,
+                "temperature": args.temperature,
+                "project_id": args.project_id,
+                "thread_id": args.thread_id,
+            }
+            submit_payload, final_payload = run_character_multi_view_generator(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                reference_image=args.reference_image,
+                mode=args.mode,
+                canvas_resolution=args.canvas_resolution,
+                output_size=args.output_size,
+                temperature=args.temperature,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=slug_seed,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload={"submit": submit_payload, "final": final_payload},
+                downloads=downloads,
+                effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
             return 0
 
         if args.command == "texture-gen-submit":
@@ -4771,6 +5082,14 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "tileset_mode": args.tileset_mode,
+                "terrain_mode": args.terrain_mode,
+                "single_terrain_region": args.single_terrain_region,
+                "single_terrain_show_base_color": args.single_terrain_show_base_color,
+                "single_terrain_boundary_gap": args.single_terrain_boundary_gap,
+                "single_terrain_remove_background": args.single_terrain_remove_background,
+                "foreground_color": args.foreground_color,
+                "background_color": args.background_color,
+                "terrain_color": args.terrain_color,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
                 "texture_reference_size": args.texture_reference_size,
@@ -4783,6 +5102,14 @@ def main() -> int:
                 api_key=args.api_key,
                 prompt=args.prompt,
                 tileset_mode=args.tileset_mode,
+                terrain_mode=args.terrain_mode,
+                single_terrain_region=args.single_terrain_region,
+                single_terrain_show_base_color=args.single_terrain_show_base_color,
+                single_terrain_boundary_gap=args.single_terrain_boundary_gap,
+                single_terrain_remove_background=args.single_terrain_remove_background,
+                foreground_color=args.foreground_color,
+                background_color=args.background_color,
+                terrain_color=args.terrain_color,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
                 texture_reference_size=args.texture_reference_size,
@@ -4811,6 +5138,14 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "tileset_mode": args.tileset_mode,
+                "terrain_mode": args.terrain_mode,
+                "single_terrain_region": args.single_terrain_region,
+                "single_terrain_show_base_color": args.single_terrain_show_base_color,
+                "single_terrain_boundary_gap": args.single_terrain_boundary_gap,
+                "single_terrain_remove_background": args.single_terrain_remove_background,
+                "foreground_color": args.foreground_color,
+                "background_color": args.background_color,
+                "terrain_color": args.terrain_color,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
                 "texture_reference_size": args.texture_reference_size,
@@ -4823,6 +5158,14 @@ def main() -> int:
                 api_key=args.api_key,
                 prompt=args.prompt,
                 tileset_mode=args.tileset_mode,
+                terrain_mode=args.terrain_mode,
+                single_terrain_region=args.single_terrain_region,
+                single_terrain_show_base_color=args.single_terrain_show_base_color,
+                single_terrain_boundary_gap=args.single_terrain_boundary_gap,
+                single_terrain_remove_background=args.single_terrain_remove_background,
+                foreground_color=args.foreground_color,
+                background_color=args.background_color,
+                terrain_color=args.terrain_color,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
                 texture_reference_size=args.texture_reference_size,

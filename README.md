@@ -235,6 +235,16 @@ general pixel character or object that does not fit a specific content
 template. Only use general Gemini generation as a fallback, then run
 `pixelate-run` before treating the result as a final pixel asset.
 
+Generate eight direction views from one existing character reference:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  character-multi-view-run \
+  --reference-image ./outputs/hero/reference.png \
+  --mode pixel \
+  --output-dir ./outputs/hero_8_direction
+```
+
 Create a seamless horizontal loop from an existing background:
 
 ```bash
@@ -262,7 +272,21 @@ Generate a dual-grid terrain tileset:
 python3 skills/game-assets/meowart_api.py \
   tileset-gen-run \
   --prompt "lush grass foreground plus shallow blue water background" \
+  --foreground-color "#67B84F" \
+  --background-color "#3D8EDB" \
   --output-dir ./outputs/grass_water_tileset
+```
+
+Generate one terrain with the other side transparent:
+
+```bash
+python3 skills/game-assets/meowart_api.py \
+  tileset-gen-run \
+  --terrain-mode single \
+  --single-terrain-region foreground \
+  --foreground-color "#67B84F" \
+  --prompt "simple grass edge" \
+  --output-dir ./outputs/grass_transparent_tileset
 ```
 
 Search reusable map presets before generating new map tiles:

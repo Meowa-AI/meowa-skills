@@ -20,6 +20,7 @@
 - `credits-balance`：查询当前账号剩余 credit，适合在批量生成前先确认额度是否充足。
 - `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、UI 小图标、通用大尺寸像素角色和多比例像素资产；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
 - `hd-gen-run`：高清非像素资产入口。基于 HD 模板生成透明 PNG 角色、图标、物品包等；命令会自动提交、轮询并保存结果。
+- `character-multi-view-run`：从一张已有角色参考图生成角色八向图，输出 8 张透明方向图和一个 3x3 预览图；支持 `pixel` 和 `hd` 模式。
 - `gemini-generate-content`：通用生成入口（nano banana），适合非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿。不要把它作为像素 sprite、像素角色、像素道具、像素 icon 的默认入口；像素资产只有没有合适模板或用户明确不用模板时才 fallback 到这里。
 - `self-loop-run`：基于现有图片生成 self-loop 无缝循环图。目前支持横向或纵向无缝拼接，适合用于横版卷轴背景、纵向场景和可重复平铺的纹理。
 - `texture-gen-run`：生成单张像素纹理 texture，适合水面、石块、墙面、木板、岩浆等可平铺地表或材质；默认追加四方连续后处理。
@@ -42,6 +43,7 @@
 - 明确要像素图、pixel art、sprite、角色、怪物、道具、物品、icon、UI 小图标时：先执行 `pixel-gen-template-info`，再用合适模板执行 `pixel-gen-run`。
 - 明确要通用像素角色、大尺寸像素角色、非 1:1 比例像素角色/物件、或没有命中特定内容模板的像素资产时：优先选择 `workflow_id` 为 `pixel_gen_general` 的模板，例如 `large_3_4`、`large_9_16`、`large_16_9`、`xlarge_1_2`，仍然使用 `pixel-gen-run`，不要改走 `gemini-generate-content`。
 - 明确要高清非像素角色、透明 PNG、高清 icon 或物品包时：先执行 `hd-gen-template-info`，再用 `hd-gen-run`。
+- 明确要“角色八向图 / 8-direction character / 多方向角色图”，且已有一张角色参考图时：执行 `character-multi-view-run`，不要用普通 direction 模板逐张生成。
 - 明确要可平铺 texture / material tile / 地表纹理时：执行 `texture-gen-run`。
 - 明确要 terrain tileset / dual-grid 地形过渡图时：执行 `tileset-gen-run`。
 - 明确要地图块、isometric tile、hex tile、HD isometric map、地图 preset 时：先执行 `map-reference-search`。命中合适结果时执行 `map-reference-download` 或 `map-reference-search --download`，直接交付 preset；只有没有合适 preset 时才执行对应的 `*-isometric-gen-run` 生成。
@@ -359,6 +361,47 @@ python3 skills/meowart_api.py hd-gen-poll --api-job-id <api_job_id>
 python3 skills/meowart_api.py hd-gen-download --api-job-id <api_job_id> --output-dir ./outputs/hd_download
 ```
 
+## 6.1 角色八向图 / Character Multi-View
+
+已有一张角色参考图，并且目标是生成同一个角色的 8 个方向视图时，使用 `character-multi-view-run`。
+它会调用后端 `character_multi_view_generator` workflow，输出 8 张透明 PNG 方向图和一个中心留空的 3x3 预览图。
+
+像素八向图：
+
+```bash
+python3 skills/meowart_api.py \
+  character-multi-view-run \
+  --reference-image ./hero_front.png \
+  --mode pixel \
+  --output-dir ./outputs/hero_8_direction
+```
+
+高清八向图：
+
+```bash
+python3 skills/meowart_api.py \
+  character-multi-view-run \
+  --reference-image ./hero_front.png \
+  --mode hd \
+  --output-size 1024 \
+  --output-dir ./outputs/hero_hd_8_direction
+```
+
+常用参数：
+
+- `--reference-image ./hero.png` 或 `--image-file ./hero.png`
+- `--mode pixel|hd`
+- `--canvas-resolution AUTO|1K|2K|4K`
+- `--output-size 512`：可选，指定每张方向图的最终正方形尺寸。
+- `--temperature 0.0`
+
+别名：`character-8-direction-run` 和 `character-eight-direction-run` 等价于 `character-multi-view-run`。
+如果已经有任务 id，可以用：
+
+```bash
+python3 skills/meowart_api.py character-multi-view-poll --api-job-id <api_job_id>
+```
+
 ## 7. Remove Background
 
 像素图通常用：
@@ -457,10 +500,39 @@ python3 skills/meowart_api.py \
 常用参数：
 
 - `--tileset-mode dual-grid-15`
+- `--terrain-mode dual|single`
+- `--foreground-color "#67B84F"` / `--background-color "#3D8EDB"`：精确前景/背景引导色。
+- `--terrain-color "#67B84F"`：single 模式的单地形精确引导色。
+- `--single-terrain-region foreground|background`：single 模式保留中央前景区或周围背景区；另一侧默认移除成透明。
+- `--single-terrain-remove-background` / `--no-single-terrain-remove-background`
 - `--foreground-texture ./foreground.png`
 - `--background-texture ./background.png`
 - `--texture-reference-size 64`
 - `--texture-reference-mode white_region_fill|texture_block_fill`
+
+生成“只有前景、背景透明”的 tileset：
+
+```bash
+python3 skills/meowart_api.py \
+  tileset-gen-run \
+  --terrain-mode single \
+  --single-terrain-region foreground \
+  --foreground-color "#67B84F" \
+  --prompt "simple grass edge" \
+  --output-dir ./outputs/grass_transparent_tileset
+```
+
+生成“只有背景、前景透明”的 tileset：
+
+```bash
+python3 skills/meowart_api.py \
+  tileset-gen-run \
+  --terrain-mode single \
+  --single-terrain-region background \
+  --background-color "#3D8EDB" \
+  --prompt "simple water edge" \
+  --output-dir ./outputs/water_transparent_tileset
+```
 
 ## 12. Map Presets And Isometric Map Generators
 

@@ -1,6 +1,6 @@
 {
-  "version": "2026.06.11.3",
+  "version": "2026.06.14.1",
   "min_bootstrap_version": 1,
   "runner_url": "https://raw.githubusercontent.com/Meowa-AI/meowa-skills/main/skills/game-assets/meowart_api.py",
-  "sha256": "f8972dd7f50fd620ae95fa22db50099e411ef5629ab45f6d56e547e11d3bc2f7"
+  "sha256": "3165f01d6911b1f7077f678fff934060a5b9849503dfe90bdaeed01c893d5308"
 }
