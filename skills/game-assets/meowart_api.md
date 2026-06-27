@@ -12,6 +12,7 @@
 - 不存在 `POST /generate` 或 `POST /api/generate`。
 - 像素资产生成固定使用 `POST /api/pixel-gen`，再用 `GET /api/pixel-gen/jobs?id=<api_job_id>` 轮询。
 - 高清资产生成固定使用 `POST /api/hd-gen`，再用 `GET /api/hd-gen/jobs?id=<api_job_id>` 轮询。
+- 游戏 UI 图集生成固定使用 `POST /api/workflows/general_ui_gen/run`，再用 `GET /api/jobs?id=<job_id>` 轮询。
 - 通用 Gemini 代理使用 `POST /api/gemini/...` 或封装命令 `gemini-generate-content`。
 - 如果调用方收到 404 且路径是 `/generate`，先修正 endpoint，不要把它解释为 API key 无效。
 
@@ -21,7 +22,8 @@
 - `pixel-gen-run`：像素资产默认入口。基于模板生成像素图片，适合角色、怪物、物件、道具、icon、UI 小图标、通用大尺寸像素角色和多比例像素资产；命令会自动提交、轮询并保存结果。某些模板支持批量生成 N 个 Sprite，但是费用不变。
 - `hd-gen-run`：高清非像素资产入口。基于 HD 模板生成透明 PNG 角色、图标、物品包等；命令会自动提交、轮询并保存结果。
 - `character-multi-view-run`：从一张已有角色参考图生成角色八向图，输出 8 张透明方向图和一个 3x3 预览图；支持 `pixel` 和 `hd` 模式。
-- `gemini-generate-content`：通用生成入口（nano banana），适合非像素概念图、高清/插画资产、大幅完整背景概念稿、UI 整体视觉稿。不要把它作为像素 sprite、像素角色、像素道具、像素 icon 的默认入口；像素资产只有没有合适模板或用户明确不用模板时才 fallback 到这里。
+- `ui-gen-run`：游戏 UI 图集专用入口。适合 HUD、菜单、按钮、面板、技能栏、背包窗口、UI icon 组合等；支持参考图、透明背景、组件 bbox 拆分，也支持 `ui_extract` 从已有 UI 图里抽取组件。
+- `gemini-generate-content`：通用生成入口（nano banana），适合非像素概念图、高清/插画资产、大幅完整背景概念稿。不要把它作为像素 sprite、像素角色、像素道具、像素 icon 或游戏 UI 图集的默认入口；像素资产只有没有合适模板或用户明确不用模板时才 fallback 到这里。
 - `self-loop-run`：基于现有图片生成 self-loop 无缝循环图。目前支持横向或纵向无缝拼接，适合用于横版卷轴背景、纵向场景和可重复平铺的纹理。
 - `texture-gen-run`：生成单张像素纹理 texture，适合水面、石块、墙面、木板、岩浆等可平铺地表或材质；默认追加四方连续后处理。
 - `tileset-gen-run`：生成 dual-grid 15 地形过渡 tileset，适合草地/水面、石地/岩浆等前景和背景 terrain 过渡。
@@ -44,12 +46,13 @@
 - 明确要通用像素角色、大尺寸像素角色、非 1:1 比例像素角色/物件、或没有命中特定内容模板的像素资产时：优先选择 `workflow_id` 为 `pixel_gen_general` 的模板，例如 `large_3_4`、`large_9_16`、`large_16_9`、`xlarge_1_2`，仍然使用 `pixel-gen-run`，不要改走 `gemini-generate-content`。
 - 明确要高清非像素角色、透明 PNG、高清 icon 或物品包时：先执行 `hd-gen-template-info`，再用 `hd-gen-run`。
 - 明确要“角色八向图 / 8-direction character / 多方向角色图”，且已有一张角色参考图时：执行 `character-multi-view-run`，不要用普通 direction 模板逐张生成。
+- 明确要游戏 UI 图集、HUD、菜单、按钮、窗口、技能栏、背包面板、UI 组件拆分，或从已有 UI 图抽取组件时：执行 `ui-gen-run`。不要用 `gemini-generate-content` 作为 UI 图集默认入口。
 - 明确要可平铺 texture / material tile / 地表纹理时：执行 `texture-gen-run`。
 - 明确要 terrain tileset / dual-grid 地形过渡图时：执行 `tileset-gen-run`。
 - 明确要地图块、isometric tile、hex tile、HD isometric map、地图 preset 时：先执行 `map-reference-search`。命中合适结果时执行 `map-reference-download` 或 `map-reference-search --download`，直接交付 preset；只有没有合适 preset 时才执行对应的 `*-isometric-gen-run` 生成。
 - 明确要 SFX、音效、UI click、攻击、拾取、爆炸、技能音时：执行 `sound-run` 或 `sfx-run`。
 - 不要因为需求写了“人物”“背景”“场景”就直接使用 `gemini-generate-content`。如果最终要求是像素资产，`pixel-gen-run` 优先。
-- 只有非像素概念图、高清插画、完整大背景概念稿、UI 整体视觉稿，或明确没有合适 pixel template 时，才使用 `gemini-generate-content`。
+- 只有非像素概念图、高清插画、完整大背景概念稿，或明确没有合适 pixel template 时，才使用 `gemini-generate-content`。
 - 像素资产 fallback 到 `gemini-generate-content` 后不能直接交付：继续跑 `pixelate-run`，需要透明图时再跑 `remove-background-run --method pixel`，并检查尺寸和透明通道。
 
 ## 1. 鉴权
@@ -161,7 +164,8 @@ python3 skills/meowart_api.py credits-balance
 
 ## 4. General Image Generation
 
-For non-pixel concepts, high-resolution illustration, full-scene background concepts, and broad UI mockups, use `generateContent`:
+For non-pixel concepts, high-resolution illustration, and full-scene background concepts, use `generateContent`.
+For game UI sheets, HUDs, menus, and reusable UI components, use `ui-gen-run` instead.
 
 ```bash
 python3 skills/meowart_api.py \
@@ -180,6 +184,54 @@ python3 skills/meowart_api.py \
 ```
 
 If you need to customize the path or request body, check the `gemini-*` subcommands in `skills/meowart_api.py`.
+
+## 4.1 游戏 UI 图集生成
+
+当用户需要 HUD、菜单、按钮、窗口、技能栏、背包面板、UI icon 组合、整套游戏 UI sheet，或需要把已有 UI 参考图抽成可复用组件时，使用 `ui-gen-run`。
+底层 endpoint 是 `POST /api/workflows/general_ui_gen/run`，不是 `/api/gemini/...`。
+
+生成一套新 UI：
+
+```bash
+python3 skills/meowart_api.py \
+  ui-gen-run \
+  --prompt "cozy fantasy RPG HUD with HP bar, skill slots, inventory panel, quest panel, and rounded wooden buttons" \
+  --template hd_retro_rpg \
+  --output-dir ./outputs/ui_gen
+```
+
+带风格参考图生成：
+
+```bash
+python3 skills/meowart_api.py \
+  ui-gen-run \
+  --prompt "matching sci-fi mobile game UI kit with top status bar, primary buttons, modal frame, and icon slots" \
+  --reference-image ./reference_ui_style.png \
+  --output-dir ./outputs/ui_gen
+```
+
+从已有 UI 图中抽取组件：
+
+```bash
+python3 skills/meowart_api.py \
+  ui-gen-run \
+  --prompt "extract every button, panel, icon slot, bar, and frame as separate transparent UI components" \
+  --generation-mode ui_extract \
+  --reference-image ./source_ui_sheet.png \
+  --output-dir ./outputs/ui_extract
+```
+
+常用参数：
+
+- `--prompt`：UI 需求。描述整体风格、包含哪些组件、游戏类型、颜色/材质倾向。
+- `--template`：默认 `hd_retro_rpg`。如果后端模板列表更新，优先使用后端返回的模板 id。
+- `--reference-image` / `--reference-file`：可重复，最多以后端限制为准；用于风格参考或 `ui_extract` 的源图。
+- `--generation-mode generate|ui_extract`：默认 `generate`；`ui_extract` 必须提供参考图。
+- `--remove-background` / `--no-remove-background`：默认移除背景，便于得到透明 UI sheet。
+- `--split-components` / `--no-split-components`：默认拆分透明组件 bbox 元数据。保留该功能可以让前端或游戏工具更容易把 sheet 中的按钮、窗口、icon slot 单独拿出来。
+- `--split-alpha-threshold`、`--split-connectivity`、`--split-min-component-size`、`--split-bbox-padding`：控制组件拆分的透明阈值、连通性、最小尺寸和透明边距。通常保持默认即可。
+
+运行成功后，脚本会保存 `submit_response.json`、`job_response.json` 和可下载的生成图片到 `--output-dir` 下的任务子目录。
 
 ## 5. 像素 Sprite / 角色 / 道具 / Icon 生成
 

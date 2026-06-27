@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.06.14.1"
+MEOWART_API_CLI_VERSION = "2026.06.19.1"
 BOOTSTRAP_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
@@ -36,6 +36,7 @@ AUTH_HEADER_HOST_SUFFIXES = ("meowa.ai", "generativelanguage.googleapis.com")
 MEOWART_ENDPOINT_HINT = (
     "Meowa does not expose /generate or /api/generate. "
     "Use POST /api/pixel-gen for pixel sprites, POST /api/hd-gen for HD assets, "
+    "POST /api/workflows/general_ui_gen/run for game UI sheets, "
     "or POST /api/gemini/... for generic image generation."
 )
 DEFAULT_BOOTSTRAP_MANIFEST_URL = (
@@ -101,6 +102,19 @@ CHARACTER_MULTI_VIEW_POLL_COMMANDS = {
     "character-multi-view-poll",
     "character-8-direction-poll",
     "character-eight-direction-poll",
+}
+UI_GEN_ENDPOINT = "/api/workflows/general_ui_gen/run"
+UI_GEN_SUBMIT_COMMANDS = {
+    "ui-gen-submit",
+    "general-ui-gen-submit",
+}
+UI_GEN_RUN_COMMANDS = {
+    "ui-gen-run",
+    "general-ui-gen-run",
+}
+UI_GEN_POLL_COMMANDS = {
+    "ui-gen-poll",
+    "general-ui-gen-poll",
 }
 
 
@@ -2866,10 +2880,150 @@ def _append_reference_image_files(files: list[tuple[str, tuple[str, bytes, str]]
         files.append(("reference_images", (path.name, path.read_bytes(), _mime_for_path(path))))
 
 
+def _append_ui_reference_files(files: list[tuple[str, tuple[str, bytes, str]]], reference_images: list[str] | None) -> None:
+    for raw_path in reference_images or []:
+        path_text = str(raw_path or "").strip()
+        if not path_text:
+            continue
+        path = Path(path_text).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"reference image not found: {path}")
+        files.append(("reference_files", (path.name, path.read_bytes(), _mime_for_path(path))))
+
+
 def _optional_bool_form_value(value: bool | None) -> str | None:
     if value is None:
         return None
     return "true" if bool(value) else "false"
+
+
+def _normalize_ui_generation_mode(generation_mode: str) -> str:
+    normalized = str(generation_mode or "generate").strip().lower() or "generate"
+    if normalized not in {"generate", "ui_extract"}:
+        raise ValueError("generation_mode must be one of: generate, ui_extract")
+    return normalized
+
+
+def _normalize_ui_split_connectivity(split_connectivity: int) -> int:
+    parsed = int(split_connectivity)
+    if parsed not in {4, 8}:
+        raise ValueError("split_connectivity must be 4 or 8")
+    return parsed
+
+
+def submit_ui_generator(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    template: str = "hd_retro_rpg",
+    reference_images: list[str] | None = None,
+    aspect_ratio: str = "1:1",
+    remove_background: bool = True,
+    split_components: bool = True,
+    generation_mode: str = "generate",
+    split_alpha_threshold: int = 16,
+    split_connectivity: int = 4,
+    split_min_component_size: int = 16,
+    split_bbox_padding: int = 8,
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    normalized_generation_mode = _normalize_ui_generation_mode(generation_mode)
+    data: dict[str, str] = {
+        "prompt": prompt,
+        "template": template,
+        "aspect_ratio": aspect_ratio,
+        "remove_background": "true" if remove_background else "false",
+        "split_components": "true" if split_components else "false",
+        "generation_mode": normalized_generation_mode,
+        "split_alpha_threshold": str(int(split_alpha_threshold)),
+        "split_connectivity": str(_normalize_ui_split_connectivity(split_connectivity)),
+        "split_min_component_size": str(int(split_min_component_size)),
+        "split_bbox_padding": str(int(split_bbox_padding)),
+    }
+    if project_id is not None:
+        data["project_id"] = project_id
+    if thread_id is not None:
+        data["thread_id"] = thread_id
+
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    _append_ui_reference_files(files, reference_images)
+    if normalized_generation_mode == "ui_extract" and not files:
+        raise ValueError("ui_extract mode requires at least one --reference-image")
+
+    url = _normalize_base_url(api_base, UI_GEN_ENDPOINT)
+    response, payload = _request_json(
+        method="POST",
+        url=url,
+        headers=_base_headers(api_key),
+        data=data,
+        files=files or None,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def run_ui_generator(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    template: str = "hd_retro_rpg",
+    reference_images: list[str] | None = None,
+    aspect_ratio: str = "1:1",
+    remove_background: bool = True,
+    split_components: bool = True,
+    generation_mode: str = "generate",
+    split_alpha_threshold: int = 16,
+    split_connectivity: int = 4,
+    split_min_component_size: int = 16,
+    split_bbox_padding: int = 8,
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_ui_generator(
+        api_base=api_base,
+        api_key=api_key,
+        prompt=prompt,
+        template=template,
+        reference_images=reference_images,
+        aspect_ratio=aspect_ratio,
+        remove_background=remove_background,
+        split_components=split_components,
+        generation_mode=generation_mode,
+        split_alpha_threshold=split_alpha_threshold,
+        split_connectivity=split_connectivity,
+        split_min_component_size=split_min_component_size,
+        split_bbox_padding=split_bbox_padding,
+        project_id=project_id,
+        thread_id=thread_id,
+        timeout=timeout,
+        verify=verify,
+    )
+    api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
+    if api_job_id:
+        print(f"[INFO] submitted api_job_id={api_job_id}")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload=submit_payload,
+        label="ui-gen",
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
 
 
 def submit_map_workflow(
@@ -3683,6 +3837,41 @@ def parse_args() -> argparse.Namespace:
     tileset_poll = subparsers.add_parser("tileset-gen-poll", help="Poll one tileset_gen workflow job")
     add_shared_path_args(tileset_poll)
     tileset_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
+    ui_submit = subparsers.add_parser("ui-gen-submit", aliases=["general-ui-gen-submit"], help="Submit a general_ui_gen job")
+    add_shared_path_args(ui_submit)
+    ui_submit.add_argument("--prompt", required=True, help="Game UI sheet, HUD, menu, button, or icon requirement")
+    ui_submit.add_argument("--template", default="hd_retro_rpg", help="general_ui_gen template id")
+    ui_submit.add_argument(
+        "--reference-image",
+        "--reference-file",
+        dest="reference_image",
+        action="append",
+        default=[],
+        help="Optional UI style or source sheet reference image; can be repeated",
+    )
+    ui_submit.add_argument("--aspect-ratio", default="1:1")
+    ui_submit.add_argument("--remove-background", action="store_true", default=True)
+    ui_submit.add_argument("--no-remove-background", action="store_false", dest="remove_background")
+    ui_submit.add_argument("--split-components", action="store_true", default=True)
+    ui_submit.add_argument("--no-split-components", action="store_false", dest="split_components")
+    ui_submit.add_argument("--generation-mode", default="generate", choices=["generate", "ui_extract"])
+    ui_submit.add_argument("--split-alpha-threshold", type=int, default=16)
+    ui_submit.add_argument("--split-connectivity", type=int, default=4, choices=[4, 8])
+    ui_submit.add_argument("--split-min-component-size", type=int, default=16)
+    ui_submit.add_argument("--split-bbox-padding", type=int, default=8)
+    ui_submit.add_argument("--project-id", default=None)
+    ui_submit.add_argument("--thread-id", default=None)
+
+    ui_run = subparsers.add_parser("ui-gen-run", aliases=["general-ui-gen-run"], help="Submit and wait for general_ui_gen")
+    for action in ui_submit._actions[1:]:
+        if action.dest not in {"help"}:
+            ui_run._add_action(action)
+    add_shared_runtime_args(ui_run)
+
+    ui_poll = subparsers.add_parser("ui-gen-poll", aliases=["general-ui-gen-poll"], help="Poll one general_ui_gen workflow job")
+    add_shared_path_args(ui_poll)
+    ui_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
     isometric_submit = subparsers.add_parser(
         "isometric-gen-submit",
@@ -4868,7 +5057,7 @@ def main() -> int:
             "sound-effect-poll",
             "texture-gen-poll",
             "tileset-gen-poll",
-        } or args.command in MAP_WORKFLOW_POLL_COMMANDS or args.command in CHARACTER_MULTI_VIEW_POLL_COMMANDS:
+        } or args.command in MAP_WORKFLOW_POLL_COMMANDS or args.command in CHARACTER_MULTI_VIEW_POLL_COMMANDS or args.command in UI_GEN_POLL_COMMANDS:
             payload = poll_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -5170,6 +5359,119 @@ def main() -> int:
                 background_texture=args.background_texture,
                 texture_reference_size=args.texture_reference_size,
                 texture_reference_mode=args.texture_reference_mode,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=slug_seed,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload={"submit": submit_payload, "final": final_payload},
+                downloads=downloads,
+                effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command in UI_GEN_SUBMIT_COMMANDS:
+            reference_images = list(args.reference_image or [])
+            request_payload = {
+                "prompt": args.prompt,
+                "template": args.template,
+                "reference_images": reference_images,
+                "aspect_ratio": args.aspect_ratio,
+                "remove_background": args.remove_background,
+                "split_components": args.split_components,
+                "generation_mode": args.generation_mode,
+                "split_alpha_threshold": args.split_alpha_threshold,
+                "split_connectivity": args.split_connectivity,
+                "split_min_component_size": args.split_min_component_size,
+                "split_bbox_padding": args.split_bbox_padding,
+                "project_id": args.project_id,
+                "thread_id": args.thread_id,
+            }
+            payload = submit_ui_generator(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                template=args.template,
+                reference_images=reference_images,
+                aspect_ratio=args.aspect_ratio,
+                remove_background=args.remove_background,
+                split_components=args.split_components,
+                generation_mode=args.generation_mode,
+                split_alpha_threshold=args.split_alpha_threshold,
+                split_connectivity=args.split_connectivity,
+                split_min_component_size=args.split_min_component_size,
+                split_bbox_padding=args.split_bbox_padding,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload=payload,
+                downloads=[],
+                effective_output_dir=str(effective_output_dir),
+            )
+            print(_format_json_for_display(payload))
+            return 0
+
+        if args.command in UI_GEN_RUN_COMMANDS:
+            reference_images = list(args.reference_image or [])
+            slug_seed = args.prompt or "ui-gen"
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            request_payload = {
+                "prompt": args.prompt,
+                "template": args.template,
+                "reference_images": reference_images,
+                "aspect_ratio": args.aspect_ratio,
+                "remove_background": args.remove_background,
+                "split_components": args.split_components,
+                "generation_mode": args.generation_mode,
+                "split_alpha_threshold": args.split_alpha_threshold,
+                "split_connectivity": args.split_connectivity,
+                "split_min_component_size": args.split_min_component_size,
+                "split_bbox_padding": args.split_bbox_padding,
+                "project_id": args.project_id,
+                "thread_id": args.thread_id,
+            }
+            submit_payload, final_payload = run_ui_generator(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                template=args.template,
+                reference_images=reference_images,
+                aspect_ratio=args.aspect_ratio,
+                remove_background=args.remove_background,
+                split_components=args.split_components,
+                generation_mode=args.generation_mode,
+                split_alpha_threshold=args.split_alpha_threshold,
+                split_connectivity=args.split_connectivity,
+                split_min_component_size=args.split_min_component_size,
+                split_bbox_padding=args.split_bbox_padding,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,
