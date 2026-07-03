@@ -457,5 +457,4 @@ Typical saved files include:
 
 ## License
 
-No license file is currently included. Add one before redistributing this
-repository as an open-source package.
+MIT License. See [LICENSE](LICENSE) for details.
