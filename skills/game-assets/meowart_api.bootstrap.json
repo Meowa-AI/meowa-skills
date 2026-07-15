@@ -1,6 +1,7 @@
 {
-  "version": "2026.06.19.1",
+  "version": "2026.07.15.2",
   "min_bootstrap_version": 1,
+  "artifact_policy_version": 1,
   "runner_url": "https://raw.githubusercontent.com/Meowa-AI/meowa-skills/main/skills/game-assets/meowart_api.py",
-  "sha256": "382b771940f792471dedc6fd4c18530c47251c1cc5409b23c34bdf4d6c08c360"
+  "sha256": "f2a7c563ea42bcf6eab8f588f7414b11f7b66368509d7ebdba9f72545ad28709"
 }

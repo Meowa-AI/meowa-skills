@@ -231,7 +231,7 @@ python3 skills/meowart_api.py \
 - `--split-components` / `--no-split-components`：默认拆分透明组件 bbox 元数据。保留该功能可以让前端或游戏工具更容易把 sheet 中的按钮、窗口、icon slot 单独拿出来。
 - `--split-alpha-threshold`、`--split-connectivity`、`--split-min-component-size`、`--split-bbox-padding`：控制组件拆分的透明阈值、连通性、最小尺寸和透明边距。通常保持默认即可。
 
-运行成功后，脚本会保存 `submit_response.json`、`job_response.json` 和可下载的生成图片到 `--output-dir` 下的任务子目录。
+运行成功后，脚本会保存经过最终产物投影的 `submit_response.json`、`job_response.json`，并仅把前端最终展示/下载字段中的生成图片保存到 `--output-dir` 下的任务子目录。不会原样保存 job/provider payload；模板图、生成网格、source/reference、metadata、manifest、stage、debug URL、服务端本地路径、签名 URL 和 inline/base64 数据都不会进入本地响应 JSON。下载前还会校验 Content-Type，只允许 image/audio/video，伪装成媒体文件的 JSON/HTML 会在写盘前被拒绝。
 
 ## 5. 像素 Sprite / 角色 / 道具 / Icon 生成
 
@@ -796,5 +796,9 @@ python3 skills/meowart_api.py music-poll --api-job-id workflow-music_generator-x
 - `submit_response.json`
 - `job_response.json`
 - 下载得到的 PNG、GIF、WebP、spritesheet、MP3、WAV、OGG 等输出文件
+
+自动下载和本地 JSON 快照采用同一套最终产物字段白名单，不会遍历下载或原样保存 job payload 中的中间过程 URL/JSON。Gemini 命令只保存 `final_outputs.json` 及最终 candidate 的媒体/文本，不保存原始 `response.json`、thought/debug part 或 base64。需要排查中间产物时，应通过后端开发者权限接口处理，不能放宽 skill 下载规则。
+
+自动 bootstrap 同样采用 fail-closed 策略：远程 manifest 和缓存 runner 除版本、SHA-256 外还必须声明当前 `artifact_policy_version`，否则不会执行替换 runner。
 
 如需自定义目录，可使用 `--work-dir` 或 `--output-dir`。更细的行为差异直接看脚本源码即可。

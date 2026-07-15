@@ -17,8 +17,9 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.06.19.1"
+MEOWART_API_CLI_VERSION = "2026.07.15.2"
 BOOTSTRAP_VERSION = 1
+FINAL_OUTPUT_ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "MEOWART_DEV_KEY"
@@ -230,6 +231,7 @@ def _fetch_bootstrap_manifest(manifest_url: str, timeout: float) -> dict[str, An
     runner_url = str(payload.get("runner_url") or "").strip()
     sha256 = str(payload.get("sha256") or "").strip().lower()
     min_bootstrap_version = int(payload.get("min_bootstrap_version") or 1)
+    artifact_policy_version = int(payload.get("artifact_policy_version") or 0)
     if not version:
         raise ValueError("bootstrap manifest missing version")
     if not runner_url:
@@ -241,6 +243,10 @@ def _fetch_bootstrap_manifest(manifest_url: str, timeout: float) -> dict[str, An
             f"bootstrap manifest requires bootstrap version {min_bootstrap_version}, "
             f"current is {BOOTSTRAP_VERSION}"
         )
+    if artifact_policy_version < FINAL_OUTPUT_ARTIFACT_POLICY_VERSION:
+        raise ValueError(
+            "bootstrap manifest does not declare the required final-output artifact policy"
+        )
     if not _bootstrap_url_allowed(runner_url):
         raise ValueError("bootstrap runner URL must use https")
     return {
@@ -248,6 +254,7 @@ def _fetch_bootstrap_manifest(manifest_url: str, timeout: float) -> dict[str, An
         "runner_url": runner_url,
         "sha256": sha256,
         "min_bootstrap_version": min_bootstrap_version,
+        "artifact_policy_version": artifact_policy_version,
         "manifest_url": manifest_url,
     }
 
@@ -280,7 +287,13 @@ def _cached_bootstrap_runner(cache_dir: Path) -> Path | None:
     version = str(state.get("version") or "").strip()
     runner_path = Path(str(state.get("runner_path") or "")).expanduser()
     sha256 = str(state.get("sha256") or "").strip().lower()
-    if not version or not runner_path.is_file() or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+    artifact_policy_version = int(state.get("artifact_policy_version") or 0)
+    if (
+        not version
+        or not runner_path.is_file()
+        or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+        or artifact_policy_version < FINAL_OUTPUT_ARTIFACT_POLICY_VERSION
+    ):
         return None
     if not _is_version_newer(version, MEOWART_API_CLI_VERSION):
         return None
@@ -375,6 +388,7 @@ def _bootstrap_maybe_exec(argv: list[str]) -> None:
             "sha256": manifest["sha256"],
             "runner_url": manifest["runner_url"],
             "manifest_url": manifest["manifest_url"],
+            "artifact_policy_version": manifest["artifact_policy_version"],
             "runner_path": str(runner_path),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
@@ -396,6 +410,7 @@ def bootstrap_status(*, check_remote: bool = False) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "bootstrap_version": BOOTSTRAP_VERSION,
         "cli_version": MEOWART_API_CLI_VERSION,
+        "artifact_policy_version": FINAL_OUTPUT_ARTIFACT_POLICY_VERSION,
         "enabled": _env_flag(BOOTSTRAP_ENABLED_ENV, default=True),
         "manifest_url": manifest_url,
         "cache_dir": str(cache_dir),
@@ -482,7 +497,12 @@ def _save_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _format_json_for_display(payload: Any) -> str:
-    return json.dumps(_sanitize_for_meta(payload), ensure_ascii=False, indent=2)
+    display_payload = (
+        _sanitize_response_for_local_storage(payload)
+        if _contains_generation_response(payload)
+        else _sanitize_for_meta(payload)
+    )
+    return json.dumps(display_payload, ensure_ascii=False, indent=2)
 
 
 def _skill_doc_cache_dir() -> Path:
@@ -977,7 +997,13 @@ def download_map_presets(
             print(f"[WARN] preset has no downloadable URL: {preset.get('id')}", file=sys.stderr)
             continue
         target_path = target_dir / _preset_download_filename(preset, index)
-        mime_type = _download_file(source_url, target_path, timeout=timeout, verify=verify)
+        mime_type = _download_file(
+            source_url,
+            target_path,
+            timeout=timeout,
+            verify=verify,
+            require_media=True,
+        )
         downloads.append(
             {
                 "type": "map_preset",
@@ -1059,9 +1085,9 @@ def _write_meta(
             "cli_args": _sanitize_for_meta(vars(args)),
             "payload": _sanitize_for_meta(request_payload),
         },
-        "response": _sanitize_for_meta(response_payload),
+        "response": _sanitize_response_for_local_storage(response_payload),
         "downloads": _sanitize_for_meta(downloads or []),
-        "error": error,
+        "error": _sanitize_diagnostic_text(error),
     }
     _save_json(run_dir / "meta.json", meta)
 
@@ -1083,12 +1109,16 @@ def _download_file(
     timeout: int,
     verify: bool,
     headers: dict[str, str] | None = None,
+    require_media: bool = False,
 ) -> str:
     response = requests.get(url, timeout=timeout, verify=verify, headers=headers or None)
     response.raise_for_status()
+    content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if require_media and not content_type.startswith(("image/", "audio/", "video/")):
+        raise ValueError(f"refusing non-media download: content-type={content_type or 'missing'}")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_bytes(response.content)
-    return str(response.headers.get("content-type") or "").strip()
+    return content_type
 
 
 def _safe_slug(value: str) -> str:
@@ -1150,7 +1180,7 @@ def _normalize_base_url(api_base: str, endpoint: str) -> str:
 def _print_status(prefix: str, payload: dict[str, Any]) -> None:
     status = str(payload.get("status") or "").strip()
     stage = str(payload.get("stage") or "").strip()
-    error = str(payload.get("error") or "").strip()
+    error = _sanitize_diagnostic_text(payload.get("error"), limit=500)
     progress = payload.get("progress")
     progress_label = ""
     progress_percent = ""
@@ -1215,21 +1245,77 @@ def _unique_target_path(output_dir: Path, filename: str) -> Path:
         counter += 1
 
 
-def _collect_gemini_inline_images(value: Any, *, prefix: str = "") -> list[tuple[str, str, str]]:
-    found: list[tuple[str, str, str]] = []
-    if isinstance(value, dict):
-        mime_type = str(value.get("mimeType") or value.get("mime_type") or "").strip()
-        data = str(value.get("data") or "").strip()
-        if mime_type.startswith("image/") and data:
-            found.append((prefix or "image", mime_type, data))
-        for key, inner in value.items():
-            child_prefix = f"{prefix}.{key}" if prefix else str(key)
-            found.extend(_collect_gemini_inline_images(inner, prefix=child_prefix))
+def _iter_gemini_final_parts(payload: dict[str, Any]) -> list[tuple[int, int, dict[str, Any]]]:
+    found: list[tuple[int, int, dict[str, Any]]] = []
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
         return found
-    if isinstance(value, list):
-        for index, inner in enumerate(value):
-            child_prefix = f"{prefix}[{index}]"
-            found.extend(_collect_gemini_inline_images(inner, prefix=child_prefix))
+    for candidate_index, candidate in enumerate(candidates):
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not isinstance(parts, list):
+            continue
+        for part_index, part in enumerate(parts):
+            if isinstance(part, dict) and part.get("thought") is not True:
+                found.append((candidate_index, part_index, part))
+    return found
+
+
+def _collect_gemini_final_inline_media(payload: dict[str, Any]) -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    for candidate_index, part_index, part in _iter_gemini_final_parts(payload):
+        inline_data = part.get("inlineData") or part.get("inline_data")
+        if not isinstance(inline_data, dict):
+            continue
+        mime_type = str(inline_data.get("mimeType") or inline_data.get("mime_type") or "").strip()
+        data = str(inline_data.get("data") or "").strip()
+        if mime_type.startswith(("image/", "audio/", "video/")) and data:
+            found.append((f"candidates[{candidate_index}].content.parts[{part_index}]", mime_type, data))
+    return found
+
+
+def _collect_gemini_final_media_urls(payload: dict[str, Any]) -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    for candidate_index, part_index, part in _iter_gemini_final_parts(payload):
+        file_data = part.get("fileData") or part.get("file_data")
+        if not isinstance(file_data, dict):
+            continue
+        mime_type = str(file_data.get("mimeType") or file_data.get("mime_type") or "").strip()
+        url = str(
+            file_data.get("fileUri")
+            or file_data.get("file_uri")
+            or file_data.get("uri")
+            or file_data.get("url")
+            or ""
+        ).strip()
+        if not mime_type.startswith(("image/", "audio/", "video/")):
+            continue
+        if urlparse(url).scheme not in {"http", "https"}:
+            continue
+        if Path(urlparse(url).path).suffix.lower() not in _DOWNLOADABLE_MEDIA_EXTENSIONS:
+            continue
+        found.append((f"candidates[{candidate_index}].content.parts[{part_index}].file_data", url))
+    return found
+
+
+def _collect_gemini_final_text(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    for candidate_index, part_index, part in _iter_gemini_final_parts(payload):
+        text = part.get("text")
+        if not isinstance(text, str) or not text:
+            continue
+        found.append(
+            {
+                "candidate_index": candidate_index,
+                "part_index": part_index,
+                "text": _EMBEDDED_INTERNAL_PATH_PATTERN.sub(
+                    "<omitted-internal-path>",
+                    _EMBEDDED_HTTP_URL_PATTERN.sub("<omitted-non-final-url>", text),
+                ),
+            }
+        )
     return found
 
 
@@ -1247,24 +1333,20 @@ def _save_gemini_response_assets(
 
     wrote_any = False
     downloads: list[dict[str, Any]] = []
-    if save_json:
-        _save_json(target_dir / "response.json", payload)
-        wrote_any = True
-        downloads.append({"type": "json", "path": str(target_dir / "response.json")})
 
-    inline_images = _collect_gemini_inline_images(payload)
-    for index, (key, mime_type, data) in enumerate(inline_images, start=1):
-        filename = _safe_slug(key.replace(".", "_").replace("[", "_").replace("]", "")) or f"image_{index}"
+    inline_media = _collect_gemini_final_inline_media(payload)
+    for index, (key, mime_type, data) in enumerate(inline_media, start=1):
+        filename = _safe_slug(key.replace(".", "_").replace("[", "_").replace("]", "")) or f"asset_{index}"
         target_path = target_dir / f"{filename}_{index:02d}{_suffix_from_mime(mime_type)}"
         try:
             target_path.write_bytes(base64.b64decode(data, validate=True))
             wrote_any = True
-            downloads.append({"type": "inline_image", "key": key, "mime_type": mime_type, "path": str(target_path)})
+            downloads.append({"type": "inline_media", "key": key, "mime_type": mime_type, "path": str(target_path)})
             print(f"[INFO] downloaded={target_path}")
         except ValueError as exc:
-            print(f"[WARN] failed to decode inline image {key}: {exc}", file=sys.stderr)
+            print(f"[WARN] failed to decode inline media {key}: {exc}", file=sys.stderr)
 
-    http_urls = [(key, url) for key, url in _collect_http_urls(payload) if any(token in key.lower() for token in {"image", "inline", "file", "uri", "url"})]
+    http_urls = _collect_gemini_final_media_urls(payload)
     if http_urls:
         downloaded_urls = _download_named_urls(
             urls=http_urls,
@@ -1276,6 +1358,19 @@ def _save_gemini_response_assets(
         downloads.extend(downloaded_urls)
         if downloaded_urls:
             wrote_any = True
+
+    if save_json:
+        manifest_path = target_dir / "final_outputs.json"
+        _save_json(
+            manifest_path,
+            {
+                "type": "final_outputs",
+                "text_outputs": _collect_gemini_final_text(payload),
+                "assets": _sanitize_for_meta(downloads),
+            },
+        )
+        downloads.insert(0, {"type": "json", "path": str(manifest_path)})
+        wrote_any = True
 
     return (target_dir if wrote_any else None, downloads)
 
@@ -1297,7 +1392,14 @@ def _download_named_urls(
         target = _unique_target_path(output_dir, _filename_from_url_or_key(url, key))
         try:
             request_headers = headers if headers and _should_send_auth_headers(url) else None
-            mime_type = _download_file(url, target, timeout=timeout, verify=verify, headers=request_headers)
+            mime_type = _download_file(
+                url,
+                target,
+                timeout=timeout,
+                verify=verify,
+                headers=request_headers,
+                require_media=True,
+            )
             if target.suffix == ".bin":
                 resolved_suffix = _suffix_from_mime(mime_type)
                 if resolved_suffix != ".bin":
@@ -1306,30 +1408,343 @@ def _download_named_urls(
                     target = renamed_target
             downloads.append({"type": "url_download", "key": key, "url": url, "path": str(target)})
             print(f"[INFO] downloaded={target}")
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError) as exc:
             print(f"[WARN] download failed for {url}: {exc}", file=sys.stderr)
     return downloads
 
 
-def _looks_like_downloadable_output_url(key: str, url: str) -> bool:
+_DOWNLOADABLE_MEDIA_EXTENSIONS = {
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".ogg",
+    ".png",
+    ".wav",
+    ".webm",
+    ".webp",
+}
+_FINAL_OUTPUT_FIELDS = {
+    "animated_gif_path",
+    "animated_webp_path",
+    "assembled_preview_path",
+    "audio_path",
+    "audio_paths",
+    "background_path",
+    "bead_pattern_path",
+    "cropped_path",
+    "download_url",
+    "edited_path",
+    "final_isometric_texture_path",
+    "final_isometric_tileset_path",
+    "final_sprite",
+    "final_sprite_paths",
+    "final_texture_path",
+    "final_tile_paths",
+    "final_tileset_path",
+    "foreground_path",
+    "gcs_url",
+    "icon_paths",
+    "image_paths",
+    "image_url",
+    "midground_path",
+    "output_path",
+    "output_url",
+    "pixel_image_path",
+    "remove_bg_path",
+    "result_path",
+    "result_url",
+    "sheet_path",
+    "sprite_crop_path",
+    "sprite_pack_preview_path",
+    "sprite_paths",
+    "spritesheet_path",
+    "texture_path",
+    "tile_pack_preview_path",
+    "tile_paths",
+    "tileset_path",
+    "tiling_preview_path",
+    "transparent_output_urls",
+    "transparent_path",
+    "url",
+    "video_path",
+    "video_paths",
+    "raw_video_path",
+}
+_FINAL_OUTPUT_CONTAINERS = {
+    "animation_assets",
+    "component_split",
+    "final_sprite_paths",
+    "final_tile_paths",
+    "icon_paths",
+    "image_paths",
+    "sprite_paths",
+    "tile_paths",
+    "transparent_output_urls",
+    "video_paths",
+}
+_WORKFLOW_FINAL_OUTPUT_FIELDS = {
+    "style_gen": {"generated_path"},
+}
+_BLOCKED_OUTPUT_KEY_PARTS = {
+    "base_texture_path",
+    "debug",
+    "filled_reference_grid_path",
+    "generated_grid_path",
+    "generated_tileset_path",
+    "generation_input_path",
+    "generation_output_path",
+    "gcs_run_prefix",
+    "input_reference_paths",
+    "manifest",
+    "metadata",
+    "prepared_full_canvas_path",
+    "prepared_reference_path",
+    "prepared_reference_paths",
+    "raw_generated_path",
+    "reference_spritesheet_path",
+    "run_dir",
+    "seamless_input_texture_path",
+    "source_run_dir",
+    "source_texture_path",
+    "source_tileset_path",
+    "stage2_grid_clean_path",
+    "stage2_grid_nobg_defringe_mask_path",
+    "stage2_grid_nobg_defringe_path",
+    "stage2_grid_nobg_path",
+    "stage2_grid_path",
+    "steps_metadata_path",
+    "template_grid_path",
+    "template_path",
+    "template_reference_path",
+}
+_BLOCKED_OUTPUT_KEY_TOKENS = {
+    "debug",
+    "input",
+    "manifest",
+    "mask",
+    "metadata",
+    "prepared",
+    "provider",
+    "reference",
+    "source",
+    "stage",
+    "template",
+}
+
+
+def _output_key_parts(key: str) -> list[str]:
+    return [
+        part
+        for part in re.split(r"[.\[\]]+", str(key or "").strip().lower())
+        if part and not part.isdigit()
+    ]
+
+
+def _payload_workflow_id(payload: dict[str, Any]) -> str:
+    candidates: list[Any] = [payload.get("workflow_id")]
+    for container_name in ("result", "output"):
+        container = payload.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        candidates.append(container.get("workflow_id"))
+        metadata = container.get("metadata")
+        if isinstance(metadata, dict):
+            candidates.append(metadata.get("workflow_id"))
+    for candidate in candidates:
+        workflow_id = str(candidate or "").strip()
+        if workflow_id:
+            return workflow_id
+    return ""
+
+
+def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str = "") -> bool:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return False
 
     path = parsed.path or ""
-    if path.endswith("/"):
+    if path.endswith("/") or Path(path).suffix.lower() not in _DOWNLOADABLE_MEDIA_EXTENSIONS:
         return False
 
-    host = (parsed.netloc or "").lower()
-    if host == "storage.googleapis.com":
-        if path.startswith("/meowart-bucket-public/"):
+    key_parts = _output_key_parts(key)
+    if not key_parts or any(
+        part in _BLOCKED_OUTPUT_KEY_PARTS
+        or any(token in part for token in _BLOCKED_OUTPUT_KEY_TOKENS)
+        for part in key_parts
+    ):
+        return False
+
+    leaf = key_parts[-1]
+    workflow_fields = _WORKFLOW_FINAL_OUTPUT_FIELDS.get(str(workflow_id or "").strip(), set())
+    if leaf not in _FINAL_OUTPUT_FIELDS and leaf not in workflow_fields and not any(
+        part in _FINAL_OUTPUT_CONTAINERS for part in key_parts[:-1]
+    ):
+        return False
+
+    if leaf in {"url", "gcs_url", "download_url"}:
+        return len(key_parts) >= 2 and key_parts[-2] in {
+            "output",
+            "result",
+            *_FINAL_OUTPUT_CONTAINERS,
+        }
+    return True
+
+
+_LOCAL_RESPONSE_OMIT = object()
+_LOCAL_RESPONSE_INLINE_DATA_KEYS = {
+    "b64_json",
+    "base64",
+    "bytes",
+    "file_data",
+    "filedata",
+    "inline_data",
+    "inlinedata",
+}
+_LOCAL_RESPONSE_FILE_EXTENSIONS = _DOWNLOADABLE_MEDIA_EXTENSIONS | {".json"}
+_EMBEDDED_HTTP_URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_EMBEDDED_INTERNAL_PATH_PATTERN = re.compile(r"/(?:app|tmp|home|var)/[^\s\"'<>]+")
+
+
+def _sanitize_diagnostic_text(value: Any, *, limit: int = 2000) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = _EMBEDDED_HTTP_URL_PATTERN.sub("<omitted-non-final-url>", text)
+    text = _EMBEDDED_INTERNAL_PATH_PATTERN.sub("<omitted-internal-path>", text)
+    return text[: max(1, int(limit))]
+
+
+def _is_internal_response_key(key: str) -> bool:
+    normalized = str(key or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized in _LOCAL_RESPONSE_INLINE_DATA_KEYS:
+        return True
+    if normalized in _BLOCKED_OUTPUT_KEY_PARTS:
+        return True
+    return any(token in normalized for token in _BLOCKED_OUTPUT_KEY_TOKENS)
+
+
+def _is_final_output_key_path(key_path: str, *, workflow_id: str) -> bool:
+    return _looks_like_downloadable_output_url(
+        key_path,
+        "https://artifact-policy.invalid/final.png",
+        workflow_id=workflow_id,
+    )
+
+
+def _sanitize_response_value_for_local_storage(
+    value: Any,
+    *,
+    key_path: str,
+    workflow_id: str,
+) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for raw_key, raw_value in value.items():
+            key = str(raw_key)
+            lowered_key = key.lower()
+            if any(token in lowered_key for token in {"api_key", "dev_key", "token", "authorization", "secret"}):
+                sanitized[key] = "***REDACTED***"
+                continue
+            if lowered_key == "data" and isinstance(raw_value, str):
+                continue
+            if _is_internal_response_key(key):
+                continue
+            child_path = f"{key_path}.{key}" if key_path else key
+            child = _sanitize_response_value_for_local_storage(
+                raw_value,
+                key_path=child_path,
+                workflow_id=workflow_id,
+            )
+            if child is not _LOCAL_RESPONSE_OMIT:
+                sanitized[key] = child
+        return sanitized
+
+    if isinstance(value, (list, tuple)):
+        sanitized_items: list[Any] = []
+        for index, item in enumerate(value):
+            child = _sanitize_response_value_for_local_storage(
+                item,
+                key_path=f"{key_path}[{index}]",
+                workflow_id=workflow_id,
+            )
+            if child is not _LOCAL_RESPONSE_OMIT:
+                sanitized_items.append(child)
+        return sanitized_items
+
+    if isinstance(value, Path):
+        value = str(value)
+    if not isinstance(value, str):
+        return value
+
+    normalized = value.strip()
+    if not normalized:
+        return value
+    lowered_key = _output_key_parts(key_path)[-1] if _output_key_parts(key_path) else ""
+    if lowered_key == "data" and len(normalized) > LONG_INLINE_DATA_DISPLAY_LIMIT:
+        return _LOCAL_RESPONSE_OMIT
+    if normalized.startswith("data:"):
+        return _LOCAL_RESPONSE_OMIT
+    if normalized.startswith(("http://", "https://")):
+        if _looks_like_downloadable_output_url(key_path, normalized, workflow_id=workflow_id):
+            return normalized
+        return _LOCAL_RESPONSE_OMIT
+    if Path(normalized).is_absolute():
+        return _LOCAL_RESPONSE_OMIT
+
+    suffix = Path(normalized.split("?", 1)[0]).suffix.lower()
+    if suffix in _LOCAL_RESPONSE_FILE_EXTENSIONS:
+        if suffix != ".json" and _is_final_output_key_path(key_path, workflow_id=workflow_id):
+            return normalized
+        return _LOCAL_RESPONSE_OMIT
+    sanitized_text = _EMBEDDED_HTTP_URL_PATTERN.sub("<omitted-non-final-url>", value)
+    return _EMBEDDED_INTERNAL_PATH_PATTERN.sub("<omitted-internal-path>", sanitized_text)
+
+
+def _sanitize_response_for_local_storage(value: Any) -> Any:
+    """Remove internal artifacts from response snapshots before they reach local disk."""
+    if value is None:
+        return None
+    workflow_id = _payload_workflow_id(value) if isinstance(value, dict) else ""
+    sanitized = _sanitize_response_value_for_local_storage(
+        value,
+        key_path="",
+        workflow_id=workflow_id,
+    )
+    if isinstance(sanitized, dict) and workflow_id and "workflow_id" not in sanitized:
+        sanitized["workflow_id"] = workflow_id
+    return {} if sanitized is _LOCAL_RESPONSE_OMIT else sanitized
+
+
+def _contains_generation_response(value: Any) -> bool:
+    if isinstance(value, list):
+        return any(_contains_generation_response(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if isinstance(value.get("candidates"), list):
+        return True
+    keys = {str(key).strip().lower() for key in value}
+    if "status" in keys and keys.intersection(
+        {
+            "api_job_id",
+            "job_id",
+            "jobs_url",
+            "output",
+            "progress",
+            "queue",
+            "result",
+            "stage",
+        }
+    ):
+        return True
+    for wrapper_key in ("submit", "final", "response", "items"):
+        if wrapper_key in value and _contains_generation_response(value[wrapper_key]):
             return True
-        return bool(parsed.query)
-
-    lowered_key = key.lower()
-    if any(token in lowered_key for token in {"base_url", "run_dir", "debug", "manifest", "metadata"}):
-        return False
-    return any(token in lowered_key for token in {"output", "result", "image", "file", "sprite", "audio", "music", "texture", "tileset", "preview", "url"})
+    return False
 
 
 def image_file_to_data_url(image_path: str) -> str:
@@ -1736,7 +2151,14 @@ def pixel_gen_download(
     else:
         filename = f"{api_job_id}_output_{output_index}{suffix}"
     path = target_dir / filename
-    _download_file(url, path, timeout=timeout, verify=verify, headers=_base_headers(api_key))
+    _download_file(
+        url,
+        path,
+        timeout=timeout,
+        verify=verify,
+        headers=_base_headers(api_key),
+        require_media=True,
+    )
     return path
 
 
@@ -2007,7 +2429,14 @@ def hd_gen_download(
         filename = f"{api_job_id}_output_{output_index}.png"
     target_dir = Path(output_dir).expanduser()
     path = target_dir / filename
-    mime_type = _download_file(url, path, timeout=timeout, verify=verify, headers=_base_headers(api_key))
+    mime_type = _download_file(
+        url,
+        path,
+        timeout=timeout,
+        verify=verify,
+        headers=_base_headers(api_key),
+        require_media=True,
+    )
     resolved_suffix = _suffix_from_mime(mime_type)
     if resolved_suffix != ".bin" and path.suffix.lower() != resolved_suffix:
         renamed_path = _unique_target_path(target_dir, f"{path.stem}{resolved_suffix}")
@@ -3370,13 +3799,24 @@ def _save_run_outputs(
     no_download: bool = False,
 ) -> tuple[Path, list[dict[str, Any]]]:
     output_dir = _predict_saved_dir(output_root, slug_seed)
-    _save_json(output_dir / "submit_response.json", _sanitize_for_meta(submit_payload))
-    _save_json(output_dir / "job_response.json", _sanitize_for_meta(final_payload))
+    _save_json(
+        output_dir / "submit_response.json",
+        _sanitize_response_for_local_storage(submit_payload),
+    )
+    _save_json(
+        output_dir / "job_response.json",
+        _sanitize_response_for_local_storage(final_payload),
+    )
     downloads: list[dict[str, Any]] = [
         {"type": "json", "path": str(output_dir / "submit_response.json")},
         {"type": "json", "path": str(output_dir / "job_response.json")},
     ]
-    urls = [(key, url) for key, url in _collect_http_urls(final_payload) if _looks_like_downloadable_output_url(key, url)]
+    workflow_id = _payload_workflow_id(final_payload)
+    urls = [
+        (key, url)
+        for key, url in _collect_http_urls(final_payload)
+        if _looks_like_downloadable_output_url(key, url, workflow_id=workflow_id)
+    ]
     if not no_download and urls:
         print(f"[INFO] downloading_outputs count={len(urls)} to={output_dir}")
         headers = _base_headers(api_key) if api_key else None
@@ -4368,7 +4808,10 @@ def main() -> int:
             api_job_id = str(submit_payload.get("api_job_id") or "").strip()
             if not api_job_id:
                 raise RuntimeError("pixel-gen submit response missing api_job_id")
-            _save_json(predicted_output_dir / "submit_response.json", _sanitize_for_meta(submit_payload))
+            _save_json(
+                predicted_output_dir / "submit_response.json",
+                _sanitize_response_for_local_storage(submit_payload),
+            )
             print(f"[INFO] submitted api_job_id={api_job_id}")
             print(f"[INFO] waiting_for_completion poll_interval={args.poll_interval}s max_wait={args.max_wait}s")
             final_payload = wait_pixel_gen_job(
@@ -5880,7 +6323,10 @@ def main() -> int:
                 )
             except (RuntimeError, TimeoutError) as exc:
                 output_dir = Path(str(effective_output_dir)).expanduser() / _safe_slug(args.prompt or Path(args.image_file).stem)
-                _save_json(output_dir / "submit_response.json", _sanitize_for_meta(submit_payload))
+                _save_json(
+                    output_dir / "submit_response.json",
+                    _sanitize_response_for_local_storage(submit_payload),
+                )
                 downloads = [{"type": "json", "path": str(output_dir / "submit_response.json")}]
                 _write_meta(
                     run_dir=run_dir,
