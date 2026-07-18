@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.07.15.2"
+MEOWART_API_CLI_VERSION = "2026.07.17.1"
 BOOTSTRAP_VERSION = 1
 FINAL_OUTPUT_ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
@@ -1434,7 +1434,6 @@ _FINAL_OUTPUT_FIELDS = {
     "audio_paths",
     "background_path",
     "bead_pattern_path",
-    "cropped_path",
     "download_url",
     "edited_path",
     "final_isometric_texture_path",
@@ -1484,9 +1483,6 @@ _FINAL_OUTPUT_CONTAINERS = {
     "tile_paths",
     "transparent_output_urls",
     "video_paths",
-}
-_WORKFLOW_FINAL_OUTPUT_FIELDS = {
-    "style_gen": {"generated_path"},
 }
 _BLOCKED_OUTPUT_KEY_PARTS = {
     "base_texture_path",
@@ -1578,8 +1574,7 @@ def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str 
         return False
 
     leaf = key_parts[-1]
-    workflow_fields = _WORKFLOW_FINAL_OUTPUT_FIELDS.get(str(workflow_id or "").strip(), set())
-    if leaf not in _FINAL_OUTPUT_FIELDS and leaf not in workflow_fields and not any(
+    if leaf not in _FINAL_OUTPUT_FIELDS and not any(
         part in _FINAL_OUTPUT_CONTAINERS for part in key_parts[:-1]
     ):
         return False
