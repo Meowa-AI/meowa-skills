@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import base64
 from datetime import datetime
-import hashlib
 import json
 import mimetypes
 import os
@@ -13,18 +12,16 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.07.17.1"
-BOOTSTRAP_VERSION = 1
-FINAL_OUTPUT_ARTIFACT_POLICY_VERSION = 1
+MEOWART_API_CLI_VERSION = "2026.07.20.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
-DEFAULT_DEV_KEY_ENV = "MEOWART_DEV_KEY"
-DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-image-preview"
-DEFAULT_WORK_DIR = str(Path(__file__).resolve().parent / ".meow_art")
+DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
+_DEV_AUTH_PREFIX = "x-dev-key:"
+DEFAULT_WORK_DIR = "./meowa-output"
 DEFAULT_TIMEOUT = 240
 DEFAULT_MAX_WAIT = 900
 DEFAULT_POLL_INTERVAL = 3.0
@@ -33,32 +30,52 @@ TERMINAL_JOB_STATUSES = {"success", "failure", "cancelled"}
 TERMINAL_ANIMATE_STATUSES = {"success", "completed", "failure", "failed", "cancelled", "canceled"}
 SUCCESS_ANIMATE_STATUSES = {"success", "completed"}
 LONG_INLINE_DATA_DISPLAY_LIMIT = 240
-AUTH_HEADER_HOST_SUFFIXES = ("meowa.ai", "generativelanguage.googleapis.com")
+AUTH_HEADER_HOST = "api.meowa.ai"
 MEOWART_ENDPOINT_HINT = (
     "Meowa does not expose /generate or /api/generate. "
     "Use POST /api/pixel-gen for pixel sprites, POST /api/hd-gen for HD assets, "
-    "POST /api/workflows/general_ui_gen/run for game UI sheets, "
-    "or POST /api/gemini/... for generic image generation."
+    "or a documented workflow command for specialized assets."
 )
-DEFAULT_BOOTSTRAP_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/Meowa-AI/meowa-skills/main/"
-    "skills/game-assets/meowart_api.bootstrap.json"
-)
-BOOTSTRAP_ENABLED_ENV = "MEOWART_BOOTSTRAP"
-BOOTSTRAP_SKIP_ENV = "MEOWART_BOOTSTRAP_SKIP"
-BOOTSTRAP_MANIFEST_ENV = "MEOWART_BOOTSTRAP_MANIFEST_URL"
-BOOTSTRAP_CACHE_DIR_ENV = "MEOWART_BOOTSTRAP_CACHE_DIR"
-BOOTSTRAP_TIMEOUT_ENV = "MEOWART_BOOTSTRAP_TIMEOUT"
-BOOTSTRAP_VERBOSE_ENV = "MEOWART_BOOTSTRAP_VERBOSE"
-BOOTSTRAP_ALLOW_FILE_ENV = "MEOWART_BOOTSTRAP_ALLOW_FILE"
-BOOTSTRAP_MAX_BYTES = 5 * 1024 * 1024
-SKILL_DOC_URL_ENV = "MEOWA_SKILL_DOC_URL"
-SKILL_DOC_CACHE_DIR_ENV = "MEOWA_SKILL_DOC_CACHE_DIR"
-SKILL_DOC_CACHE_TTL_ENV = "MEOWA_SKILL_DOC_CACHE_TTL_SECONDS"
-SKILL_DOC_MAX_BYTES = 100 * 1024
-SKILL_DOC_DEFAULT_TTL_SECONDS = 24 * 60 * 60
-MAP_PRESET_CATALOG_URL_ENV = "MEOWA_MAP_PRESET_CATALOG_URL"
 MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
+PIXEL_GENERAL_WORKFLOW_ID = "pixel_gen_general"
+PIXEL_UNIVERSAL_TEMPLATE_NAME = "xlarge_4_3"
+MAP_REFERENCE_TYPE_TO_WORKFLOW = {
+    "pixel-isometric": "pixel_isometric_gen",
+    "pixel-hex-isometric": "pixel_hex_isometric_gen",
+    "hd-isometric": "hd_isometric_gen",
+    "hd-hex-isometric": "hd_hex_isometric_gen",
+    "tileset": "tileset_gen",
+}
+MAP_REFERENCE_TYPE_LABELS = {
+    "pixel-isometric": "Pixel Isometric",
+    "pixel-hex-isometric": "Pixel Hex Isometric",
+    "hd-isometric": "HD Isometric",
+    "hd-hex-isometric": "HD Hex Isometric",
+    "tileset": "Tileset",
+}
+MAP_REFERENCE_LAYOUT_GROUPS = {
+    "pixel-isometric": {
+        "single": "pixel_64",
+        "2x2": "pixel_128_32",
+    },
+    "pixel-hex-isometric": {
+        "single": "pixel_single",
+        "2x2": "pixel_tetraploid",
+        "7-cell": "pixel_heptaploid",
+        "template": "workflow_template",
+    },
+    "hd-isometric": {
+        "single": "hd_single",
+        "2x2": "hd_tetraploid",
+    },
+    "hd-hex-isometric": {
+        "single": "hd_single",
+        "2x2": "hd_tetraploid",
+    },
+    "tileset": {
+        "template": "tileset_template",
+    },
+}
 MAP_WORKFLOW_ENDPOINTS = {
     "pixel_isometric_gen": "/api/workflows/pixel_isometric_gen/run",
     "pixel_hex_isometric_gen": "/api/workflows/pixel_hex_isometric_gen/run",
@@ -127,312 +144,6 @@ def _configure_stdio() -> None:
             reconfigure(line_buffering=True)
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in {"", "0", "false", "no", "off"}
-
-
-def _bootstrap_log(message: str) -> None:
-    if _env_flag(BOOTSTRAP_VERBOSE_ENV):
-        print(f"[BOOTSTRAP] {message}", file=sys.stderr)
-
-
-def _default_bootstrap_cache_dir() -> Path:
-    cache_root = os.environ.get("XDG_CACHE_HOME")
-    if cache_root:
-        return Path(cache_root).expanduser() / "meowa-skills" / "game-assets"
-    return Path.home() / ".cache" / "meowa-skills" / "game-assets"
-
-
-def _bootstrap_cache_dir() -> Path:
-    configured = os.environ.get(BOOTSTRAP_CACHE_DIR_ENV, "").strip()
-    if configured:
-        return Path(configured).expanduser()
-    return _default_bootstrap_cache_dir()
-
-
-def _bootstrap_timeout() -> float:
-    raw = os.environ.get(BOOTSTRAP_TIMEOUT_ENV, "").strip()
-    if not raw:
-        return 2.0
-    try:
-        return max(float(raw), 0.2)
-    except ValueError:
-        return 2.0
-
-
-def _bootstrap_file_allowed() -> bool:
-    return _env_flag(BOOTSTRAP_ALLOW_FILE_ENV)
-
-
-def _bootstrap_url_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    if parsed.scheme == "https":
-        return True
-    if parsed.scheme == "file":
-        return _bootstrap_file_allowed()
-    return False
-
-
-def _version_key(value: str) -> tuple[tuple[int, int | str], ...]:
-    parts: list[tuple[int, int | str]] = []
-    for token in re.split(r"([0-9]+)", str(value or "").strip().lower()):
-        if not token:
-            continue
-        if token.isdigit():
-            parts.append((0, int(token)))
-            continue
-        parts.append((1, token))
-    return tuple(parts)
-
-
-def _is_version_newer(candidate: str, current: str) -> bool:
-    return _version_key(candidate) > _version_key(current)
-
-
-def _sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _read_bootstrap_url(url: str, timeout: float) -> bytes:
-    parsed = urlparse(url)
-    if parsed.scheme == "file":
-        if not _bootstrap_file_allowed():
-            raise ValueError("file bootstrap URLs require MEOWART_BOOTSTRAP_ALLOW_FILE=1")
-        return Path(unquote(parsed.path)).read_bytes()
-    if parsed.scheme != "https":
-        raise ValueError("bootstrap URLs must use https")
-    response = requests.get(url, timeout=timeout, headers={"Accept": "application/json, text/plain, */*"})
-    response.raise_for_status()
-    content = response.content
-    if len(content) > BOOTSTRAP_MAX_BYTES:
-        raise ValueError(f"bootstrap payload too large: {len(content)} bytes")
-    return content
-
-
-def _fetch_bootstrap_manifest(manifest_url: str, timeout: float) -> dict[str, Any]:
-    if not _bootstrap_url_allowed(manifest_url):
-        raise ValueError("bootstrap manifest URL must use https")
-    raw = _read_bootstrap_url(manifest_url, timeout)
-    payload = json.loads(raw.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("bootstrap manifest must be a JSON object")
-    version = str(payload.get("version") or "").strip()
-    runner_url = str(payload.get("runner_url") or "").strip()
-    sha256 = str(payload.get("sha256") or "").strip().lower()
-    min_bootstrap_version = int(payload.get("min_bootstrap_version") or 1)
-    artifact_policy_version = int(payload.get("artifact_policy_version") or 0)
-    if not version:
-        raise ValueError("bootstrap manifest missing version")
-    if not runner_url:
-        raise ValueError("bootstrap manifest missing runner_url")
-    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
-        raise ValueError("bootstrap manifest missing valid sha256")
-    if min_bootstrap_version > BOOTSTRAP_VERSION:
-        raise ValueError(
-            f"bootstrap manifest requires bootstrap version {min_bootstrap_version}, "
-            f"current is {BOOTSTRAP_VERSION}"
-        )
-    if artifact_policy_version < FINAL_OUTPUT_ARTIFACT_POLICY_VERSION:
-        raise ValueError(
-            "bootstrap manifest does not declare the required final-output artifact policy"
-        )
-    if not _bootstrap_url_allowed(runner_url):
-        raise ValueError("bootstrap runner URL must use https")
-    return {
-        "version": version,
-        "runner_url": runner_url,
-        "sha256": sha256,
-        "min_bootstrap_version": min_bootstrap_version,
-        "artifact_policy_version": artifact_policy_version,
-        "manifest_url": manifest_url,
-    }
-
-
-def _bootstrap_state_path(cache_dir: Path) -> Path:
-    return cache_dir / "bootstrap_state.json"
-
-
-def _load_bootstrap_state(cache_dir: Path) -> dict[str, Any]:
-    path = _bootstrap_state_path(cache_dir)
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _write_bootstrap_state(cache_dir: Path, state: dict[str, Any]) -> None:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    path = _bootstrap_state_path(cache_dir)
-    tmp_path = path.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp_path.replace(path)
-
-
-def _cached_bootstrap_runner(cache_dir: Path) -> Path | None:
-    state = _load_bootstrap_state(cache_dir)
-    version = str(state.get("version") or "").strip()
-    runner_path = Path(str(state.get("runner_path") or "")).expanduser()
-    sha256 = str(state.get("sha256") or "").strip().lower()
-    artifact_policy_version = int(state.get("artifact_policy_version") or 0)
-    if (
-        not version
-        or not runner_path.is_file()
-        or not re.fullmatch(r"[0-9a-f]{64}", sha256)
-        or artifact_policy_version < FINAL_OUTPUT_ARTIFACT_POLICY_VERSION
-    ):
-        return None
-    if not _is_version_newer(version, MEOWART_API_CLI_VERSION):
-        return None
-    try:
-        if _sha256_file(runner_path) != sha256:
-            return None
-    except OSError:
-        return None
-    return runner_path
-
-
-def _download_bootstrap_runner(
-    *,
-    manifest: dict[str, Any],
-    cache_dir: Path,
-    timeout: float,
-    force: bool,
-) -> Path:
-    version = str(manifest["version"])
-    sha256 = str(manifest["sha256"])
-    target = cache_dir / f"meowart_api_{_safe_slug(version)}_{sha256[:12]}.py"
-    if target.is_file() and not force and _sha256_file(target) == sha256:
-        return target
-
-    raw = _read_bootstrap_url(str(manifest["runner_url"]), timeout)
-    actual_sha = _sha256_bytes(raw)
-    if actual_sha != sha256:
-        raise ValueError(f"bootstrap runner sha256 mismatch: expected {sha256}, got {actual_sha}")
-
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    tmp_path = target.with_suffix(".py.tmp")
-    tmp_path.write_bytes(raw)
-    tmp_path.chmod(0o700)
-    tmp_path.replace(target)
-    return target
-
-
-def _exec_bootstrap_runner(runner_path: Path, argv: list[str], source: str) -> None:
-    env = os.environ.copy()
-    env[BOOTSTRAP_SKIP_ENV] = "1"
-    env["MEOWART_BOOTSTRAP_SOURCE"] = source
-    env["MEOWART_BOOTSTRAP_PARENT_VERSION"] = MEOWART_API_CLI_VERSION
-    _bootstrap_log(f"executing cached runner {runner_path}")
-    os.execve(sys.executable, [sys.executable, str(runner_path), *argv[1:]], env)
-
-
-def _bootstrap_disabled_by_argv(argv: list[str]) -> bool:
-    return any(arg == "--no-bootstrap" for arg in argv[1:]) or "bootstrap-status" in argv[1:2]
-
-
-def _bootstrap_should_skip(argv: list[str]) -> bool:
-    if os.environ.get(BOOTSTRAP_SKIP_ENV):
-        return True
-    if not _env_flag(BOOTSTRAP_ENABLED_ENV, default=True):
-        return True
-    if _bootstrap_disabled_by_argv(argv):
-        return True
-    if any(arg in {"-h", "--help", "--version"} for arg in argv[1:]):
-        return True
-    return False
-
-
-def _bootstrap_maybe_exec(argv: list[str]) -> None:
-    if _bootstrap_should_skip(argv):
-        return
-
-    cache_dir = _bootstrap_cache_dir()
-    timeout = _bootstrap_timeout()
-    manifest_url = os.environ.get(BOOTSTRAP_MANIFEST_ENV, DEFAULT_BOOTSTRAP_MANIFEST_URL).strip()
-    force = any(arg == "--bootstrap-force" for arg in argv[1:])
-    try:
-        manifest = _fetch_bootstrap_manifest(manifest_url, timeout)
-    except Exception as exc:
-        cached_runner = _cached_bootstrap_runner(cache_dir)
-        if cached_runner is not None:
-            _exec_bootstrap_runner(cached_runner, argv, "cached-after-manifest-error")
-        _bootstrap_log(f"manifest check failed: {exc}")
-        return
-
-    if not _is_version_newer(str(manifest["version"]), MEOWART_API_CLI_VERSION):
-        return
-
-    try:
-        runner_path = _download_bootstrap_runner(
-            manifest=manifest,
-            cache_dir=cache_dir,
-            timeout=timeout,
-            force=force,
-        )
-        state = {
-            "version": manifest["version"],
-            "sha256": manifest["sha256"],
-            "runner_url": manifest["runner_url"],
-            "manifest_url": manifest["manifest_url"],
-            "artifact_policy_version": manifest["artifact_policy_version"],
-            "runner_path": str(runner_path),
-            "updated_at": datetime.now().isoformat(timespec="seconds"),
-        }
-        _write_bootstrap_state(cache_dir, state)
-    except Exception as exc:
-        cached_runner = _cached_bootstrap_runner(cache_dir)
-        if cached_runner is not None:
-            _exec_bootstrap_runner(cached_runner, argv, "cached-after-download-error")
-        _bootstrap_log(f"runner update failed: {exc}")
-        return
-
-    _exec_bootstrap_runner(runner_path, argv, "remote-manifest")
-
-
-def bootstrap_status(*, check_remote: bool = False) -> dict[str, Any]:
-    cache_dir = _bootstrap_cache_dir()
-    manifest_url = os.environ.get(BOOTSTRAP_MANIFEST_ENV, DEFAULT_BOOTSTRAP_MANIFEST_URL).strip()
-    state = _load_bootstrap_state(cache_dir)
-    payload: dict[str, Any] = {
-        "bootstrap_version": BOOTSTRAP_VERSION,
-        "cli_version": MEOWART_API_CLI_VERSION,
-        "artifact_policy_version": FINAL_OUTPUT_ARTIFACT_POLICY_VERSION,
-        "enabled": _env_flag(BOOTSTRAP_ENABLED_ENV, default=True),
-        "manifest_url": manifest_url,
-        "cache_dir": str(cache_dir),
-        "cached_runner": state or None,
-        "env": {
-            BOOTSTRAP_ENABLED_ENV: os.environ.get(BOOTSTRAP_ENABLED_ENV, ""),
-            BOOTSTRAP_MANIFEST_ENV: os.environ.get(BOOTSTRAP_MANIFEST_ENV, ""),
-            BOOTSTRAP_CACHE_DIR_ENV: os.environ.get(BOOTSTRAP_CACHE_DIR_ENV, ""),
-            BOOTSTRAP_TIMEOUT_ENV: os.environ.get(BOOTSTRAP_TIMEOUT_ENV, ""),
-        },
-    }
-    if not check_remote:
-        return payload
-    try:
-        manifest = _fetch_bootstrap_manifest(manifest_url, _bootstrap_timeout())
-        payload["remote_manifest"] = manifest
-        payload["remote_is_newer"] = _is_version_newer(str(manifest["version"]), MEOWART_API_CLI_VERSION)
-    except Exception as exc:
-        payload["remote_error"] = str(exc)
-    return payload
-
-
 def _mime_for_path(path: Path) -> str:
     guessed, _ = mimetypes.guess_type(str(path))
     return guessed or "application/octet-stream"
@@ -497,251 +208,15 @@ def _save_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _format_json_for_display(payload: Any) -> str:
-    display_payload = (
-        _sanitize_response_for_local_storage(payload)
-        if _contains_generation_response(payload)
-        else _sanitize_for_meta(payload)
-    )
+    display_payload = _sanitize_response_for_local_storage(payload)
     return json.dumps(display_payload, ensure_ascii=False, indent=2)
 
 
-def _skill_doc_cache_dir() -> Path:
-    configured = os.environ.get(SKILL_DOC_CACHE_DIR_ENV, "").strip()
-    if configured:
-        return Path(configured).expanduser()
-    return _default_bootstrap_cache_dir() / "docs"
-
-
-def _skill_doc_cache_ttl_seconds() -> int:
-    raw = os.environ.get(SKILL_DOC_CACHE_TTL_ENV, "").strip()
-    if not raw:
-        return SKILL_DOC_DEFAULT_TTL_SECONDS
-    try:
-        return max(int(raw), 0)
-    except ValueError:
-        return SKILL_DOC_DEFAULT_TTL_SECONDS
-
-
-def _skill_doc_cache_key(topic: str = "") -> str:
-    cleaned = str(topic or "").strip().lower()
-    if not cleaned:
-        return "general"
-    return re.sub(r"[^a-z0-9_.-]+", "_", cleaned).strip("_.-") or "general"
-
-
-def _skill_doc_cache_path(topic: str = "") -> Path:
-    return _skill_doc_cache_dir() / f"{_skill_doc_cache_key(topic)}.json"
-
-
-def _local_skill_doc_path() -> Path:
-    return Path(__file__).resolve().parent / "meowart_api.md"
-
-
-def _normalize_meowa_brand_copy(content: str) -> str:
-    return re.sub(r"Meow(?:Art|art)", "Meowa", content)
-
-
-def _read_local_skill_doc() -> str:
-    return _normalize_meowa_brand_copy(_local_skill_doc_path().read_text(encoding="utf-8"))
-
-
-def _load_skill_doc_cache(topic: str = "") -> dict[str, Any] | None:
-    path = _skill_doc_cache_path(topic)
-    if not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    content = payload.get("content")
-    return payload if isinstance(content, str) and content else None
-
-
-def _skill_doc_cache_is_fresh(payload: dict[str, Any]) -> bool:
-    fetched_at = payload.get("fetched_at")
-    if not isinstance(fetched_at, (int, float)):
-        return False
-    ttl = _skill_doc_cache_ttl_seconds()
-    if ttl <= 0:
-        return False
-    return time.time() - float(fetched_at) <= ttl
-
-
-def _write_skill_doc_cache(topic: str, payload: dict[str, Any]) -> None:
-    cache_payload = dict(payload)
-    cache_payload["fetched_at"] = time.time()
-    _save_json(_skill_doc_cache_path(topic), cache_payload)
-
-
-def _skill_doc_endpoint(api_base: str) -> str:
-    configured = os.environ.get(SKILL_DOC_URL_ENV, "").strip()
-    if configured:
-        return configured
-    return _normalize_base_url(api_base, "/api/agent-skills/game-assets/doc")
-
-
-def _validate_remote_skill_doc(payload: dict[str, Any]) -> dict[str, Any]:
-    content = payload.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("skill doc response missing markdown content")
-    if str(payload.get("format") or "").strip().lower() != "markdown":
-        raise ValueError("skill doc response format must be markdown")
-    if len(content.encode("utf-8")) > SKILL_DOC_MAX_BYTES:
-        raise ValueError(f"skill doc response too large: max {SKILL_DOC_MAX_BYTES} bytes")
-
-    sha256 = str(payload.get("sha256") or "").strip().lower()
-    actual_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    if sha256 and sha256 != actual_sha:
-        raise ValueError(f"skill doc sha256 mismatch: expected {sha256}, got {actual_sha}")
-
-    normalized = dict(payload)
-    normalized["content"] = _normalize_meowa_brand_copy(content)
-    normalized["sha256"] = actual_sha
-    return normalized
-
-
-def _fetch_remote_skill_doc(
-    *,
-    api_base: str,
-    topic: str = "",
-    task: str = "",
-    timeout: int = DEFAULT_TIMEOUT,
-    verify: bool = True,
-    cached: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    url = _skill_doc_endpoint(api_base)
-    params: dict[str, str] = {}
-    if topic:
-        params["topic"] = topic
-    if task:
-        params["task"] = task
-
-    headers = {"Accept": "application/json"}
-    etag = str((cached or {}).get("etag") or "").strip()
-    if etag:
-        headers["If-None-Match"] = etag
-
-    response = requests.get(url, params=params or None, timeout=timeout, verify=verify, headers=headers)
-    if response.status_code == 304 and cached is not None:
-        refreshed = dict(cached)
-        refreshed["source"] = "cache-not-modified"
-        refreshed["fetched_at"] = time.time()
-        return refreshed
-    response.raise_for_status()
-    if len(response.content) > SKILL_DOC_MAX_BYTES * 2:
-        raise ValueError(f"skill doc response too large: {len(response.content)} bytes")
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise ValueError("skill doc response must be a JSON object")
-
-    doc = _validate_remote_skill_doc(payload)
-    doc["source"] = "remote"
-    doc["source_url"] = url
-    doc["etag"] = response.headers.get("ETag", "")
-    return doc
-
-
-def _fallback_skill_doc(reason: str, *, topic: str = "") -> dict[str, Any]:
-    content = _read_local_skill_doc()
-    return {
-        "skill_name": "game-assets",
-        "skill_doc_version": "bundled",
-        "format": "markdown",
-        "content": content,
-        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        "source": "bundled-fallback",
-        "topic": str(topic or "").strip() or None,
-        "fallback": True,
-        "warning": reason,
-    }
-
-
-def skill_doc(
-    *,
-    api_base: str,
-    topic: str = "",
-    task: str = "",
-    timeout: int = DEFAULT_TIMEOUT,
-    verify: bool = True,
-    refresh: bool = False,
-) -> dict[str, Any]:
-    cached = _load_skill_doc_cache(topic)
-    if cached is not None and not refresh and _skill_doc_cache_is_fresh(cached):
-        result = dict(cached)
-        result["source"] = "cache"
-        return result
-
-    try:
-        remote = _fetch_remote_skill_doc(
-            api_base=api_base,
-            topic=str(topic or "").strip(),
-            task=str(task or "").strip(),
-            timeout=timeout,
-            verify=verify,
-            cached=cached,
-        )
-        _write_skill_doc_cache(topic, remote)
-        return remote
-    except Exception as exc:
-        if cached is not None:
-            result = dict(cached)
-            result["source"] = "cache-after-remote-error"
-            result["warning"] = str(exc)
-            return result
-        return _fallback_skill_doc(str(exc), topic=topic)
-
-
-def skill_doc_status(
-    *,
-    api_base: str,
-    topic: str = "",
-    timeout: int = DEFAULT_TIMEOUT,
-    verify: bool = True,
-    check_remote: bool = False,
-) -> dict[str, Any]:
-    cached = _load_skill_doc_cache(topic)
-    status: dict[str, Any] = {
-        "endpoint": _skill_doc_endpoint(api_base),
-        "cache_dir": str(_skill_doc_cache_dir()),
-        "cache_key": _skill_doc_cache_key(topic),
-        "cache_ttl_seconds": _skill_doc_cache_ttl_seconds(),
-        "cached": None,
-    }
-    if cached is not None:
-        status["cached"] = {
-            "skill_doc_version": cached.get("skill_doc_version"),
-            "sha256": cached.get("sha256"),
-            "source": cached.get("source"),
-            "fetched_at": cached.get("fetched_at"),
-            "fresh": _skill_doc_cache_is_fresh(cached),
-        }
-    if not check_remote:
-        return status
-    try:
-        remote = _fetch_remote_skill_doc(
-            api_base=api_base,
-            topic=topic,
-            timeout=timeout,
-            verify=verify,
-            cached=cached,
-        )
-        status["remote"] = {
-            "skill_doc_version": remote.get("skill_doc_version"),
-            "sha256": remote.get("sha256"),
-            "source": remote.get("source"),
-            "updated_at": remote.get("updated_at"),
-        }
-    except Exception as exc:
-        status["remote_error"] = str(exc)
-    return status
+def _format_public_json(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _map_preset_catalog_endpoint(api_base: str) -> str:
-    configured = os.environ.get(MAP_PRESET_CATALOG_URL_ENV, "").strip()
-    if configured:
-        return configured
     return _normalize_base_url(api_base, "/api/agent-skills/game-assets/map-presets")
 
 
@@ -803,6 +278,44 @@ def _query_tokens(query: str) -> list[str]:
     return [token for token in normalized.split(" ") if token]
 
 
+def _map_reference_type_for_workflow(workflow_id: str) -> str:
+    normalized = str(workflow_id or "").strip()
+    for map_type, candidate_workflow_id in MAP_REFERENCE_TYPE_TO_WORKFLOW.items():
+        if normalized == candidate_workflow_id:
+            return map_type
+    return ""
+
+
+def _resolve_map_reference_filters(
+    *,
+    map_type: str = "",
+    theme: str = "",
+    layout: str = "",
+    group: str = "",
+) -> tuple[str, str, str]:
+    normalized_type = str(map_type or "").strip()
+    normalized_theme = str(theme or "").strip()
+    normalized_layout = str(layout or "").strip()
+    normalized_group = str(group or "").strip()
+    workflow_id = MAP_REFERENCE_TYPE_TO_WORKFLOW.get(normalized_type, "")
+    if normalized_type and not workflow_id:
+        available = ", ".join(MAP_REFERENCE_TYPE_TO_WORKFLOW)
+        raise ValueError(f"unsupported map reference type: {normalized_type}; available: {available}")
+    if normalized_layout:
+        if not normalized_type:
+            raise ValueError("--layout requires --type so its meaning is unambiguous")
+        resolved_group = MAP_REFERENCE_LAYOUT_GROUPS.get(normalized_type, {}).get(normalized_layout, "")
+        if not resolved_group:
+            available = ", ".join(MAP_REFERENCE_LAYOUT_GROUPS.get(normalized_type, {}))
+            raise ValueError(
+                f"unsupported layout {normalized_layout!r} for {normalized_type}; available: {available}"
+            )
+        if normalized_group and normalized_group != resolved_group:
+            raise ValueError(f"--layout {normalized_layout} conflicts with --group {normalized_group}")
+        normalized_group = resolved_group
+    return workflow_id, normalized_theme, normalized_group
+
+
 def _preset_matches_filters(
     preset: dict[str, Any],
     *,
@@ -860,7 +373,7 @@ def search_map_presets(
 ) -> dict[str, Any]:
     catalog = fetch_map_preset_catalog(api_base=api_base, timeout=timeout, verify=verify)
     tokens = _query_tokens(query)
-    matches: list[dict[str, Any]] = []
+    candidates: list[tuple[dict[str, Any], str]] = []
     for preset in catalog.get("presets") or []:
         if not isinstance(preset, dict):
             continue
@@ -874,8 +387,16 @@ def search_map_presets(
         ):
             continue
         text_blob = _preset_text_blob(preset)
-        if tokens and not all(token in text_blob for token in tokens):
-            continue
+        candidates.append((preset, text_blob))
+
+    match_mode = "all"
+    selected = [item for item in candidates if not tokens or all(token in item[1] for token in tokens)]
+    if tokens and not selected:
+        selected = [item for item in candidates if any(token in item[1] for token in tokens)]
+        match_mode = "any-fallback"
+
+    matches: list[dict[str, Any]] = []
+    for preset, _text_blob in selected:
         enriched = dict(preset)
         enriched["_score"] = _preset_search_score(enriched, tokens)
         matches.append(enriched)
@@ -901,9 +422,164 @@ def search_map_presets(
             "assetKind": asset_kind,
             "group": group,
         },
+        "matchMode": match_mode,
         "count": len(matches),
         "matches": matches[:capped_limit],
     }
+
+
+def public_map_reference_categories(catalog: dict[str, Any], *, map_type: str = "") -> dict[str, Any]:
+    requested_type = str(map_type or "").strip()
+    if requested_type and requested_type not in MAP_REFERENCE_TYPE_TO_WORKFLOW:
+        available = ", ".join(MAP_REFERENCE_TYPE_TO_WORKFLOW)
+        raise ValueError(f"unsupported map reference type: {requested_type}; available: {available}")
+
+    type_buckets: dict[str, dict[str, Any]] = {}
+    for raw_preset in catalog.get("presets") or []:
+        if not isinstance(raw_preset, dict):
+            continue
+        current_type = str(raw_preset.get("catalogId") or "").strip()
+        if current_type not in MAP_REFERENCE_TYPE_TO_WORKFLOW:
+            current_type = _map_reference_type_for_workflow(str(raw_preset.get("workflowId") or ""))
+        if not current_type or (requested_type and current_type != requested_type):
+            continue
+        bucket = type_buckets.setdefault(
+            current_type,
+            {
+                "type": current_type,
+                "name": MAP_REFERENCE_TYPE_LABELS[current_type],
+                "count": 0,
+                "layouts": {},
+                "themes": {},
+            },
+        )
+        bucket["count"] += 1
+
+        raw_group = str(raw_preset.get("group") or "").strip()
+        layout = next(
+            (
+                public_layout
+                for public_layout, group_name in MAP_REFERENCE_LAYOUT_GROUPS.get(current_type, {}).items()
+                if group_name == raw_group
+            ),
+            "",
+        )
+        if layout:
+            layout_bucket = bucket["layouts"].setdefault(
+                layout,
+                {
+                    "layout": layout,
+                    "tile_size": str(raw_preset.get("tileSize") or ""),
+                    "asset_kind": str(raw_preset.get("assetKind") or "reference"),
+                    "count": 0,
+                },
+            )
+            layout_bucket["count"] += 1
+
+        theme = str(raw_preset.get("templateId") or "").strip()
+        if theme:
+            theme_bucket = bucket["themes"].setdefault(
+                theme,
+                {
+                    "theme": theme,
+                    "name": str(raw_preset.get("templateName") or theme),
+                    "description": str(raw_preset.get("templateDescription") or ""),
+                    "count": 0,
+                },
+            )
+            theme_bucket["count"] += 1
+
+    public_types: list[dict[str, Any]] = []
+    for current_type in MAP_REFERENCE_TYPE_TO_WORKFLOW:
+        bucket = type_buckets.get(current_type)
+        if not bucket:
+            continue
+        public_types.append(
+            {
+                "type": bucket["type"],
+                "name": bucket["name"],
+                "count": bucket["count"],
+                "layouts": [bucket["layouts"][key] for key in sorted(bucket["layouts"])],
+                "themes": [bucket["themes"][key] for key in sorted(bucket["themes"])],
+            }
+        )
+    return {
+        "count": sum(item["count"] for item in public_types),
+        "types": public_types,
+    }
+
+
+def _public_map_search_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    matches: list[dict[str, Any]] = []
+    for raw_preset in payload.get("matches") or []:
+        if not isinstance(raw_preset, dict):
+            continue
+        preset_id = str(raw_preset.get("id") or "").strip()
+        if not preset_id:
+            continue
+        public_preset: dict[str, Any] = {
+            "preset_id": preset_id,
+            "name": str(
+                raw_preset.get("label")
+                or raw_preset.get("templateName")
+                or Path(str(raw_preset.get("filename") or preset_id)).stem
+            ),
+        }
+        map_type = str(raw_preset.get("catalogId") or "").strip()
+        if map_type not in MAP_REFERENCE_TYPE_TO_WORKFLOW:
+            map_type = _map_reference_type_for_workflow(str(raw_preset.get("workflowId") or ""))
+        if map_type:
+            public_preset["type"] = map_type
+            theme = str(raw_preset.get("templateId") or "").strip()
+            if theme:
+                public_preset["theme"] = theme
+        description = str(raw_preset.get("templateDescription") or "").strip()
+        if description:
+            public_preset["description"] = description
+        for source_key, public_key in (
+            ("group", "group"),
+            ("tileSize", "tile_size"),
+            ("assetKind", "asset_kind"),
+        ):
+            value = str(raw_preset.get(source_key) or "").strip()
+            if value:
+                public_preset[public_key] = value
+        tags = [str(tag) for tag in raw_preset.get("tags") or [] if str(tag).strip()]
+        if tags:
+            public_preset["tags"] = tags
+        matches.append(public_preset)
+
+    public_filters: dict[str, Any] = {}
+    filters = payload.get("filters")
+    if isinstance(filters, dict):
+        ids = [str(item) for item in filters.get("ids") or [] if str(item).strip()]
+        if ids:
+            public_filters["preset_ids"] = ids
+        filter_type = _map_reference_type_for_workflow(str(filters.get("workflowId") or ""))
+        if filter_type:
+            public_filters["type"] = filter_type
+            filter_theme = str(filters.get("templateId") or "").strip()
+            if filter_theme:
+                public_filters["theme"] = filter_theme
+        for raw_key, public_key in (
+            ("tileSize", "tile_size"),
+            ("assetKind", "asset_kind"),
+            ("group", "group"),
+        ):
+            value = str(filters.get(raw_key) or "").strip()
+            if value:
+                public_filters[public_key] = value
+
+    public_payload = {
+        "query": str(payload.get("query") or ""),
+        "filters": public_filters,
+        "count": int(payload.get("count") or len(matches)),
+        "matches": matches,
+    }
+    match_mode = str(payload.get("matchMode") or "").strip()
+    if match_mode:
+        public_payload["match_mode"] = match_mode
+    return public_payload
 
 
 def _absolute_url(api_base: str, value: str) -> str:
@@ -922,10 +598,8 @@ def _preset_download_filename(preset: dict[str, Any], index: int) -> str:
         "_".join(
             part
             for part in (
-                str(preset.get("workflowId") or ""),
-                str(preset.get("templateId") or ""),
-                str(preset.get("group") or ""),
-                Path(filename).stem,
+                str(preset.get("id") or ""),
+                str(preset.get("label") or Path(filename).stem),
             )
             if part
         )
@@ -983,7 +657,8 @@ def download_map_presets(
 
     target_dir = Path(output_dir).expanduser()
     target_dir.mkdir(parents=True, exist_ok=True)
-    _save_json(target_dir / "map_preset_search.json", _sanitize_for_meta(search_payload))
+    public_search_payload = _public_map_search_payload(search_payload)
+    _save_json(target_dir / "map_preset_search.json", public_search_payload)
 
     downloads: list[dict[str, Any]] = [{"type": "json", "path": str(target_dir / "map_preset_search.json")}]
     for index, preset in enumerate(matches[: max(int(limit or len(matches)), 1)], start=1):
@@ -1014,7 +689,7 @@ def download_map_presets(
             }
         )
         print(f"[INFO] downloaded={target_path}")
-    return search_payload, downloads
+    return public_search_payload, downloads
 
 
 def _timestamp_slug() -> str:
@@ -1047,9 +722,7 @@ def _sanitize_for_meta(value: Any, *, key: str = "") -> Any:
 
 def _create_run_dir(work_dir: str, command: str) -> Path:
     root = Path(work_dir).expanduser()
-    run_dir = root / f"{_timestamp_slug()}_{_safe_slug(command)}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
+    return root / f"{_timestamp_slug()}_{_safe_slug(command)}"
 
 
 def _resolve_output_dir(raw_path: str, run_dir: Path) -> Path:
@@ -1074,22 +747,8 @@ def _write_meta(
     effective_output_dir: str,
     error: str = "",
 ) -> None:
-    meta = {
-        "command": args.command,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "run_dir": str(run_dir),
-        "work_dir": str(Path(args.work_dir).expanduser()),
-        "effective_output_dir": effective_output_dir,
-        "request": {
-            "cli_args": _sanitize_for_meta(vars(args)),
-            "payload": _sanitize_for_meta(request_payload),
-        },
-        "response": _sanitize_response_for_local_storage(response_payload),
-        "downloads": _sanitize_for_meta(downloads or []),
-        "error": _sanitize_diagnostic_text(error),
-    }
-    _save_json(run_dir / "meta.json", meta)
+    # Intentionally do not persist requests, responses, credentials, or debug metadata.
+    return None
 
 
 def _suffix_from_mime(mime_type: str) -> str:
@@ -1111,6 +770,8 @@ def _download_file(
     headers: dict[str, str] | None = None,
     require_media: bool = False,
 ) -> str:
+    if urlparse(url).scheme.lower() != "https":
+        raise ValueError("refusing non-HTTPS download")
     response = requests.get(url, timeout=timeout, verify=verify, headers=headers or None)
     response.raise_for_status()
     content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
@@ -1130,41 +791,29 @@ def _safe_slug(value: str) -> str:
 
 def _base_headers(api_key: str) -> dict[str, str]:
     token = str(api_key or "").strip()
-    dev_prefix = "x-dev-key:"
-    if token.startswith(dev_prefix):
-        return {"X-Dev-Key": token[len(dev_prefix):].strip()}
-    auth_prefix = "authenticate:"
-    if token.lower().startswith(auth_prefix):
-        candidate = token[len(auth_prefix):].strip()
-        if candidate.startswith("ma_live_"):
-            token = candidate
+    if token.startswith(_DEV_AUTH_PREFIX):
+        return {"X-Dev-Key": token.removeprefix(_DEV_AUTH_PREFIX)}
     return {"Authorization": f"Bearer {token}"}
 
 
-def _host_matches_suffix(host: str, suffix: str) -> bool:
-    return host == suffix or host.endswith(f".{suffix}")
-
-
 def _should_send_auth_headers(url: str) -> bool:
-    host = (urlparse(url).netloc or "").strip().lower()
-    if not host:
-        return False
-    if host.endswith("storage.googleapis.com"):
-        return False
-    return any(_host_matches_suffix(host, suffix) for suffix in AUTH_HEADER_HOST_SUFFIXES)
+    parsed = urlparse(url)
+    return parsed.scheme.lower() == "https" and (parsed.hostname or "").lower() == AUTH_HEADER_HOST
 
 
 def _normalize_api_base(api_base: str) -> str:
     raw = str(api_base or DEFAULT_API_BASE).strip() or DEFAULT_API_BASE
     parsed = urlparse(raw)
     if not parsed.scheme or not parsed.netloc:
-        raise ValueError(f"invalid --api-base: {raw!r}")
+        raise ValueError("invalid Meowa service URL")
+    if parsed.scheme != "https" or parsed.netloc.lower() != "api.meowa.ai":
+        raise ValueError("the distributed Skill only connects to https://api.meowa.ai")
 
     path = parsed.path.rstrip("/")
     lowered_path = path.lower()
     if lowered_path in {"/generate", "/api/generate"}:
         print(
-            f"[WARN] --api-base included deprecated endpoint path {path!r}; using host root instead. "
+            f"[WARN] service URL included deprecated endpoint path {path!r}; using host root instead. "
             f"{MEOWART_ENDPOINT_HINT}",
             file=sys.stderr,
         )
@@ -1245,136 +894,6 @@ def _unique_target_path(output_dir: Path, filename: str) -> Path:
         counter += 1
 
 
-def _iter_gemini_final_parts(payload: dict[str, Any]) -> list[tuple[int, int, dict[str, Any]]]:
-    found: list[tuple[int, int, dict[str, Any]]] = []
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
-        return found
-    for candidate_index, candidate in enumerate(candidates):
-        if not isinstance(candidate, dict):
-            continue
-        content = candidate.get("content")
-        parts = content.get("parts") if isinstance(content, dict) else None
-        if not isinstance(parts, list):
-            continue
-        for part_index, part in enumerate(parts):
-            if isinstance(part, dict) and part.get("thought") is not True:
-                found.append((candidate_index, part_index, part))
-    return found
-
-
-def _collect_gemini_final_inline_media(payload: dict[str, Any]) -> list[tuple[str, str, str]]:
-    found: list[tuple[str, str, str]] = []
-    for candidate_index, part_index, part in _iter_gemini_final_parts(payload):
-        inline_data = part.get("inlineData") or part.get("inline_data")
-        if not isinstance(inline_data, dict):
-            continue
-        mime_type = str(inline_data.get("mimeType") or inline_data.get("mime_type") or "").strip()
-        data = str(inline_data.get("data") or "").strip()
-        if mime_type.startswith(("image/", "audio/", "video/")) and data:
-            found.append((f"candidates[{candidate_index}].content.parts[{part_index}]", mime_type, data))
-    return found
-
-
-def _collect_gemini_final_media_urls(payload: dict[str, Any]) -> list[tuple[str, str]]:
-    found: list[tuple[str, str]] = []
-    for candidate_index, part_index, part in _iter_gemini_final_parts(payload):
-        file_data = part.get("fileData") or part.get("file_data")
-        if not isinstance(file_data, dict):
-            continue
-        mime_type = str(file_data.get("mimeType") or file_data.get("mime_type") or "").strip()
-        url = str(
-            file_data.get("fileUri")
-            or file_data.get("file_uri")
-            or file_data.get("uri")
-            or file_data.get("url")
-            or ""
-        ).strip()
-        if not mime_type.startswith(("image/", "audio/", "video/")):
-            continue
-        if urlparse(url).scheme not in {"http", "https"}:
-            continue
-        if Path(urlparse(url).path).suffix.lower() not in _DOWNLOADABLE_MEDIA_EXTENSIONS:
-            continue
-        found.append((f"candidates[{candidate_index}].content.parts[{part_index}].file_data", url))
-    return found
-
-
-def _collect_gemini_final_text(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    found: list[dict[str, Any]] = []
-    for candidate_index, part_index, part in _iter_gemini_final_parts(payload):
-        text = part.get("text")
-        if not isinstance(text, str) or not text:
-            continue
-        found.append(
-            {
-                "candidate_index": candidate_index,
-                "part_index": part_index,
-                "text": _EMBEDDED_INTERNAL_PATH_PATTERN.sub(
-                    "<omitted-internal-path>",
-                    _EMBEDDED_HTTP_URL_PATTERN.sub("<omitted-non-final-url>", text),
-                ),
-            }
-        )
-    return found
-
-
-def _save_gemini_response_assets(
-    *,
-    payload: dict[str, Any],
-    output_dir: str,
-    timeout: int,
-    verify: bool,
-    api_key: str,
-    save_json: bool = True,
-) -> tuple[Path | None, list[dict[str, Any]]]:
-    target_dir = Path(output_dir).expanduser()
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    wrote_any = False
-    downloads: list[dict[str, Any]] = []
-
-    inline_media = _collect_gemini_final_inline_media(payload)
-    for index, (key, mime_type, data) in enumerate(inline_media, start=1):
-        filename = _safe_slug(key.replace(".", "_").replace("[", "_").replace("]", "")) or f"asset_{index}"
-        target_path = target_dir / f"{filename}_{index:02d}{_suffix_from_mime(mime_type)}"
-        try:
-            target_path.write_bytes(base64.b64decode(data, validate=True))
-            wrote_any = True
-            downloads.append({"type": "inline_media", "key": key, "mime_type": mime_type, "path": str(target_path)})
-            print(f"[INFO] downloaded={target_path}")
-        except ValueError as exc:
-            print(f"[WARN] failed to decode inline media {key}: {exc}", file=sys.stderr)
-
-    http_urls = _collect_gemini_final_media_urls(payload)
-    if http_urls:
-        downloaded_urls = _download_named_urls(
-            urls=http_urls,
-            output_dir=target_dir,
-            timeout=timeout,
-            verify=verify,
-            headers=_base_headers(api_key),
-        )
-        downloads.extend(downloaded_urls)
-        if downloaded_urls:
-            wrote_any = True
-
-    if save_json:
-        manifest_path = target_dir / "final_outputs.json"
-        _save_json(
-            manifest_path,
-            {
-                "type": "final_outputs",
-                "text_outputs": _collect_gemini_final_text(payload),
-                "assets": _sanitize_for_meta(downloads),
-            },
-        )
-        downloads.insert(0, {"type": "json", "path": str(manifest_path)})
-        wrote_any = True
-
-    return (target_dir if wrote_any else None, downloads)
-
-
 def _download_named_urls(
     *,
     urls: list[tuple[str, str]],
@@ -1406,7 +925,7 @@ def _download_named_urls(
                     renamed_target = _unique_target_path(output_dir, f"{target.stem}{resolved_suffix}")
                     target.rename(renamed_target)
                     target = renamed_target
-            downloads.append({"type": "url_download", "key": key, "url": url, "path": str(target)})
+            downloads.append({"type": "media", "key": key, "path": str(target), "mime_type": mime_type})
             print(f"[INFO] downloaded={target}")
         except (requests.RequestException, ValueError) as exc:
             print(f"[WARN] download failed for {url}: {exc}", file=sys.stderr)
@@ -1426,64 +945,48 @@ _DOWNLOADABLE_MEDIA_EXTENSIONS = {
     ".webm",
     ".webp",
 }
-_FINAL_OUTPUT_FIELDS = {
-    "animated_gif_path",
-    "animated_webp_path",
-    "assembled_preview_path",
-    "audio_path",
-    "audio_paths",
-    "background_path",
-    "bead_pattern_path",
-    "download_url",
-    "edited_path",
-    "final_isometric_texture_path",
-    "final_isometric_tileset_path",
-    "final_sprite",
-    "final_sprite_paths",
-    "final_texture_path",
-    "final_tile_paths",
-    "final_tileset_path",
-    "foreground_path",
-    "gcs_url",
-    "icon_paths",
-    "image_paths",
-    "image_url",
-    "midground_path",
-    "output_path",
-    "output_url",
-    "pixel_image_path",
-    "remove_bg_path",
-    "result_path",
-    "result_url",
-    "sheet_path",
-    "sprite_crop_path",
-    "sprite_pack_preview_path",
-    "sprite_paths",
-    "spritesheet_path",
-    "texture_path",
-    "tile_pack_preview_path",
-    "tile_paths",
-    "tileset_path",
-    "tiling_preview_path",
-    "transparent_output_urls",
-    "transparent_path",
-    "url",
-    "video_path",
-    "video_paths",
-    "raw_video_path",
+_WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
+    "animate": frozenset({"animated_gif_path", "animated_webp_path", "spritesheet_path", "output_url", "url"}),
+    "character_multi_view_generator": frozenset({"sprite_pack_preview_path", "sprite_paths", "final_sprite_paths", "url"}),
+    "elevenlabs_generator": frozenset({"audio_path", "audio_paths", "url"}),
+    "frames_edit": frozenset({"animation_path", "sprite_sheet_path", "url"}),
+    "general_ui_gen": frozenset({"output_path", "url"}),
+    "hd_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
+    "hd_gen_grid_2x2": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "hd_gen_grid_4x4": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "hd_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
+    "hd_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
+    "hd_side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
+    "image_edit": frozenset({"edited_path", "remove_bg_path", "url"}),
+    "image_expander": frozenset({"assembled_preview_path", "image_paths", "images", "tile_paths", "url"}),
+    "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
+    "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
+    "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
+    "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
+    "pixel_gen_general": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_grid_24px": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_grid_2x2": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_grid_48px": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_grid_4x4": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_grid_5x5": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_grid_8x8": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
+    "pixel_gen_mask_single": frozenset({"final_sprite", "url"}),
+    "pixel_gen_self_loop": frozenset({"output_path", "tiling_preview_path", "image_paths", "url"}),
+    "pixel_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
+    "pixel_isometric_16_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
+    "pixel_isometric_32_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
+    "pixel_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
+    "pixelate": frozenset({"pixel_image_path", "output_url", "result_url", "url"}),
+    "remove_background": frozenset({"remove_bg_path", "transparent_path", "output_url", "result_url", "url"}),
+    "seedance_generator": frozenset({"raw_video_path", "video_paths", "url"}),
+    "side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
+    "texture_gen": frozenset({"final_texture_path", "texture_path", "tiling_preview_path", "url"}),
+    "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "url"}),
 }
-_FINAL_OUTPUT_CONTAINERS = {
-    "animation_assets",
-    "component_split",
-    "final_sprite_paths",
-    "final_tile_paths",
-    "icon_paths",
-    "image_paths",
-    "sprite_paths",
-    "tile_paths",
-    "transparent_output_urls",
-    "video_paths",
+_WORKFLOW_FINAL_OUTPUT_CONTAINERS: dict[str, frozenset[str]] = {
+    "animate": frozenset({"animation_assets"}),
 }
+_FINAL_OUTPUT_FIELDS = frozenset().union(*_WORKFLOW_FINAL_OUTPUT_FIELDS.values())
 _BLOCKED_OUTPUT_KEY_PARTS = {
     "base_texture_path",
     "debug",
@@ -1495,7 +998,9 @@ _BLOCKED_OUTPUT_KEY_PARTS = {
     "gcs_run_prefix",
     "input_reference_paths",
     "manifest",
+    "generation_config",
     "metadata",
+    "params",
     "prepared_full_canvas_path",
     "prepared_reference_path",
     "prepared_reference_paths",
@@ -1525,9 +1030,12 @@ _BLOCKED_OUTPUT_KEY_TOKENS = {
     "prepared",
     "provider",
     "reference",
+    "model",
     "source",
     "stage",
     "template",
+    "temperature",
+    "workflow",
 }
 
 
@@ -1546,9 +1054,6 @@ def _payload_workflow_id(payload: dict[str, Any]) -> str:
         if not isinstance(container, dict):
             continue
         candidates.append(container.get("workflow_id"))
-        metadata = container.get("metadata")
-        if isinstance(metadata, dict):
-            candidates.append(metadata.get("workflow_id"))
     for candidate in candidates:
         workflow_id = str(candidate or "").strip()
         if workflow_id:
@@ -1558,7 +1063,7 @@ def _payload_workflow_id(payload: dict[str, Any]) -> str:
 
 def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str = "") -> bool:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
+    if parsed.scheme != "https":
         return False
 
     path = parsed.path or ""
@@ -1573,17 +1078,21 @@ def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str 
     ):
         return False
 
+    normalized_workflow_id = str(workflow_id or "").strip()
+    allowed_fields = _WORKFLOW_FINAL_OUTPUT_FIELDS.get(normalized_workflow_id)
+    if not allowed_fields:
+        return False
+    allowed_containers = _WORKFLOW_FINAL_OUTPUT_CONTAINERS.get(normalized_workflow_id, frozenset())
+
     leaf = key_parts[-1]
-    if leaf not in _FINAL_OUTPUT_FIELDS and not any(
-        part in _FINAL_OUTPUT_CONTAINERS for part in key_parts[:-1]
-    ):
+    if leaf not in allowed_fields and not any(part in allowed_containers for part in key_parts[:-1]):
         return False
 
-    if leaf in {"url", "gcs_url", "download_url"}:
+    if leaf == "url":
         return len(key_parts) >= 2 and key_parts[-2] in {
             "output",
             "result",
-            *_FINAL_OUTPUT_CONTAINERS,
+            *allowed_containers,
         }
     return True
 
@@ -1710,36 +1219,7 @@ def _sanitize_response_for_local_storage(value: Any) -> Any:
         key_path="",
         workflow_id=workflow_id,
     )
-    if isinstance(sanitized, dict) and workflow_id and "workflow_id" not in sanitized:
-        sanitized["workflow_id"] = workflow_id
     return {} if sanitized is _LOCAL_RESPONSE_OMIT else sanitized
-
-
-def _contains_generation_response(value: Any) -> bool:
-    if isinstance(value, list):
-        return any(_contains_generation_response(item) for item in value)
-    if not isinstance(value, dict):
-        return False
-    if isinstance(value.get("candidates"), list):
-        return True
-    keys = {str(key).strip().lower() for key in value}
-    if "status" in keys and keys.intersection(
-        {
-            "api_job_id",
-            "job_id",
-            "jobs_url",
-            "output",
-            "progress",
-            "queue",
-            "result",
-            "stage",
-        }
-    ):
-        return True
-    for wrapper_key in ("submit", "final", "response", "items"):
-        if wrapper_key in value and _contains_generation_response(value[wrapper_key]):
-            return True
-    return False
 
 
 def image_file_to_data_url(image_path: str) -> str:
@@ -1749,86 +1229,6 @@ def image_file_to_data_url(image_path: str) -> str:
     mime = _mime_for_path(path)
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{encoded}"
-
-
-def image_file_to_inline_data_part(image_path: str) -> dict[str, Any]:
-    path = Path(image_path).expanduser().resolve()
-    if not path.is_file():
-        raise FileNotFoundError(f"image not found: {path}")
-    return {
-        "inline_data": {
-            "mime_type": _mime_for_path(path),
-            "data": base64.b64encode(path.read_bytes()).decode("ascii"),
-        }
-    }
-
-
-def build_gemini_generate_content_contents(*, text: str = "", image_files: list[str] | None = None) -> list[dict[str, Any]]:
-    parts: list[dict[str, Any]] = []
-    if str(text or ""):
-        parts.append({"text": str(text)})
-    for raw_path in image_files or []:
-        if str(raw_path or "").strip():
-            parts.append(image_file_to_inline_data_part(raw_path))
-    if not parts:
-        raise ValueError("gemini-generate-content requires --text or at least one --image-file")
-    return [{"parts": parts}]
-
-
-def gemini_proxy_request(
-    *,
-    api_base: str,
-    api_key: str,
-    path: str,
-    method: str = "POST",
-    json_body: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-    timeout: int = DEFAULT_TIMEOUT,
-    verify: bool = True,
-) -> dict[str, Any]:
-    url = _normalize_base_url(api_base, f"/api/gemini/{path.lstrip('/')}")
-    response, payload = _request_json(
-        method=method.upper(),
-        url=url,
-        headers=_base_headers(api_key),
-        json_body=json_body,
-        params=params,
-        timeout=timeout,
-        verify=verify,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(_format_json_for_display(payload))
-    return payload
-
-
-def gemini_generate_content(
-    *,
-    api_base: str,
-    api_key: str,
-    model: str,
-    contents: list[dict[str, Any]],
-    generation_config: dict[str, Any] | None = None,
-    safety_settings: list[dict[str, Any]] | None = None,
-    system_instruction: dict[str, Any] | None = None,
-    timeout: int = DEFAULT_TIMEOUT,
-    verify: bool = True,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {"contents": contents}
-    if generation_config:
-        body["generationConfig"] = generation_config
-    if safety_settings:
-        body["safetySettings"] = safety_settings
-    if system_instruction:
-        body["systemInstruction"] = system_instruction
-    return gemini_proxy_request(
-        api_base=api_base,
-        api_key=api_key,
-        path=f"v1beta/models/{model}:generateContent",
-        method="POST",
-        json_body=body,
-        timeout=timeout,
-        verify=verify,
-    )
 
 
 def get_credits_balance(
@@ -1891,10 +1291,81 @@ def poll_job_until_done(
     return final_payload
 
 
+def _public_template_catalog(
+    payload: dict[str, Any],
+    *,
+    workflow_id: str = "",
+) -> dict[str, Any]:
+    templates: list[dict[str, Any]] = []
+    normalized_workflow_id = str(workflow_id or "").strip()
+    for raw_template in payload.get("templates") or []:
+        if not isinstance(raw_template, dict):
+            continue
+        if normalized_workflow_id and str(raw_template.get("workflow_id") or "").strip() != normalized_workflow_id:
+            continue
+        template_name = str(raw_template.get("template_name") or "").strip()
+        if not template_name:
+            continue
+        public_template: dict[str, Any] = {
+            "template_name": template_name,
+            "display_name": str(raw_template.get("display_name") or template_name),
+            "description": str(raw_template.get("description") or ""),
+            "labels": [str(label) for label in raw_template.get("labels") or [] if str(label).strip()],
+            "output_size": str(raw_template.get("output_size") or ""),
+        }
+        output_size_px = raw_template.get("output_size_px")
+        if isinstance(output_size_px, int) and output_size_px > 0:
+            public_template["output_size_px"] = output_size_px
+
+        defaults = raw_template.get("default_params")
+        if isinstance(defaults, dict):
+            target_count = defaults.get("target_count")
+            if isinstance(target_count, int) and target_count > 0:
+                public_template["default_count"] = target_count
+            resolution = str(defaults.get("resolution") or "").strip()
+            if resolution:
+                public_template["default_resolution"] = resolution
+            aspect_ratio = str(defaults.get("aspect_ratio") or "").strip()
+            if aspect_ratio:
+                public_template["default_aspect_ratio"] = aspect_ratio
+            remove_bg_method = str(defaults.get("remove_bg_method") or "").strip().lower()
+            if normalized_workflow_id == PIXEL_GENERAL_WORKFLOW_ID:
+                remove_bg_method = "none"
+            if remove_bg_method in {"none", "standard", "advanced"}:
+                public_template["default_background_removal"] = remove_bg_method
+
+            if normalized_workflow_id == PIXEL_GENERAL_WORKFLOW_ID:
+                output_aspect_ratio = str(
+                    defaults.get("output_aspect_ratio") or defaults.get("aspect_ratio") or ""
+                ).strip()
+                output_size = str(raw_template.get("output_size") or "large").strip()
+                ratio_label = output_aspect_ratio or "flexible"
+                public_template["display_name"] = f"Large Pixel Canvas — {ratio_label} / {output_size}"
+                public_template["description"] = (
+                    f"A {ratio_label} large-pixel canvas for scenes, illustrations, characters, "
+                    "buildings, and other game assets."
+                )
+                public_template["labels"] = ["pixel", "large", ratio_label, output_size]
+                if output_aspect_ratio:
+                    public_template["default_aspect_ratio"] = output_aspect_ratio
+
+        directions = [str(direction) for direction in raw_template.get("directions") or [] if str(direction).strip()]
+        if raw_template.get("supports_direction") and directions:
+            public_template["directions"] = directions
+            default_direction = str(raw_template.get("default_direction") or "").strip()
+            if default_direction:
+                public_template["default_direction"] = default_direction
+        if raw_template.get("is_beta"):
+            public_template["is_beta"] = True
+        templates.append(public_template)
+    return {"templates": templates}
+
+
 def pixel_gen_template_info(
     *,
     api_base: str,
     api_key: str,
+    workflow_id: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -1908,7 +1379,34 @@ def pixel_gen_template_info(
     )
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
-    return payload
+    return _public_template_catalog(payload, workflow_id=workflow_id)
+
+
+def validate_pixel_general_template(
+    *,
+    api_base: str,
+    api_key: str,
+    template_name: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> None:
+    catalog = pixel_gen_template_info(
+        api_base=api_base,
+        api_key=api_key,
+        workflow_id=PIXEL_GENERAL_WORKFLOW_ID,
+        timeout=timeout,
+        verify=verify,
+    )
+    supported_names = {
+        str(template.get("template_name") or "").strip()
+        for template in catalog.get("templates") or []
+        if isinstance(template, dict)
+    }
+    if template_name not in supported_names:
+        raise ValueError(
+            f"unsupported large-pixel preset: {template_name}. "
+            "Run large-pixel-template-info to list the available presets."
+        )
 
 
 def submit_pixel_gen(
@@ -1919,11 +1417,7 @@ def submit_pixel_gen(
     requirement: str,
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
-    model_name: str = "",
-    resolution: str = "",
     aspect_ratio: str = "1:1",
-    temperature: float = 0.0,
-    include_base64: bool = False,
     reference_file: str = "",
     reference_files: list[str] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -1935,13 +1429,9 @@ def submit_pixel_gen(
         "template_config": json.dumps(template_config or {}, ensure_ascii=False),
         "requirement": requirement,
         "aspect_ratio": aspect_ratio,
-        "temperature": str(temperature),
-        "include_base64": "true" if include_base64 else "false",
     }
     if job_name:
         data["job_name"] = job_name
-    if model_name:
-        data["model_name"] = model_name
     files: list[tuple[str, tuple[str, bytes, str]]] | None = None
     if str(reference_file or "").strip():
         path = Path(reference_file).expanduser().resolve()
@@ -2033,11 +1523,7 @@ def run_pixel_gen(
     requirement: str,
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
-    model_name: str = "",
-    resolution: str = "",
     aspect_ratio: str = "1:1",
-    temperature: float = 0.0,
-    include_base64: bool = False,
     reference_file: str = "",
     reference_files: list[str] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -2052,10 +1538,7 @@ def run_pixel_gen(
         requirement=requirement,
         template_config=template_config,
         job_name=job_name,
-        model_name=model_name,
         aspect_ratio=aspect_ratio,
-        temperature=temperature,
-        include_base64=include_base64,
         reference_file=reference_file,
         reference_files=reference_files,
         timeout=timeout,
@@ -2174,7 +1657,7 @@ def hd_gen_template_info(
     )
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
-    return payload
+    return _public_template_catalog(payload)
 
 
 def submit_hd_gen(
@@ -2185,12 +1668,10 @@ def submit_hd_gen(
     requirement: str,
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
-    model_name: str = "gemini-3.1-flash-image-preview",
     resolution: str = "",
     aspect_ratio: str = "1:1",
-    temperature: float = 0.0,
-    hd_remove_bg_mode: str = "",
-    include_base64: bool = False,
+    quality_mode: str = "standard",
+    remove_bg_method: str = "standard",
     reference_file: str = "",
     reference_files: list[str] | None = None,
     project_id: str | None = None,
@@ -2203,12 +1684,10 @@ def submit_hd_gen(
         "template_config": json.dumps(template_config or {}, ensure_ascii=False),
         "requirement": requirement,
         "job_name": job_name,
-        "model_name": model_name,
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
-        "temperature": str(temperature),
-        "hd_remove_bg_mode": hd_remove_bg_mode,
-        "include_base64": "true" if include_base64 else "false",
+        "quality_mode": quality_mode,
+        "remove_bg_method": remove_bg_method,
     }
     if project_id is not None:
         data["project_id"] = project_id
@@ -2303,12 +1782,10 @@ def run_hd_gen(
     requirement: str,
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
-    model_name: str = "gemini-3.1-flash-image-preview",
     resolution: str = "",
     aspect_ratio: str = "1:1",
-    temperature: float = 0.0,
-    hd_remove_bg_mode: str = "",
-    include_base64: bool = False,
+    quality_mode: str = "standard",
+    remove_bg_method: str = "standard",
     reference_file: str = "",
     reference_files: list[str] | None = None,
     project_id: str | None = None,
@@ -2325,12 +1802,10 @@ def run_hd_gen(
         requirement=requirement,
         template_config=template_config,
         job_name=job_name,
-        model_name=model_name,
         resolution=resolution,
         aspect_ratio=aspect_ratio,
-        temperature=temperature,
-        hd_remove_bg_mode=hd_remove_bg_mode,
-        include_base64=include_base64,
+        quality_mode=quality_mode,
+        remove_bg_method=remove_bg_method,
         reference_file=reference_file,
         reference_files=reference_files,
         project_id=project_id,
@@ -2409,14 +1884,10 @@ def hd_gen_download(
     api_job_id: str,
     output_dir: str,
     output_index: int | None = None,
-    preview: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> Path:
-    if preview:
-        url = _normalize_base_url(api_base, f"/api/hd-gen/jobs/{api_job_id}/preview/download")
-        filename = f"{api_job_id}_preview.png"
-    elif output_index is None:
+    if output_index is None:
         url = _normalize_base_url(api_base, f"/api/hd-gen/jobs/{api_job_id}/download")
         filename = f"{api_job_id}.png"
     else:
@@ -2447,16 +1918,10 @@ def submit_animate(
     image_data_url: str,
     prompt: str = "",
     is_pixel: bool = False,
-    optimize_prompt: bool = True,
-    model: str = "",
-    negative_prompt: str = "",
-    pixel_config: dict[str, Any] | None = None,
     output_frames: int = 8,
-    seed: int | None = None,
     output_format: str = "webp",
-    matte_color: str = "#808080",
-    project_id: str | None = None,
-    thread_id: str | None = None,
+    animation_type: str = "other",
+    remove_bg_method: str = "standard",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -2465,23 +1930,13 @@ def submit_animate(
         "image": image_data_url,
         "prompt": prompt,
         "is_pixel": is_pixel,
-        "optimize_prompt": optimize_prompt,
+        "optimize_prompt": True,
         "output_frames": output_frames,
         "output_format": output_format,
-        "matte_color": matte_color,
+        "animation_type": animation_type,
+        "remove_bg_method": remove_bg_method,
+        "matte_color": "#808080",
     }
-    if model:
-        payload["model"] = model
-    if negative_prompt:
-        payload["negative_prompt"] = negative_prompt
-    if pixel_config:
-        payload["pixel_config"] = pixel_config
-    if seed is not None:
-        payload["seed"] = seed
-    if project_id is not None:
-        payload["project_id"] = project_id
-    if thread_id is not None:
-        payload["thread_id"] = thread_id
 
     response, body = _request_json(
         method="POST",
@@ -2501,35 +1956,27 @@ def submit_remove_background(
     api_base: str,
     api_key: str,
     image_file: str,
-    method: str = "hd",
-    enable_perfect_pixel: bool = False,
-    is_white_bg: bool = True,
+    mode: str = "hd",
+    quality: str = "standard",
     prompt: str = "",
-    ai_api_key: str = "",
-    ai_model_name: str = "gemini-3.1-flash-image-preview",
-    ai_resolution: str = "1K",
-    ai_aspect_ratio: str = "1:1",
-    ai_temperature: float = 0.0,
-    ai_background_diff_threshold: int = 120,
-    photoroom_api_key: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
     path = Path(image_file).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"image file not found: {path}")
+    normalized_mode = str(mode or "hd").strip().lower()
+    if normalized_mode not in {"pixel", "hd"}:
+        raise ValueError("mode must be one of: pixel, hd")
+    normalized_quality = str(quality or "standard").strip().lower()
+    if normalized_quality not in {"standard", "advanced"}:
+        raise ValueError("quality must be one of: standard, advanced")
     data = {
-        "method": method,
-        "enable_perfect_pixel": "true" if enable_perfect_pixel else "false",
-        "is_white_bg": "true" if is_white_bg else "false",
+        "method": normalized_mode,
+        "remove_bg_method": normalized_quality,
+        "enable_perfect_pixel": "false" if normalized_quality == "advanced" else "true",
+        "is_white_bg": "false" if prompt.strip() else "true",
         "prompt": prompt,
-        "ai_api_key": ai_api_key,
-        "ai_model_name": ai_model_name,
-        "ai_resolution": ai_resolution,
-        "ai_aspect_ratio": ai_aspect_ratio,
-        "ai_temperature": str(ai_temperature),
-        "ai_background_diff_threshold": str(ai_background_diff_threshold),
-        "photoroom_api_key": photoroom_api_key,
     }
     files = {"file": (path.name, path.read_bytes(), _mime_for_path(path))}
     url = _normalize_base_url(api_base, "/api/image/remove-background")
@@ -2552,17 +1999,9 @@ def run_remove_background(
     api_base: str,
     api_key: str,
     image_file: str,
-    method: str = "hd",
-    enable_perfect_pixel: bool = False,
-    is_white_bg: bool = True,
+    mode: str = "hd",
+    quality: str = "standard",
     prompt: str = "",
-    ai_api_key: str = "",
-    ai_model_name: str = "gemini-3.1-flash-image-preview",
-    ai_resolution: str = "1K",
-    ai_aspect_ratio: str = "1:1",
-    ai_temperature: float = 0.0,
-    ai_background_diff_threshold: int = 120,
-    photoroom_api_key: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -2572,17 +2011,9 @@ def run_remove_background(
         api_base=api_base,
         api_key=api_key,
         image_file=image_file,
-        method=method,
-        enable_perfect_pixel=enable_perfect_pixel,
-        is_white_bg=is_white_bg,
+        mode=mode,
+        quality=quality,
         prompt=prompt,
-        ai_api_key=ai_api_key,
-        ai_model_name=ai_model_name,
-        ai_resolution=ai_resolution,
-        ai_aspect_ratio=ai_aspect_ratio,
-        ai_temperature=ai_temperature,
-        ai_background_diff_threshold=ai_background_diff_threshold,
-        photoroom_api_key=photoroom_api_key,
         timeout=timeout,
         verify=verify,
     )
@@ -2606,37 +2037,13 @@ def submit_pixelate(
     api_key: str,
     image_file: str,
     pixel_size: str = "",
-    alpha_threshold: int = 128,
-    sample_method: str = "majority",
-    min_size: float = 2.0,
-    peak_width: int = 6,
-    refine_intensity: float = 0.25,
-    fix_square: bool = True,
-    pad_pow2_square: bool = True,
-    crop_border: bool = False,
-    crop_color_thr: int = 20,
-    crop_bg_ratio: float = 0.995,
-    crop_edge_width: int = 10,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
     path = Path(image_file).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"image file not found: {path}")
-    data = {
-        "pixel_size": pixel_size,
-        "alpha_threshold": str(alpha_threshold),
-        "sample_method": sample_method,
-        "min_size": str(min_size),
-        "peak_width": str(peak_width),
-        "refine_intensity": str(refine_intensity),
-        "fix_square": "true" if fix_square else "false",
-        "pad_pow2_square": "true" if pad_pow2_square else "false",
-        "crop_border": "true" if crop_border else "false",
-        "crop_color_thr": str(crop_color_thr),
-        "crop_bg_ratio": str(crop_bg_ratio),
-        "crop_edge_width": str(crop_edge_width),
-    }
+    data = {"pixel_size": pixel_size}
     files = {"file": (path.name, path.read_bytes(), _mime_for_path(path))}
     url = _normalize_base_url(api_base, "/api/image/pixelate")
     response, payload = _request_json(
@@ -2659,17 +2066,6 @@ def run_pixelate(
     api_key: str,
     image_file: str,
     pixel_size: str = "",
-    alpha_threshold: int = 128,
-    sample_method: str = "majority",
-    min_size: float = 2.0,
-    peak_width: int = 6,
-    refine_intensity: float = 0.25,
-    fix_square: bool = True,
-    pad_pow2_square: bool = True,
-    crop_border: bool = False,
-    crop_color_thr: int = 20,
-    crop_bg_ratio: float = 0.995,
-    crop_edge_width: int = 10,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -2680,17 +2076,6 @@ def run_pixelate(
         api_key=api_key,
         image_file=image_file,
         pixel_size=pixel_size,
-        alpha_threshold=alpha_threshold,
-        sample_method=sample_method,
-        min_size=min_size,
-        peak_width=peak_width,
-        refine_intensity=refine_intensity,
-        fix_square=fix_square,
-        pad_pow2_square=pad_pow2_square,
-        crop_border=crop_border,
-        crop_color_thr=crop_color_thr,
-        crop_bg_ratio=crop_bg_ratio,
-        crop_edge_width=crop_edge_width,
         timeout=timeout,
         verify=verify,
     )
@@ -2830,6 +2215,73 @@ def wait_submitted_workflow_job(
     return final_payload
 
 
+def _upload_part(path_value: str, *, label: str) -> tuple[str, bytes, str]:
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"{label} not found: {path}")
+    return path.name, path.read_bytes(), _mime_for_path(path)
+
+
+def submit_curated_workflow(
+    *,
+    api_base: str,
+    api_key: str,
+    endpoint: str,
+    data: dict[str, str],
+    files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    url = _normalize_base_url(api_base, endpoint)
+    response, payload = _request_json(
+        method="POST",
+        url=url,
+        headers=_base_headers(api_key),
+        data=data,
+        files=files or None,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def run_curated_workflow(
+    *,
+    api_base: str,
+    api_key: str,
+    endpoint: str,
+    label: str,
+    data: dict[str, str],
+    files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_curated_workflow(
+        api_base=api_base,
+        api_key=api_key,
+        endpoint=endpoint,
+        data=data,
+        files=files,
+        timeout=timeout,
+        verify=verify,
+    )
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload=submit_payload,
+        label=label,
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
+
+
 def submit_sound_effect_generator(
     *,
     api_base: str,
@@ -2841,38 +2293,26 @@ def submit_sound_effect_generator(
     variants: bool = False,
     count: int = 4,
     language: str = "en",
-    temperature: float = 0.3,
-    normalize_volume: bool = True,
-    target_peak_db: float = -3.0,
-    max_gain_db: float = 36.0,
-    provider_api_key: str = "",
-    base_url: str = "",
-    project_id: str | None = None,
-    thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
+    normalized_duration = float(duration)
+    if normalized_duration != 0.5 and not (normalized_duration.is_integer() and 1 <= normalized_duration <= 10):
+        raise ValueError("duration must be 0.5 or an integer from 1 to 10 seconds")
+    normalized_count = int(count)
+    if not 1 <= normalized_count <= 10:
+        raise ValueError("count must be between 1 and 10")
+    if sound_pack and variants:
+        raise ValueError("choose either sound-pack or variants, not both")
     data: dict[str, str] = {
         "prompt": prompt,
-        "duration": str(duration),
+        "duration": str(normalized_duration),
         "loop": "true" if loop else "false",
         "sound_pack": "true" if sound_pack else "false",
         "variants": "true" if variants else "false",
-        "count": str(count),
+        "count": str(normalized_count),
         "language": language,
-        "temperature": str(temperature),
-        "normalize_volume": "true" if normalize_volume else "false",
-        "target_peak_db": str(target_peak_db),
-        "max_gain_db": str(max_gain_db),
     }
-    if provider_api_key:
-        data["api_key"] = provider_api_key
-    if base_url:
-        data["base_url"] = base_url
-    if project_id is not None:
-        data["project_id"] = project_id
-    if thread_id is not None:
-        data["thread_id"] = thread_id
 
     url = _normalize_base_url(api_base, "/api/workflows/elevenlabs_generator/run")
     response, payload = _request_json(
@@ -2899,14 +2339,6 @@ def run_sound_effect_generator(
     variants: bool = False,
     count: int = 4,
     language: str = "en",
-    temperature: float = 0.3,
-    normalize_volume: bool = True,
-    target_peak_db: float = -3.0,
-    max_gain_db: float = 36.0,
-    provider_api_key: str = "",
-    base_url: str = "",
-    project_id: str | None = None,
-    thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -2922,14 +2354,6 @@ def run_sound_effect_generator(
         variants=variants,
         count=count,
         language=language,
-        temperature=temperature,
-        normalize_volume=normalize_volume,
-        target_peak_db=target_peak_db,
-        max_gain_db=max_gain_db,
-        provider_api_key=provider_api_key,
-        base_url=base_url,
-        project_id=project_id,
-        thread_id=thread_id,
         timeout=timeout,
         verify=verify,
     )
@@ -2955,8 +2379,6 @@ def submit_texture_generator(
     api_key: str,
     prompt: str = "",
     texture_names: list[str] | None = None,
-    padding_mode: str = "no_padding",
-    edge_fill_pixels: int = 1,
     self_loop: bool = True,
     project_id: str | None = None,
     thread_id: str | None = None,
@@ -2965,8 +2387,6 @@ def submit_texture_generator(
 ) -> dict[str, Any]:
     data: list[tuple[str, Any]] = [
         ("prompt", prompt),
-        ("padding_mode", padding_mode),
-        ("edge_fill_pixels", str(edge_fill_pixels)),
         ("self_loop", "true" if self_loop else "false"),
     ]
     for name in texture_names or []:
@@ -2996,8 +2416,6 @@ def run_texture_generator(
     api_key: str,
     prompt: str = "",
     texture_names: list[str] | None = None,
-    padding_mode: str = "no_padding",
-    edge_fill_pixels: int = 1,
     self_loop: bool = True,
     project_id: str | None = None,
     thread_id: str | None = None,
@@ -3011,8 +2429,6 @@ def run_texture_generator(
         api_key=api_key,
         prompt=prompt,
         texture_names=texture_names,
-        padding_mode=padding_mode,
-        edge_fill_pixels=edge_fill_pixels,
         self_loop=self_loop,
         project_id=project_id,
         thread_id=thread_id,
@@ -3044,15 +2460,12 @@ def submit_tileset_generator(
     terrain_mode: str = "dual",
     single_terrain_region: str = "",
     single_terrain_show_base_color: bool = False,
-    single_terrain_boundary_gap: int | None = None,
-    single_terrain_remove_background: bool = True,
+    remove_bg_method: str = "standard",
     foreground_color: str = "",
     background_color: str = "",
     terrain_color: str = "",
     foreground_texture: str = "",
     background_texture: str = "",
-    texture_reference_size: int | None = None,
-    texture_reference_mode: str = "white_region_fill",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -3063,21 +2476,16 @@ def submit_tileset_generator(
         "tileset_mode": tileset_mode,
         "terrain_mode": terrain_mode,
         "single_terrain_show_base_color": "true" if single_terrain_show_base_color else "false",
-        "single_terrain_remove_background": "true" if single_terrain_remove_background else "false",
-        "texture_reference_mode": texture_reference_mode,
+        "remove_bg_method": remove_bg_method if str(terrain_mode).strip().lower() == "single" else "none",
     }
     if str(single_terrain_region or "").strip():
         data["single_terrain_region"] = str(single_terrain_region).strip()
-    if single_terrain_boundary_gap is not None:
-        data["single_terrain_boundary_gap"] = str(single_terrain_boundary_gap)
     if str(foreground_color or "").strip():
         data["foreground_color"] = str(foreground_color).strip()
     if str(background_color or "").strip():
         data["background_color"] = str(background_color).strip()
     if str(terrain_color or "").strip():
         data["terrain_color"] = str(terrain_color).strip()
-    if texture_reference_size is not None:
-        data["texture_reference_size"] = str(texture_reference_size)
     if project_id is not None:
         data["project_id"] = project_id
     if thread_id is not None:
@@ -3119,15 +2527,12 @@ def run_tileset_generator(
     terrain_mode: str = "dual",
     single_terrain_region: str = "",
     single_terrain_show_base_color: bool = False,
-    single_terrain_boundary_gap: int | None = None,
-    single_terrain_remove_background: bool = True,
+    remove_bg_method: str = "standard",
     foreground_color: str = "",
     background_color: str = "",
     terrain_color: str = "",
     foreground_texture: str = "",
     background_texture: str = "",
-    texture_reference_size: int | None = None,
-    texture_reference_mode: str = "white_region_fill",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -3143,15 +2548,12 @@ def run_tileset_generator(
         terrain_mode=terrain_mode,
         single_terrain_region=single_terrain_region,
         single_terrain_show_base_color=single_terrain_show_base_color,
-        single_terrain_boundary_gap=single_terrain_boundary_gap,
-        single_terrain_remove_background=single_terrain_remove_background,
+        remove_bg_method=remove_bg_method,
         foreground_color=foreground_color,
         background_color=background_color,
         terrain_color=terrain_color,
         foreground_texture=foreground_texture,
         background_texture=background_texture,
-        texture_reference_size=texture_reference_size,
-        texture_reference_mode=texture_reference_mode,
         project_id=project_id,
         thread_id=thread_id,
         timeout=timeout,
@@ -3181,9 +2583,9 @@ def _normalize_character_multi_view_mode(mode: str) -> str:
 
 
 def _normalize_character_multi_view_canvas_resolution(canvas_resolution: str) -> str:
-    normalized = str(canvas_resolution or "AUTO").strip().upper() or "AUTO"
-    if normalized not in {"AUTO", "1K", "2K", "4K"}:
-        raise ValueError("canvas_resolution must be AUTO, 1K, 2K, or 4K")
+    normalized = str(canvas_resolution or "1K").strip().upper() or "1K"
+    if normalized not in {"1K", "2K"}:
+        raise ValueError("canvas_resolution must be 1K or 2K")
     return normalized
 
 
@@ -3196,22 +2598,18 @@ def _normalize_character_multi_view_output_size(output_size: int | None) -> int 
     return parsed
 
 
-def _normalize_character_multi_view_temperature(temperature: float) -> float:
-    parsed = float(temperature)
-    if parsed < 0.0 or parsed > 1.0:
-        raise ValueError("temperature must be between 0 and 1")
-    return parsed
-
-
 def submit_character_multi_view_generator(
     *,
     api_base: str,
     api_key: str,
     reference_image: str,
     mode: str = "pixel",
-    canvas_resolution: str = "AUTO",
+    canvas_resolution: str = "1K",
+    direction_mode: str = "mirror",
+    aspect_ratio: str = "",
+    remove_bg_method: str = "standard",
+    extra_constraint: str = "",
     output_size: int | None = None,
-    temperature: float = 0.0,
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -3223,10 +2621,18 @@ def submit_character_multi_view_generator(
 
     normalized_mode = _normalize_character_multi_view_mode(mode)
     normalized_output_size = _normalize_character_multi_view_output_size(output_size)
+    normalized_canvas_resolution = (
+        "2K"
+        if normalized_mode == "hd"
+        else _normalize_character_multi_view_canvas_resolution(canvas_resolution)
+    )
     data: dict[str, str] = {
         "pixel": "true" if normalized_mode == "pixel" else "false",
-        "canvas_resolution": _normalize_character_multi_view_canvas_resolution(canvas_resolution),
-        "temperature": str(_normalize_character_multi_view_temperature(temperature)),
+        "canvas_resolution": normalized_canvas_resolution,
+        "direction_mode": direction_mode,
+        "aspect_ratio": aspect_ratio,
+        "remove_bg_method": remove_bg_method,
+        "extra_constraint": extra_constraint,
     }
     if normalized_output_size is not None:
         data["output_size"] = str(normalized_output_size)
@@ -3257,9 +2663,12 @@ def run_character_multi_view_generator(
     api_key: str,
     reference_image: str,
     mode: str = "pixel",
-    canvas_resolution: str = "AUTO",
+    canvas_resolution: str = "1K",
+    direction_mode: str = "mirror",
+    aspect_ratio: str = "",
+    remove_bg_method: str = "standard",
+    extra_constraint: str = "",
     output_size: int | None = None,
-    temperature: float = 0.0,
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -3273,8 +2682,11 @@ def run_character_multi_view_generator(
         reference_image=reference_image,
         mode=mode,
         canvas_resolution=canvas_resolution,
+        direction_mode=direction_mode,
+        aspect_ratio=aspect_ratio,
+        remove_bg_method=remove_bg_method,
+        extra_constraint=extra_constraint,
         output_size=output_size,
-        temperature=temperature,
         project_id=project_id,
         thread_id=thread_id,
         timeout=timeout,
@@ -3305,34 +2717,22 @@ def _append_reference_image_files(files: list[tuple[str, tuple[str, bytes, str]]
 
 
 def _append_ui_reference_files(files: list[tuple[str, tuple[str, bytes, str]]], reference_images: list[str] | None) -> None:
-    for raw_path in reference_images or []:
-        path_text = str(raw_path or "").strip()
-        if not path_text:
-            continue
+    paths = [str(raw_path or "").strip() for raw_path in reference_images or [] if str(raw_path or "").strip()]
+    if len(paths) > 8:
+        raise ValueError("UI generation accepts at most 8 reference images")
+    for path_text in paths:
         path = Path(path_text).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(f"reference image not found: {path}")
         files.append(("reference_files", (path.name, path.read_bytes(), _mime_for_path(path))))
 
 
-def _optional_bool_form_value(value: bool | None) -> str | None:
-    if value is None:
-        return None
-    return "true" if bool(value) else "false"
-
-
 def _normalize_ui_generation_mode(generation_mode: str) -> str:
     normalized = str(generation_mode or "generate").strip().lower() or "generate"
-    if normalized not in {"generate", "ui_extract"}:
-        raise ValueError("generation_mode must be one of: generate, ui_extract")
-    return normalized
-
-
-def _normalize_ui_split_connectivity(split_connectivity: int) -> int:
-    parsed = int(split_connectivity)
-    if parsed not in {4, 8}:
-        raise ValueError("split_connectivity must be 4 or 8")
-    return parsed
+    aliases = {"generate": "generate", "extract": "ui_extract", "ui_extract": "ui_extract"}
+    if normalized not in aliases:
+        raise ValueError("mode must be one of: generate, extract")
+    return aliases[normalized]
 
 
 def submit_ui_generator(
@@ -3340,38 +2740,33 @@ def submit_ui_generator(
     api_base: str,
     api_key: str,
     prompt: str,
-    template: str = "hd_retro_rpg",
     reference_images: list[str] | None = None,
+    resolution: str = "2K",
     aspect_ratio: str = "1:1",
-    remove_background: bool = True,
-    split_components: bool = True,
+    quality: str = "detailed",
+    remove_bg_method: str = "standard",
     generation_mode: str = "generate",
-    split_alpha_threshold: int = 16,
-    split_connectivity: int = 4,
-    split_min_component_size: int = 16,
-    split_bbox_padding: int = 8,
-    project_id: str | None = None,
-    thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
     normalized_generation_mode = _normalize_ui_generation_mode(generation_mode)
+    quality_map = {"standard": "low", "detailed": "medium", "ultimate": "high"}
+    normalized_quality = str(quality or "detailed").strip().lower()
+    if normalized_quality not in quality_map:
+        raise ValueError("quality must be one of: standard, detailed, ultimate")
+    normalized_remove_bg_method = str(remove_bg_method or "standard").strip().lower()
+    if normalized_remove_bg_method not in {"none", "standard", "advanced"}:
+        raise ValueError("remove_bg_method must be one of: none, standard, advanced")
     data: dict[str, str] = {
         "prompt": prompt,
-        "template": template,
+        "resolution": resolution,
         "aspect_ratio": aspect_ratio,
-        "remove_background": "true" if remove_background else "false",
-        "split_components": "true" if split_components else "false",
+        "image2_quality": quality_map[normalized_quality],
+        "remove_background": "false" if normalized_remove_bg_method == "none" else "true",
+        "remove_bg_method": normalized_remove_bg_method,
+        "split_components": "true",
         "generation_mode": normalized_generation_mode,
-        "split_alpha_threshold": str(int(split_alpha_threshold)),
-        "split_connectivity": str(_normalize_ui_split_connectivity(split_connectivity)),
-        "split_min_component_size": str(int(split_min_component_size)),
-        "split_bbox_padding": str(int(split_bbox_padding)),
     }
-    if project_id is not None:
-        data["project_id"] = project_id
-    if thread_id is not None:
-        data["thread_id"] = thread_id
 
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     _append_ui_reference_files(files, reference_images)
@@ -3398,18 +2793,12 @@ def run_ui_generator(
     api_base: str,
     api_key: str,
     prompt: str,
-    template: str = "hd_retro_rpg",
     reference_images: list[str] | None = None,
+    resolution: str = "2K",
     aspect_ratio: str = "1:1",
-    remove_background: bool = True,
-    split_components: bool = True,
+    quality: str = "detailed",
+    remove_bg_method: str = "standard",
     generation_mode: str = "generate",
-    split_alpha_threshold: int = 16,
-    split_connectivity: int = 4,
-    split_min_component_size: int = 16,
-    split_bbox_padding: int = 8,
-    project_id: str | None = None,
-    thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3419,18 +2808,12 @@ def run_ui_generator(
         api_base=api_base,
         api_key=api_key,
         prompt=prompt,
-        template=template,
         reference_images=reference_images,
+        resolution=resolution,
         aspect_ratio=aspect_ratio,
-        remove_background=remove_background,
-        split_components=split_components,
+        quality=quality,
+        remove_bg_method=remove_bg_method,
         generation_mode=generation_mode,
-        split_alpha_threshold=split_alpha_threshold,
-        split_connectivity=split_connectivity,
-        split_min_component_size=split_min_component_size,
-        split_bbox_padding=split_bbox_padding,
-        project_id=project_id,
-        thread_id=thread_id,
         timeout=timeout,
         verify=verify,
     )
@@ -3458,17 +2841,10 @@ def submit_map_workflow(
     prompt: str,
     reference_images: list[str] | None = None,
     mode: str = "standard",
+    remove_bg_method: str = "",
     template: str = "",
-    similar_tiles: bool | None = None,
-    tile_only: bool | None = None,
-    road_template_id: str = "",
-    road_width: int | None = None,
     style_name: str = "",
     style_description: str = "",
-    top_left: str = "",
-    top_right: str = "",
-    bottom_left: str = "",
-    bottom_right: str = "",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -3483,21 +2859,14 @@ def submit_map_workflow(
     }
     if template:
         data["template"] = template
+    if remove_bg_method:
+        data["remove_bg_method"] = remove_bg_method
     for key, value in {
-        "similar_tiles": _optional_bool_form_value(similar_tiles),
-        "tile_only": _optional_bool_form_value(tile_only),
-        "road_template_id": road_template_id,
         "style_name": style_name,
         "style_description": style_description,
-        "top_left": top_left,
-        "top_right": top_right,
-        "bottom_left": bottom_left,
-        "bottom_right": bottom_right,
     }.items():
         if value not in (None, ""):
             data[key] = str(value)
-    if road_width is not None:
-        data["road_width"] = str(road_width)
     if project_id is not None:
         data["project_id"] = project_id
     if thread_id is not None:
@@ -3526,20 +2895,14 @@ def run_map_workflow(
     api_base: str,
     api_key: str,
     workflow_id: str,
+    label: str = "map",
     prompt: str,
     reference_images: list[str] | None = None,
     mode: str = "standard",
+    remove_bg_method: str = "",
     template: str = "",
-    similar_tiles: bool | None = None,
-    tile_only: bool | None = None,
-    road_template_id: str = "",
-    road_width: int | None = None,
     style_name: str = "",
     style_description: str = "",
-    top_left: str = "",
-    top_right: str = "",
-    bottom_left: str = "",
-    bottom_right: str = "",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -3554,17 +2917,10 @@ def run_map_workflow(
         prompt=prompt,
         reference_images=reference_images,
         mode=mode,
+        remove_bg_method=remove_bg_method,
         template=template,
-        similar_tiles=similar_tiles,
-        tile_only=tile_only,
-        road_template_id=road_template_id,
-        road_width=road_width,
         style_name=style_name,
         style_description=style_description,
-        top_left=top_left,
-        top_right=top_right,
-        bottom_left=bottom_left,
-        bottom_right=bottom_right,
         project_id=project_id,
         thread_id=thread_id,
         timeout=timeout,
@@ -3577,7 +2933,7 @@ def run_map_workflow(
         api_base=api_base,
         api_key=api_key,
         submit_payload=submit_payload,
-        label=workflow_id,
+        label=label,
         timeout=timeout,
         max_wait=max_wait,
         poll_interval=poll_interval,
@@ -3594,8 +2950,6 @@ def submit_music_generator(
     audio_generate: bool = False,
     demo: bool = False,
     reference_images: list[str] | None = None,
-    project_id: str | None = None,
-    thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3604,11 +2958,6 @@ def submit_music_generator(
         "audio_generate": "true" if audio_generate else "false",
         "demo": "true" if demo else "false",
     }
-    if project_id is not None:
-        data["project_id"] = project_id
-    if thread_id is not None:
-        data["thread_id"] = thread_id
-
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     for raw_path in reference_images or []:
         path = Path(raw_path).expanduser().resolve()
@@ -3660,8 +3009,6 @@ def run_music_generator(
     audio_generate: bool = False,
     demo: bool = False,
     reference_images: list[str] | None = None,
-    project_id: str | None = None,
-    thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3674,8 +3021,6 @@ def run_music_generator(
         audio_generate=audio_generate,
         demo=demo,
         reference_images=reference_images,
-        project_id=project_id,
-        thread_id=thread_id,
         timeout=timeout,
         verify=verify,
     )
@@ -3792,25 +3137,15 @@ def _save_run_outputs(
     verify: bool,
     api_key: str = "",
     no_download: bool = False,
+    workflow_id: str = "",
 ) -> tuple[Path, list[dict[str, Any]]]:
     output_dir = _predict_saved_dir(output_root, slug_seed)
-    _save_json(
-        output_dir / "submit_response.json",
-        _sanitize_response_for_local_storage(submit_payload),
-    )
-    _save_json(
-        output_dir / "job_response.json",
-        _sanitize_response_for_local_storage(final_payload),
-    )
-    downloads: list[dict[str, Any]] = [
-        {"type": "json", "path": str(output_dir / "submit_response.json")},
-        {"type": "json", "path": str(output_dir / "job_response.json")},
-    ]
-    workflow_id = _payload_workflow_id(final_payload)
+    downloads: list[dict[str, Any]] = []
+    normalized_workflow_id = str(workflow_id or _payload_workflow_id(final_payload)).strip()
     urls = [
         (key, url)
         for key, url in _collect_http_urls(final_payload)
-        if _looks_like_downloadable_output_url(key, url, workflow_id=workflow_id)
+        if _looks_like_downloadable_output_url(key, url, workflow_id=normalized_workflow_id)
     ]
     if not no_download and urls:
         print(f"[INFO] downloading_outputs count={len(urls)} to={output_dir}")
@@ -3822,57 +3157,73 @@ def _save_run_outputs(
             verify=verify,
             headers=headers,
         ))
+    final_outputs_path = output_dir / "final_outputs.json"
+    manifest = {
+        "status": str(final_payload.get("status") or "").strip(),
+        "job_id": str(final_payload.get("api_job_id") or final_payload.get("job_id") or "").strip(),
+        "outputs": [
+            {
+                "type": item.get("type"),
+                "path": item.get("path"),
+                "mime_type": item.get("mime_type"),
+            }
+            for item in downloads
+        ],
+    }
+    _save_json(final_outputs_path, manifest)
+    downloads.insert(0, {"type": "manifest", "path": str(final_outputs_path)})
     return output_dir, downloads
 
 
+def _local_run_summary(
+    *,
+    submit_payload: dict[str, Any],
+    final_payload: dict[str, Any],
+    downloads: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "status": str(final_payload.get("status") or "").strip(),
+        "job_id": str(
+            final_payload.get("api_job_id")
+            or final_payload.get("job_id")
+            or submit_payload.get("api_job_id")
+            or submit_payload.get("job_id")
+            or ""
+        ).strip(),
+        "outputs": [
+            {
+                "type": item.get("type"),
+                "path": item.get("path"),
+                "mime_type": item.get("mime_type"),
+            }
+            for item in downloads
+            if item.get("type") == "media"
+        ],
+    }
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Standalone Meowa API test CLI.")
+    parser = argparse.ArgumentParser(description="Create production-ready game assets with Meowa.")
     parser.add_argument("--version", action="version", version=f"meowart_api.py {MEOWART_API_CLI_VERSION}")
-    parser.add_argument(
-        "--no-bootstrap",
-        action="store_true",
-        help="Run the bundled CLI without checking the remote bootstrap runner",
-    )
-    parser.add_argument(
-        "--bootstrap-force",
-        action="store_true",
-        help="Force re-downloading the remote bootstrap runner when a newer manifest is available",
-    )
-    parser.add_argument("--api-base", default=DEFAULT_API_BASE, help="API base URL")
-    parser.add_argument(
-        "--api-key",
-        default="",
-        help=f"User API key, e.g. ma_live_xxx. Defaults to ${DEFAULT_API_KEY_ENV} or .env when omitted.",
-    )
-    parser.add_argument(
-        "--dev-key",
-        default="",
-        help=(
-            f"Developer auth key sent as X-Dev-Key. Defaults to ${DEFAULT_DEV_KEY_ENV}, "
-            "then DEV_API_KEY, or matching .env values when omitted."
-        ),
-    )
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="Per-request timeout in seconds")
-    parser.add_argument("--max-wait", type=int, default=DEFAULT_MAX_WAIT, help="Max polling wait in seconds")
-    parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL, help="Polling interval in seconds")
-    parser.add_argument(
-        "--work-dir",
-        "--work_dir",
-        dest="work_dir",
-        default=DEFAULT_WORK_DIR,
-        help="Base directory for per-run logs and metadata",
-    )
     parser.add_argument(
         "--output-dir",
         "--output_dir",
         dest="output_dir",
         default="",
-        help="Directory to save generated files; defaults to this run directory",
+        help="Output root; the runner creates one task subdirectory",
     )
-    parser.add_argument("--no-download", action="store_true", help="Skip downloading remote files")
-    parser.add_argument("--insecure", action="store_true", help="Disable TLS verification")
+    parser.set_defaults(
+        api_base=DEFAULT_API_BASE,
+        api_key="",
+        insecure=False,
+        work_dir=DEFAULT_WORK_DIR,
+        timeout=DEFAULT_TIMEOUT,
+        max_wait=DEFAULT_MAX_WAIT,
+        poll_interval=DEFAULT_POLL_INTERVAL,
+        no_download=False,
+    )
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     def option_exists(command_parser: argparse.ArgumentParser, *option_strings: str) -> bool:
         known_options = {
@@ -3887,168 +3238,249 @@ def parse_args() -> argparse.Namespace:
             command_parser.add_argument(*option_strings, **kwargs)
 
     def add_shared_path_args(command_parser: argparse.ArgumentParser) -> None:
-        # Mirror common global flags on subcommands so users can place them
-        # either before or after the command name.
-        add_if_missing(
-            command_parser,
-            "--no-bootstrap",
-            action="store_true",
-            default=argparse.SUPPRESS,
-            help="Run the bundled CLI without checking the remote bootstrap runner",
-        )
-        add_if_missing(
-            command_parser,
-            "--bootstrap-force",
-            action="store_true",
-            default=argparse.SUPPRESS,
-            help="Force re-downloading the remote bootstrap runner when a newer manifest is available",
-        )
-        add_if_missing(command_parser, "--api-base", default=argparse.SUPPRESS, help="API base URL")
-        add_if_missing(
-            command_parser,
-            "--api-key",
-            default=argparse.SUPPRESS,
-            help=f"User API key, e.g. ma_live_xxx. Defaults to ${DEFAULT_API_KEY_ENV} or .env when omitted.",
-        )
-        add_if_missing(
-            command_parser,
-            "--dev-key",
-            default=argparse.SUPPRESS,
-            help=(
-                f"Developer auth key sent as X-Dev-Key. Defaults to ${DEFAULT_DEV_KEY_ENV}, "
-                "then DEV_API_KEY, or matching .env values when omitted."
-            ),
-        )
-        add_if_missing(command_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
-        add_if_missing(command_parser, "--max-wait", type=int, default=argparse.SUPPRESS, help="Max polling wait in seconds")
-        add_if_missing(command_parser, "--poll-interval", type=float, default=argparse.SUPPRESS, help="Polling interval in seconds")
-        add_if_missing(
-            command_parser,
-            "--work-dir",
-            "--work_dir",
-            dest="work_dir",
-            default=argparse.SUPPRESS,
-            help="Base directory for per-run logs and metadata",
-        )
         add_if_missing(
             command_parser,
             "--output-dir",
             "--output_dir",
             dest="output_dir",
             default=argparse.SUPPRESS,
-            help="Directory to save generated files; defaults to this run directory",
+            help="Output root; the runner creates one task subdirectory",
         )
-        add_if_missing(command_parser, "--no-download", action="store_true", default=argparse.SUPPRESS, help="Skip downloading remote files")
-        add_if_missing(command_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
 
     def add_shared_runtime_args(command_parser: argparse.ArgumentParser) -> None:
-        add_if_missing(
-            command_parser,
-            "--no-bootstrap",
-            action="store_true",
-            default=argparse.SUPPRESS,
-            help="Run the bundled CLI without checking the remote bootstrap runner",
-        )
-        add_if_missing(
-            command_parser,
-            "--bootstrap-force",
-            action="store_true",
-            default=argparse.SUPPRESS,
-            help="Force re-downloading the remote bootstrap runner when a newer manifest is available",
-        )
-        add_if_missing(command_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
-        add_if_missing(command_parser, "--max-wait", type=int, default=argparse.SUPPRESS, help="Max polling wait in seconds")
-        add_if_missing(command_parser, "--poll-interval", type=float, default=argparse.SUPPRESS, help="Polling interval in seconds")
-        add_if_missing(command_parser, "--no-download", action="store_true", default=argparse.SUPPRESS, help="Skip downloading remote files")
-        add_if_missing(command_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
+        return None
 
     def add_map_preset_filter_args(command_parser: argparse.ArgumentParser) -> None:
-        command_parser.add_argument("--query", default="", help="Search text, e.g. ocean, desert, grass, modern, road")
-        command_parser.add_argument("--workflow-id", default="", help="Optional workflow id filter")
-        command_parser.add_argument("--template-id", default="", help="Optional template id filter")
+        command_parser.add_argument(
+            "--type",
+            dest="map_type",
+            default="",
+            choices=tuple(MAP_REFERENCE_TYPE_TO_WORKFLOW),
+            help="Reference family; use --categories to see its themes and layouts",
+        )
+        command_parser.add_argument("--theme", default="", help="Exact theme from --categories, e.g. grassland or modern")
+        command_parser.add_argument(
+            "--layout",
+            default="",
+            choices=("single", "2x2", "7-cell", "template"),
+            help="Friendly layout filter; requires --type",
+        )
+        command_parser.add_argument("--query", default="", help="Optional text refinement after type/theme/layout filters")
         command_parser.add_argument("--tile-size", default="", help="Optional tile size filter, e.g. 1x1, 2x2, 7-cell")
         command_parser.add_argument("--asset-kind", default="", help="Optional asset kind filter: reference or template")
-        command_parser.add_argument("--group", default="", help="Optional preset group filter")
+        command_parser.add_argument("--group", default="", help="Advanced exact group filter; prefer --layout")
         command_parser.add_argument("--limit", type=int, default=20)
+        command_parser.set_defaults(workflow_id="", template_id="")
 
     def add_map_workflow_args(
         command_parser: argparse.ArgumentParser,
         *,
         modes: tuple[str, ...],
+        include_remove_bg: bool = False,
         include_template: bool = False,
-        include_road: bool = False,
-        include_style_quad: bool = False,
     ) -> None:
         command_parser.add_argument("--prompt", required=True, help="Map tile requirement")
         command_parser.add_argument("--reference-image", action="append", default=[], help="Reference image; can be repeated")
         command_parser.add_argument("--mode", default="standard", choices=modes)
+        if include_remove_bg:
+            command_parser.add_argument(
+                "--remove-bg-method",
+                default="standard",
+                choices=["none", "standard", "advanced"],
+            )
         if include_template:
-            command_parser.add_argument("--template", default="", help="HD map template id")
-        command_parser.add_argument("--similar-tiles", action="store_true", default=None)
-        command_parser.add_argument("--no-similar-tiles", action="store_false", dest="similar_tiles", default=None)
-        command_parser.add_argument("--tile-only", action="store_true", default=None)
-        command_parser.add_argument("--no-tile-only", action="store_false", dest="tile_only", default=None)
-        if include_road:
-            command_parser.add_argument("--road-template-id", default="")
-            command_parser.add_argument("--road-width", type=int, default=None)
-        if include_style_quad:
-            command_parser.add_argument("--style-name", default="")
-            command_parser.add_argument("--style-description", default="")
-            command_parser.add_argument("--top-left", default="")
-            command_parser.add_argument("--top-right", default="")
-            command_parser.add_argument("--bottom-left", default="")
-            command_parser.add_argument("--bottom-right", default="")
-        command_parser.add_argument("--project-id", default=None)
-        command_parser.add_argument("--thread-id", default=None)
+            command_parser.add_argument("--template", default="", help="Optional map preset")
+        command_parser.set_defaults(
+            project_id=None,
+            thread_id=None,
+        )
 
-    bootstrap_status_parser = subparsers.add_parser("bootstrap-status", help="Show bootstrap runner update status")
-    bootstrap_status_parser.add_argument("--check", action="store_true", help="Fetch and display the remote bootstrap manifest")
-
-    skill_doc_parser = subparsers.add_parser("skill-doc", help="Print the latest Meowa game-assets skill guide")
-    skill_doc_parser.add_argument("--topic", default="", help="Optional guide topic, such as pixel-gen, hd-gen, texture, or music")
-    skill_doc_parser.add_argument("--task", default="", help="Optional short description of the current user request")
-    skill_doc_parser.add_argument("--refresh", action="store_true", help="Ignore fresh cache and fetch the remote guide")
-    add_if_missing(skill_doc_parser, "--api-base", default=argparse.SUPPRESS, help="API base URL")
-    add_if_missing(skill_doc_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
-    add_if_missing(skill_doc_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
-
-    skill_doc_status_parser = subparsers.add_parser("skill-doc-status", help="Show Meowa game-assets skill guide cache status")
-    skill_doc_status_parser.add_argument("--topic", default="", help="Optional guide topic")
-    skill_doc_status_parser.add_argument("--check", action="store_true", help="Fetch and display remote guide status")
-    add_if_missing(skill_doc_status_parser, "--api-base", default=argparse.SUPPRESS, help="API base URL")
-    add_if_missing(skill_doc_status_parser, "--timeout", type=int, default=argparse.SUPPRESS, help="Per-request timeout in seconds")
-    add_if_missing(skill_doc_status_parser, "--insecure", action="store_true", default=argparse.SUPPRESS, help="Disable TLS verification")
-
-    map_preset_search = subparsers.add_parser("map-reference-search", aliases=["map-preset-search"], help="Search reusable map preset images")
-    add_shared_path_args(map_preset_search)
+    map_preset_search = subparsers.add_parser("map-reference-search", aliases=["map-preset-search"], help="Browse or search reusable pixel and HD map references")
     add_map_preset_filter_args(map_preset_search)
-    map_preset_search.add_argument("--download", action="store_true", help="Download matched presets instead of only printing JSON")
+    map_preset_search.add_argument(
+        "--categories",
+        action="store_true",
+        help="List available types, themes, layouts, and counts; optionally narrow with --type",
+    )
 
-    map_preset_download = subparsers.add_parser("map-reference-download", aliases=["map-preset-download"], help="Download map presets by id or search filters")
-    add_shared_path_args(map_preset_download)
+    map_preset_download = subparsers.add_parser("map-reference-download", aliases=["map-preset-download"], help="Download map references by preset id or structured filters")
+    map_preset_download.add_argument(
+        "--output-dir",
+        "--output_dir",
+        dest="output_dir",
+        default=argparse.SUPPRESS,
+        help="Directory that will receive the selected references",
+    )
     add_map_preset_filter_args(map_preset_download)
     map_preset_download.add_argument("--preset-id", action="append", default=[], help="Preset id to download; can be repeated")
 
-    pixel_templates = subparsers.add_parser("pixel-gen-template-info", help="Get pixel-gen template info")
-    add_shared_path_args(pixel_templates)
+    image_edit_run = subparsers.add_parser("image-edit-run", help="Edit one or more game-art images")
+    add_shared_path_args(image_edit_run)
+    image_edit_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 8 times")
+    image_edit_run.add_argument("--prompt", required=True, help="Describe the requested edit")
+    image_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    image_edit_run.add_argument("--strict", action="store_true", help="Preserve exact pixel structure")
+    image_edit_run.add_argument("--resolution", default="1K", choices=["1K", "2K"])
+    image_edit_run.add_argument(
+        "--aspect-ratio",
+        default="auto",
+        choices=["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
+    )
+    image_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
+
+    animation_edit_run = subparsers.add_parser("animation-edit-run", help="Edit an animated GIF or WebP")
+    add_shared_path_args(animation_edit_run)
+    animation_edit_run.add_argument("--animation-file", required=True, help="Animated GIF or WebP input")
+    animation_edit_run.add_argument("--reference-image", action="append", default=[], help="Optional visual reference; repeat up to 8 times")
+    animation_edit_run.add_argument("--prompt", required=True, help="Describe the requested animation edit")
+    animation_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    animation_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
+
+    video_run = subparsers.add_parser("video-run", help="Animate a still image into a short game clip")
+    add_shared_path_args(video_run)
+    video_run.add_argument("--first-frame", required=True)
+    video_run.add_argument("--last-frame", default="")
+    video_run.add_argument("--prompt", default="")
+    video_run.add_argument("--action", default="")
+    video_run.add_argument("--direction", default="")
+    video_run.add_argument("--pixel", action="store_true", help="Preserve pixel-art motion")
+    video_run.add_argument("--resolution", default="480p", choices=["480p", "720p"])
+    video_run.add_argument("--aspect-ratio", default="1:1", choices=["16:9", "4:3", "1:1", "3:4", "9:16"])
+    video_run.add_argument("--frame-count", type=int, default=32, choices=[32, 40, 48])
+    video_run.add_argument(
+        "--animation-type",
+        default="other",
+        choices=["idle", "walk", "run", "jump", "attack", "hit", "defeated", "other"],
+    )
+
+    isometric_texture_run = subparsers.add_parser("isometric-texture-run", help="Create a seamless isometric texture")
+    add_shared_path_args(isometric_texture_run)
+    isometric_texture_run.add_argument("--prompt", default="")
+    isometric_texture_run.add_argument("--preset", default="")
+    isometric_texture_run.add_argument("--texture-name", action="append", default=[])
+    isometric_texture_run.add_argument("--reference-image", action="append", default=[])
+    isometric_texture_run.add_argument("--self-loop", action="store_true", default=True)
+    isometric_texture_run.add_argument("--no-self-loop", action="store_false", dest="self_loop")
+
+    isometric_tileset_run = subparsers.add_parser("isometric-tileset-run", help="Create an isometric terrain tileset")
+    add_shared_path_args(isometric_tileset_run)
+    isometric_tileset_run.add_argument("--prompt", default="")
+    isometric_tileset_run.add_argument("--terrain-mode", default="dual", choices=["dual", "single"])
+    isometric_tileset_run.add_argument("--single-terrain-region", default="", choices=["", "foreground", "background"])
+    isometric_tileset_run.add_argument("--show-base-color", action="store_true")
+    isometric_tileset_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
+    isometric_tileset_run.add_argument("--foreground-color", default="")
+    isometric_tileset_run.add_argument("--background-color", default="")
+    isometric_tileset_run.add_argument("--terrain-color", default="")
+    isometric_tileset_run.add_argument("--foreground-texture", default="")
+    isometric_tileset_run.add_argument("--background-texture", default="")
+
+    side_map_run = subparsers.add_parser("side-scrolling-map-run", help="Create a layered pixel side-scrolling map")
+    add_shared_path_args(side_map_run)
+    side_map_run.add_argument("--midground", required=True)
+    side_map_run.add_argument("--background", required=True)
+    side_map_run.add_argument("--foreground", required=True)
+    side_map_run.add_argument("--remove-bg-method", default="standard", choices=["standard", "advanced"])
+    side_map_run.add_argument("--loop-midground", action="store_true", help="Make the midground loop horizontally")
+    side_map_run.add_argument("--loop-background", action="store_true", help="Make the background loop horizontally")
+    side_map_run.add_argument("--loop-foreground", action="store_true", help="Make the foreground loop horizontally")
+
+    hd_side_map_run = subparsers.add_parser("hd-side-scrolling-map-run", help="Create a layered HD side-scrolling map")
+    add_shared_path_args(hd_side_map_run)
+    hd_side_map_run.add_argument("--midground", required=True)
+    hd_side_map_run.add_argument("--background", required=True)
+    hd_side_map_run.add_argument("--foreground", required=True)
+    hd_side_map_run.add_argument(
+        "--art-style",
+        default="2d_hd",
+        choices=["2d_hd", "2d_cartoon", "2d_ink", "clay", "low_poly_3d", "steampunk", "anime_hd"],
+    )
+    hd_side_map_run.add_argument("--custom-art-style", default="")
+    hd_side_map_run.add_argument("--loop-midground", action="store_true", help="Make the midground loop horizontally")
+    hd_side_map_run.add_argument("--loop-background", action="store_true", help="Make the background loop horizontally")
+    hd_side_map_run.add_argument("--loop-foreground", action="store_true", help="Make the foreground loop horizontally")
+
+    subparsers.add_parser("pixel-gen-template-info", help="List pixel-art presets")
 
     pixel_submit = subparsers.add_parser("pixel-gen-submit", help="Submit a pixel-gen job")
     add_shared_path_args(pixel_submit)
     pixel_submit.add_argument("--template-name", required=True)
     pixel_submit.add_argument("--requirement", required=True)
-    pixel_submit.add_argument("--template-config", default="{}", help="JSON object string")
+    pixel_submit.set_defaults(template_config="{}")
     pixel_submit.add_argument("--job-name", default="")
     pixel_submit.add_argument("--resolution", default="", help=argparse.SUPPRESS)
     pixel_submit.add_argument("--aspect-ratio", default="1:1")
     pixel_submit.add_argument("--reference-file", default="", help="Optional user reference image sent as reference_file")
     pixel_submit.add_argument("--reference-files", action="append", default=[], help="Optional user reference image; can be repeated")
 
-    pixel_run = subparsers.add_parser("pixel-gen-run", help="Submit and wait for pixel-gen")
+    pixel_run = subparsers.add_parser("pixel-gen-run", help="Create pixel art from a preset")
     for action in pixel_submit._actions[1:]:
-        if action.dest not in {"help"}:
+        if action.dest not in {"help", "job_name"}:
             pixel_run._add_action(action)
-    pixel_run.add_argument("--dry-run", action="store_true", help="Print planned request/output paths without submitting a job")
+    pixel_run.set_defaults(job_name="")
     add_shared_runtime_args(pixel_run)
+
+    subparsers.add_parser(
+        "large-pixel-template-info",
+        help="List large-pixel presets for scenes, illustrations, and other large assets",
+    )
+
+    large_pixel_run = subparsers.add_parser(
+        "large-pixel-gen-run",
+        help="Create a large pixel-art asset from a large-pixel preset",
+    )
+    add_shared_path_args(large_pixel_run)
+    large_pixel_run.add_argument("--template-name", required=True, help="Preset from large-pixel-template-info")
+    large_pixel_run.add_argument(
+        "--prompt",
+        "--requirement",
+        dest="requirement",
+        required=True,
+        help="Describe the requested pixel-art asset",
+    )
+    large_pixel_run.add_argument(
+        "--reference-image",
+        action="append",
+        default=[],
+        help="Optional style or content reference; can be repeated",
+    )
+    large_pixel_run.add_argument(
+        "--remove-bg-method",
+        default="none",
+        choices=["none", "standard"],
+        help="Keep the composed background or remove a simple background",
+    )
+
+    pixel_universal_run = subparsers.add_parser(
+        "pixel-universal-gen-run",
+        help="Create a general-purpose 4:3 pixel scene, illustration, character, or design",
+    )
+    add_shared_path_args(pixel_universal_run)
+    pixel_universal_run.add_argument(
+        "--prompt",
+        "--requirement",
+        dest="requirement",
+        required=True,
+        help="Describe the requested pixel-art result",
+    )
+    pixel_universal_run.add_argument(
+        "--view",
+        default="standard",
+        choices=["standard", "top-down"],
+        help="Use a normal composition or a top-down game view",
+    )
+    pixel_universal_run.add_argument(
+        "--reference-image",
+        action="append",
+        default=[],
+        help="Optional style or content reference; can be repeated",
+    )
+    pixel_universal_run.add_argument(
+        "--remove-bg-method",
+        default="none",
+        choices=["none", "standard"],
+        help="Keep the composed background or remove a simple background",
+    )
 
     pixel_poll = subparsers.add_parser("pixel-gen-poll", help="Poll one pixel-gen job")
     add_shared_path_args(pixel_poll)
@@ -4069,30 +3501,38 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(pixel_cancel)
     pixel_cancel.add_argument("--api-job-id", required=True)
 
-    hd_templates = subparsers.add_parser("hd-gen-template-info", help="Get HD-gen template info")
-    add_shared_path_args(hd_templates)
+    subparsers.add_parser("hd-gen-template-info", help="List HD asset presets")
 
     hd_submit = subparsers.add_parser("hd-gen-submit", help="Submit an HD-gen job")
     add_shared_path_args(hd_submit)
     hd_submit.add_argument("--template-name", required=True)
     hd_submit.add_argument("--requirement", required=True)
-    hd_submit.add_argument("--template-config", default="{}", help="JSON object string")
+    hd_submit.set_defaults(template_config="{}")
     hd_submit.add_argument("--job-name", default="")
-    hd_submit.add_argument("--model-name", default="gemini-3.1-flash-image-preview")
     hd_submit.add_argument("--resolution", default="", help="Optional resolution; empty uses template default")
     hd_submit.add_argument("--aspect-ratio", default="1:1")
-    hd_submit.add_argument("--temperature", type=float, default=0.0)
-    hd_submit.add_argument("--hd-remove-bg-mode", default="", help="Optional: batch or single")
-    hd_submit.add_argument("--include-base64", action="store_true")
+    hd_submit.add_argument(
+        "--quality",
+        dest="quality_mode",
+        default="standard",
+        choices=["standard", "detailed", "ultimate"],
+        help="Output quality: Standard, Detailed, or Ultimate",
+    )
+    hd_submit.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard", "advanced"],
+        help="Background removal: none, standard, or advanced",
+    )
     hd_submit.add_argument("--reference-file", default="", help="Optional single user reference image")
     hd_submit.add_argument("--reference-files", action="append", default=[], help="Optional user reference image; can be repeated")
-    hd_submit.add_argument("--project-id", default=None)
-    hd_submit.add_argument("--thread-id", default=None)
+    hd_submit.set_defaults(project_id=None, thread_id=None)
 
-    hd_run = subparsers.add_parser("hd-gen-run", help="Submit and wait for HD-gen")
+    hd_run = subparsers.add_parser("hd-gen-run", help="Create an HD game asset from a preset")
     for action in hd_submit._actions[1:]:
-        if action.dest not in {"help"}:
+        if action.dest not in {"help", "job_name"}:
             hd_run._add_action(action)
+    hd_run.set_defaults(job_name="")
     add_shared_runtime_args(hd_run)
 
     hd_poll = subparsers.add_parser("hd-gen-poll", help="Poll one HD-gen job")
@@ -4109,7 +3549,6 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(hd_download)
     hd_download.add_argument("--api-job-id", required=True)
     hd_download.add_argument("--output-index", type=int, default=None)
-    hd_download.add_argument("--preview", action="store_true", help="Download preview instead of final output")
 
     hd_cancel = subparsers.add_parser("hd-gen-cancel", help="Cancel one HD-gen job")
     add_shared_path_args(hd_cancel)
@@ -4129,16 +3568,22 @@ def parse_args() -> argparse.Namespace:
         help="Existing character reference image",
     )
     character_multi_view_submit.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
-    character_multi_view_submit.add_argument("--canvas-resolution", default="AUTO", choices=["AUTO", "1K", "2K", "4K"])
+    character_multi_view_submit.add_argument("--canvas-resolution", default="1K", choices=["1K", "2K"])
+    character_multi_view_submit.add_argument("--direction-mode", default="mirror", choices=["mirror", "ninegrid"])
+    character_multi_view_submit.add_argument("--aspect-ratio", default="", choices=["", "1:1", "3:4", "9:16"])
+    character_multi_view_submit.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard", "advanced"],
+    )
+    character_multi_view_submit.add_argument("--extra-constraint", default="")
     character_multi_view_submit.add_argument("--output-size", type=int, default=None, help="Optional final square sprite size")
-    character_multi_view_submit.add_argument("--temperature", type=float, default=0.0)
-    character_multi_view_submit.add_argument("--project-id", default=None)
-    character_multi_view_submit.add_argument("--thread-id", default=None)
+    character_multi_view_submit.set_defaults(project_id=None, thread_id=None)
 
     character_multi_view_run = subparsers.add_parser(
         "character-multi-view-run",
         aliases=["character-8-direction-run", "character-eight-direction-run"],
-        help="Submit and wait for character_multi_view_generator",
+        help="Create an eight-direction character sheet",
     )
     for action in character_multi_view_submit._actions[1:]:
         if action.dest not in {"help"}:
@@ -4156,12 +3601,11 @@ def parse_args() -> argparse.Namespace:
     remove_bg_submit = subparsers.add_parser("remove-background-submit", help="Submit a remove-background job")
     add_shared_path_args(remove_bg_submit)
     remove_bg_submit.add_argument("--image-file", required=True)
-    remove_bg_submit.add_argument("--method", default="hd")
-    remove_bg_submit.add_argument("--is-white-bg", action="store_true", default=True)
-    remove_bg_submit.add_argument("--no-is-white-bg", action="store_false", dest="is_white_bg")
-    remove_bg_submit.add_argument("--prompt", default="")
+    remove_bg_submit.add_argument("--mode", default="hd", choices=["pixel", "hd"], help="Source artwork type")
+    remove_bg_submit.add_argument("--quality", default="standard", choices=["standard", "advanced"])
+    remove_bg_submit.add_argument("--prompt", default="", help="Optional subject description for complex backgrounds")
 
-    remove_bg_run = subparsers.add_parser("remove-background-run", help="Submit and wait for remove-background")
+    remove_bg_run = subparsers.add_parser("remove-background-run", help="Create a transparent-background asset")
     for action in remove_bg_submit._actions[1:]:
         if action.dest not in {"help"}:
             remove_bg_run._add_action(action)
@@ -4172,10 +3616,11 @@ def parse_args() -> argparse.Namespace:
     pixelate_submit.add_argument("--image-file", required=True)
     pixelate_submit.add_argument("--pixel-size", default="")
 
-    pixelate_run = subparsers.add_parser("pixelate-run", help="Submit and wait for pixelate")
+    pixelate_run = subparsers.add_parser("pixelate-run", help="Convert artwork into crisp pixel art")
     for action in pixelate_submit._actions[1:]:
-        if action.dest not in {"help"}:
+        if action.dest not in {"help", "pixel_size"}:
             pixelate_run._add_action(action)
+    pixelate_run.set_defaults(pixel_size="")
     add_shared_runtime_args(pixelate_run)
 
     self_loop_submit = subparsers.add_parser("self-loop-submit", help="Submit a pixel_gen_self_loop job")
@@ -4183,38 +3628,33 @@ def parse_args() -> argparse.Namespace:
     self_loop_submit.add_argument("--image-file", required=True)
     self_loop_submit.add_argument("--job-name", default="")
     self_loop_submit.add_argument("--resolution", default="1K")
-    self_loop_submit.add_argument("--mode", choices=["basic", "full"], default="basic")
-    self_loop_submit.add_argument("--direction", default="horizontal")
+    self_loop_submit.add_argument("--mode", choices=["basic", "full", "texture"], default="basic")
+    self_loop_submit.add_argument("--direction", choices=["horizontal", "vertical"], default="horizontal")
 
-    self_loop_run = subparsers.add_parser("self-loop-run", help="Submit and wait for pixel_gen_self_loop")
+    self_loop_run = subparsers.add_parser("self-loop-run", help="Create a seamless loop from an image")
     for action in self_loop_submit._actions[1:]:
-        if action.dest not in {"help", "requirement"}:
+        if action.dest not in {"help", "requirement", "job_name"}:
             self_loop_run._add_action(action)
+    self_loop_run.set_defaults(job_name="")
     add_shared_runtime_args(self_loop_run)
 
-    sound_submit = subparsers.add_parser("sound-submit", aliases=["sfx-submit", "sound-effect-submit"], help="Submit an ElevenLabs sound-effect job")
-    add_shared_path_args(sound_submit)
-    sound_submit.add_argument("--prompt", required=True, help="Sound effect requirement")
-    sound_submit.add_argument("--duration", type=float, default=2, help="0.5 or integer seconds from 1 to 10")
-    sound_submit.add_argument("--loop", action="store_true", help="Request a loopable sound")
-    sound_submit.add_argument("--sound-pack", action="store_true", help="Generate a pack of different sounds")
-    sound_submit.add_argument("--variants", action="store_true", help="Generate variants of the same sound")
-    sound_submit.add_argument("--count", type=int, default=4, help="Number of pack items or variants")
-    sound_submit.add_argument("--language", default="en", help="Name language; prompt generation stays English")
-    sound_submit.add_argument("--temperature", type=float, default=0.3, help="Prompt influence, 0 to 1")
-    sound_submit.add_argument("--normalize-volume", action="store_true", default=True)
-    sound_submit.add_argument("--no-normalize-volume", action="store_false", dest="normalize_volume")
-    sound_submit.add_argument("--target-peak-db", type=float, default=-3.0)
-    sound_submit.add_argument("--max-gain-db", type=float, default=36.0)
-    sound_submit.add_argument("--provider-api-key", default="", help="Optional ElevenLabs API key; backend env is used when omitted")
-    sound_submit.add_argument("--base-url", default="", help="Optional ElevenLabs base URL")
-    sound_submit.add_argument("--project-id", default=None)
-    sound_submit.add_argument("--thread-id", default=None)
+    def add_sound_args(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument("--prompt", required=True, help="Sound effect requirement")
+        command_parser.add_argument("--duration", type=float, default=2, help="0.5 or integer seconds from 1 to 10")
+        command_parser.add_argument("--loop", action="store_true", help="Request a loopable sound")
+        sound_kind = command_parser.add_mutually_exclusive_group()
+        sound_kind.add_argument("--sound-pack", action="store_true", help="Generate a pack of different sounds")
+        sound_kind.add_argument("--variants", action="store_true", help="Generate variants of the same sound")
+        command_parser.add_argument("--count", type=int, default=4, help="Number of pack items or variants")
+        command_parser.add_argument("--language", default="en", help="Name language; prompt generation stays English")
 
-    sound_run = subparsers.add_parser("sound-run", aliases=["sfx-run", "sound-effect-run"], help="Submit and wait for ElevenLabs sound effects")
-    for action in sound_submit._actions[1:]:
-        if action.dest not in {"help"}:
-            sound_run._add_action(action)
+    sound_submit = subparsers.add_parser("sound-submit", aliases=["sfx-submit", "sound-effect-submit"], help="Submit a sound-effect job")
+    add_shared_path_args(sound_submit)
+    add_sound_args(sound_submit)
+
+    sound_run = subparsers.add_parser("sound-run", aliases=["sfx-run", "sound-effect-run"], help="Submit and wait for sound effects")
+    add_shared_path_args(sound_run)
+    add_sound_args(sound_run)
     add_shared_runtime_args(sound_run)
 
     sound_poll = subparsers.add_parser("sound-poll", aliases=["sfx-poll", "sound-effect-poll"], help="Poll one sound-effect workflow job")
@@ -4225,14 +3665,11 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(texture_submit)
     texture_submit.add_argument("--prompt", default="", help="Texture requirement")
     texture_submit.add_argument("--texture-name", action="append", default=[], help="Reference texture name; can be repeated or comma-separated")
-    texture_submit.add_argument("--padding-mode", default="no_padding", choices=["no_padding", "padded"])
-    texture_submit.add_argument("--edge-fill-pixels", type=int, default=1)
     texture_submit.add_argument("--self-loop", action="store_true", default=True)
     texture_submit.add_argument("--no-self-loop", action="store_false", dest="self_loop")
-    texture_submit.add_argument("--project-id", default=None)
-    texture_submit.add_argument("--thread-id", default=None)
+    texture_submit.set_defaults(project_id=None, thread_id=None)
 
-    texture_run = subparsers.add_parser("texture-gen-run", help="Submit and wait for texture_gen")
+    texture_run = subparsers.add_parser("texture-gen-run", help="Create a seamless texture")
     for action in texture_submit._actions[1:]:
         if action.dest not in {"help"}:
             texture_run._add_action(action)
@@ -4245,25 +3682,25 @@ def parse_args() -> argparse.Namespace:
     tileset_submit = subparsers.add_parser("tileset-gen-submit", help="Submit a tileset_gen job")
     add_shared_path_args(tileset_submit)
     tileset_submit.add_argument("--prompt", default="", help="Foreground/background terrain requirement")
-    tileset_submit.add_argument("--tileset-mode", default="dual-grid-15")
+    tileset_submit.set_defaults(tileset_mode="dual-grid-15")
     tileset_submit.add_argument("--terrain-mode", default="dual", choices=["dual", "single"])
     tileset_submit.add_argument("--single-terrain-region", default="", choices=["", "foreground", "background"])
     tileset_submit.add_argument("--single-terrain-base-color", action="store_true", dest="single_terrain_show_base_color", default=False)
     tileset_submit.add_argument("--no-single-terrain-base-color", action="store_false", dest="single_terrain_show_base_color")
-    tileset_submit.add_argument("--single-terrain-boundary-gap", type=int, default=None)
-    tileset_submit.add_argument("--single-terrain-remove-background", action="store_true", dest="single_terrain_remove_background", default=True)
-    tileset_submit.add_argument("--no-single-terrain-remove-background", action="store_false", dest="single_terrain_remove_background")
+    tileset_submit.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard", "advanced"],
+        help="Background removal for single-terrain output",
+    )
     tileset_submit.add_argument("--foreground-color", default="", help="Optional exact foreground guide color, e.g. #67B84F")
     tileset_submit.add_argument("--background-color", default="", help="Optional exact background guide color, e.g. #3D8EDB")
     tileset_submit.add_argument("--terrain-color", default="", help="Optional exact single-terrain guide color")
     tileset_submit.add_argument("--foreground-texture", default="", help="Optional foreground texture reference image")
     tileset_submit.add_argument("--background-texture", default="", help="Optional background texture reference image")
-    tileset_submit.add_argument("--texture-reference-size", type=int, default=None)
-    tileset_submit.add_argument("--texture-reference-mode", default="white_region_fill", choices=["white_region_fill", "texture_block_fill"])
-    tileset_submit.add_argument("--project-id", default=None)
-    tileset_submit.add_argument("--thread-id", default=None)
+    tileset_submit.set_defaults(project_id=None, thread_id=None)
 
-    tileset_run = subparsers.add_parser("tileset-gen-run", help="Submit and wait for tileset_gen")
+    tileset_run = subparsers.add_parser("tileset-gen-run", help="Create a terrain tileset")
     for action in tileset_submit._actions[1:]:
         if action.dest not in {"help"}:
             tileset_run._add_action(action)
@@ -4276,29 +3713,38 @@ def parse_args() -> argparse.Namespace:
     ui_submit = subparsers.add_parser("ui-gen-submit", aliases=["general-ui-gen-submit"], help="Submit a general_ui_gen job")
     add_shared_path_args(ui_submit)
     ui_submit.add_argument("--prompt", required=True, help="Game UI sheet, HUD, menu, button, or icon requirement")
-    ui_submit.add_argument("--template", default="hd_retro_rpg", help="general_ui_gen template id")
     ui_submit.add_argument(
         "--reference-image",
         "--reference-file",
         dest="reference_image",
         action="append",
         default=[],
-        help="Optional UI style or source sheet reference image; can be repeated",
+        help="Required in extract mode; optional style reference in generate mode; repeat up to 8 times",
     )
-    ui_submit.add_argument("--aspect-ratio", default="1:1")
-    ui_submit.add_argument("--remove-background", action="store_true", default=True)
-    ui_submit.add_argument("--no-remove-background", action="store_false", dest="remove_background")
-    ui_submit.add_argument("--split-components", action="store_true", default=True)
-    ui_submit.add_argument("--no-split-components", action="store_false", dest="split_components")
-    ui_submit.add_argument("--generation-mode", default="generate", choices=["generate", "ui_extract"])
-    ui_submit.add_argument("--split-alpha-threshold", type=int, default=16)
-    ui_submit.add_argument("--split-connectivity", type=int, default=4, choices=[4, 8])
-    ui_submit.add_argument("--split-min-component-size", type=int, default=16)
-    ui_submit.add_argument("--split-bbox-padding", type=int, default=8)
-    ui_submit.add_argument("--project-id", default=None)
-    ui_submit.add_argument("--thread-id", default=None)
+    ui_submit.add_argument("--resolution", default="2K", choices=["1K", "2K"])
+    ui_submit.add_argument("--aspect-ratio", default="1:1", choices=["4:3", "3:4", "16:9", "9:16", "1:1"])
+    ui_submit.add_argument(
+        "--quality",
+        default="detailed",
+        choices=["standard", "detailed", "ultimate"],
+        help="Output quality: Standard, Detailed, or Ultimate",
+    )
+    ui_submit.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard", "advanced"],
+        help="Background removal: none, standard, or advanced",
+    )
+    ui_submit.add_argument("--mode", dest="generation_mode", default="generate", choices=["generate", "extract"])
+    ui_submit.set_defaults(
+        template="hd_retro_rpg",
+        generation_provider="image2",
+        split_components=True,
+        project_id=None,
+        thread_id=None,
+    )
 
-    ui_run = subparsers.add_parser("ui-gen-run", aliases=["general-ui-gen-run"], help="Submit and wait for general_ui_gen")
+    ui_run = subparsers.add_parser("ui-gen-run", aliases=["general-ui-gen-run"], help="Create or extract game UI assets")
     for action in ui_submit._actions[1:]:
         if action.dest not in {"help"}:
             ui_run._add_action(action)
@@ -4316,14 +3762,14 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(isometric_submit)
     add_map_workflow_args(
         isometric_submit,
-        modes=("standard", "edit", "tetraploid", "road"),
-        include_road=True,
+        modes=("standard", "edit", "tetraploid", "road", "wall"),
+        include_remove_bg=True,
     )
 
     isometric_run = subparsers.add_parser(
         "isometric-gen-run",
         aliases=["pixel-isometric-gen-run"],
-        help="Submit and wait for pixel_isometric_gen",
+        help="Create pixel isometric map tiles",
     )
     for action in isometric_submit._actions[1:]:
         if action.dest not in {"help"}:
@@ -4347,12 +3793,13 @@ def parse_args() -> argparse.Namespace:
     add_map_workflow_args(
         hex_isometric_submit,
         modes=("standard", "edit", "tetraploid", "heptaploid"),
+        include_remove_bg=True,
     )
 
     hex_isometric_run = subparsers.add_parser(
         "hex-isometric-gen-run",
         aliases=["pixel-hex-isometric-gen-run"],
-        help="Submit and wait for pixel_hex_isometric_gen",
+        help="Create pixel hex-isometric map tiles",
     )
     for action in hex_isometric_submit._actions[1:]:
         if action.dest not in {"help"}:
@@ -4371,12 +3818,11 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(hd_isometric_submit)
     add_map_workflow_args(
         hd_isometric_submit,
-        modes=("standard", "tetraploid", "style_quad"),
+        modes=("standard", "tetraploid"),
         include_template=True,
-        include_style_quad=True,
     )
 
-    hd_isometric_run = subparsers.add_parser("hd-isometric-gen-run", help="Submit and wait for hd_isometric_gen")
+    hd_isometric_run = subparsers.add_parser("hd-isometric-gen-run", help="Create HD isometric map tiles")
     for action in hd_isometric_submit._actions[1:]:
         if action.dest not in {"help"}:
             hd_isometric_run._add_action(action)
@@ -4394,7 +3840,7 @@ def parse_args() -> argparse.Namespace:
         include_template=True,
     )
 
-    hd_hex_isometric_run = subparsers.add_parser("hd-hex-isometric-gen-run", help="Submit and wait for hd_hex_isometric_gen")
+    hd_hex_isometric_run = subparsers.add_parser("hd-hex-isometric-gen-run", help="Create HD hex-isometric map tiles")
     for action in hd_hex_isometric_submit._actions[1:]:
         if action.dest not in {"help"}:
             hd_hex_isometric_run._add_action(action)
@@ -4407,13 +3853,11 @@ def parse_args() -> argparse.Namespace:
     music_submit = subparsers.add_parser("music-submit", help="Submit a music_generator job")
     add_shared_path_args(music_submit)
     music_submit.add_argument("--prompt", default="", help="Music requirement text; optional when reference images are provided")
-    music_submit.add_argument("--audio-generate", action="store_true", help="Generate audio instead of prompt-only metadata")
-    music_submit.add_argument("--demo", action="store_true", help="Use the lower-cost demo audio model when --audio-generate is set")
+    music_submit.add_argument("--generate-audio", dest="audio_generate", action="store_true", help="Render a playable track")
+    music_submit.add_argument("--preview", dest="demo", action="store_true", help="Render a shorter preview")
     music_submit.add_argument("--reference-image", action="append", default=[], help="Optional reference image; can be repeated")
-    music_submit.add_argument("--project-id", default=None)
-    music_submit.add_argument("--thread-id", default=None)
 
-    music_run = subparsers.add_parser("music-run", help="Submit and wait for music_generator")
+    music_run = subparsers.add_parser("music-run", help="Draft or render game music")
     for action in music_submit._actions[1:]:
         if action.dest not in {"help"}:
             music_run._add_action(action)
@@ -4423,32 +3867,7 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(music_poll)
     music_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
-    gemini_post = subparsers.add_parser("gemini-post", help="Call a generic Gemini proxy POST endpoint")
-    add_shared_path_args(gemini_post)
-    gemini_post.add_argument(
-        "--path",
-        required=True,
-        help=f"Gemini proxy path, e.g. v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent",
-    )
-    gemini_post.add_argument("--json-body", required=True, help="Raw JSON string")
-
-    gemini_generate = subparsers.add_parser("gemini-generate-content", help="Call Gemini generateContent")
-    add_shared_path_args(gemini_generate)
-    gemini_generate.add_argument("--model", default=DEFAULT_GEMINI_MODEL)
-    gemini_generate.add_argument("--text", default="", help="Prompt text; optional when --image-file is provided")
-    gemini_generate.add_argument(
-        "--image-file",
-        "--reference-image",
-        "--reference-file",
-        dest="image_files",
-        action="append",
-        default=[],
-        help="Reference image file sent as inline_data; can be repeated",
-    )
-    gemini_generate.add_argument("--generation-config", default="", help="JSON object string")
-
-    credits_balance = subparsers.add_parser("credits-balance", help="Get current credits balance")
-    add_shared_path_args(credits_balance)
+    subparsers.add_parser("credits-balance", help="Get current credits balance")
 
     animate_submit_parser = subparsers.add_parser("animate-submit", help="Submit an animate job")
     add_shared_path_args(animate_submit_parser)
@@ -4456,9 +3875,15 @@ def parse_args() -> argparse.Namespace:
     animate_submit_parser.add_argument("--prompt", default="")
     animate_submit_parser.add_argument("--is-pixel", action="store_true")
     animate_submit_parser.add_argument("--output-frames", type=int, default=8)
-    animate_submit_parser.add_argument("--output-format", default="webp")
+    animate_submit_parser.add_argument("--output-format", default="webp", choices=["webp", "gif", "spritesheet"])
+    animate_submit_parser.add_argument("--animation-type", default="other")
+    animate_submit_parser.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard", "advanced"],
+    )
 
-    animate_run_parser = subparsers.add_parser("animate-run", help="Submit and wait for animate")
+    animate_run_parser = subparsers.add_parser("animate-run", help="Create a short sprite animation")
     for action in animate_submit_parser._actions[1:]:
         if action.dest not in {"help"}:
             animate_run_parser._add_action(action)
@@ -4467,6 +3892,45 @@ def parse_args() -> argparse.Namespace:
     animate_poll_parser = subparsers.add_parser("animate-poll", help="Poll one animate job")
     add_shared_path_args(animate_poll_parser)
     animate_poll_parser.add_argument("--api-job-id", required=True)
+
+    public_commands = {
+        "map-reference-search",
+        "map-reference-download",
+        "image-edit-run",
+        "animation-edit-run",
+        "video-run",
+        "isometric-texture-run",
+        "isometric-tileset-run",
+        "side-scrolling-map-run",
+        "hd-side-scrolling-map-run",
+        "pixel-gen-template-info",
+        "pixel-gen-run",
+        "large-pixel-template-info",
+        "large-pixel-gen-run",
+        "pixel-universal-gen-run",
+        "hd-gen-template-info",
+        "hd-gen-run",
+        "character-multi-view-run",
+        "remove-background-run",
+        "pixelate-run",
+        "self-loop-run",
+        "sound-run",
+        "texture-gen-run",
+        "tileset-gen-run",
+        "ui-gen-run",
+        "isometric-gen-run",
+        "hex-isometric-gen-run",
+        "hd-isometric-gen-run",
+        "hd-hex-isometric-gen-run",
+        "music-run",
+        "credits-balance",
+        "animate-run",
+    }
+    subparsers._choices_actions[:] = [
+        action for action in subparsers._choices_actions if action.dest in public_commands
+    ]
+    for action in subparsers._choices_actions:
+        action.metavar = action.dest
 
     return parser.parse_args()
 
@@ -4504,23 +3968,7 @@ def _read_dotenv_value(key: str) -> str:
     return ""
 
 
-def _resolve_auth_token(raw_api_key: str, raw_dev_key: str = "") -> str:
-    dev_key = (raw_dev_key or "").strip()
-    if dev_key:
-        return f"x-dev-key:{dev_key}"
-
-    env_dev_key = os.getenv(DEFAULT_DEV_KEY_ENV, "").strip() or os.getenv("DEV_API_KEY", "").strip()
-    if env_dev_key:
-        return f"x-dev-key:{env_dev_key}"
-
-    dotenv_dev_key = _read_dotenv_value(DEFAULT_DEV_KEY_ENV).strip() or _read_dotenv_value("DEV_API_KEY").strip()
-    if dotenv_dev_key:
-        return f"x-dev-key:{dotenv_dev_key}"
-
-    api_key = (raw_api_key or "").strip()
-    if api_key:
-        return api_key
-
+def _resolve_auth_token() -> str:
     env_api_key = os.getenv(DEFAULT_API_KEY_ENV, "").strip()
     if env_api_key:
         return env_api_key
@@ -4529,49 +3977,22 @@ def _resolve_auth_token(raw_api_key: str, raw_dev_key: str = "") -> str:
     if dotenv_api_key:
         return dotenv_api_key
 
+    env_dev_key = os.getenv(DEFAULT_DEV_KEY_ENV, "").strip()
+    if env_dev_key:
+        return f"{_DEV_AUTH_PREFIX}{env_dev_key}"
+
+    dotenv_dev_key = _read_dotenv_value(DEFAULT_DEV_KEY_ENV).strip()
+    if dotenv_dev_key:
+        return f"{_DEV_AUTH_PREFIX}{dotenv_dev_key}"
+
     raise ValueError(
-        f"missing auth key: pass --api-key/--dev-key, set {DEFAULT_API_KEY_ENV}/{DEFAULT_DEV_KEY_ENV}, "
-        f"or add {DEFAULT_API_KEY_ENV}=... or {DEFAULT_DEV_KEY_ENV}=... to .env"
+        "Meowa authentication is not configured. Configure credentials outside the command line and retry."
     )
 
 def main() -> int:
     _configure_stdio()
-    _bootstrap_maybe_exec(sys.argv)
     args = parse_args()
     verify = not args.insecure
-    if args.command == "bootstrap-status":
-        payload = bootstrap_status(check_remote=args.check)
-        payload["skill_doc"] = skill_doc_status(
-            api_base=args.api_base,
-            timeout=args.timeout,
-            verify=verify,
-            check_remote=args.check,
-        )
-        print(_format_json_for_display(payload))
-        return 0
-    if args.command == "skill-doc":
-        payload = skill_doc(
-            api_base=args.api_base,
-            topic=args.topic,
-            task=args.task,
-            timeout=args.timeout,
-            verify=verify,
-            refresh=args.refresh,
-        )
-        warning = str(payload.get("warning") or "").strip()
-        if warning:
-            print(f"[WARN] skill doc fallback: {warning}", file=sys.stderr)
-        print(str(payload.get("content") or ""))
-        return 0
-    if args.command == "skill-doc-status":
-        print(_format_json_for_display(skill_doc_status(
-            api_base=args.api_base,
-            topic=args.topic,
-            timeout=args.timeout,
-            verify=verify,
-            check_remote=args.check,
-        )))
-        return 0
 
     started_at = datetime.now().isoformat(timespec="seconds")
     run_dir = _create_run_dir(args.work_dir, args.command)
@@ -4583,60 +4004,45 @@ def main() -> int:
             "map-reference-download",
             "map-preset-download",
         }
-        needs_api_key = args.command not in no_auth_commands and not (
-            args.command == "pixel-gen-run" and getattr(args, "dry_run", False)
-        )
-        args.api_key = (
-            _resolve_auth_token(args.api_key, getattr(args, "dev_key", ""))
-            if needs_api_key
-            else str(args.api_key or "").strip()
-        )
+        needs_api_key = args.command not in no_auth_commands
+        args.api_key = _resolve_auth_token() if needs_api_key else ""
 
         if args.command in {"map-reference-search", "map-preset-search"}:
-            if args.download:
-                search_payload, downloads = download_map_presets(
+            workflow_id, template_id, group = _resolve_map_reference_filters(
+                map_type=args.map_type,
+                theme=args.theme,
+                layout=args.layout,
+                group=args.group,
+            )
+            if args.categories:
+                if any((args.query, args.theme, args.layout, args.tile_size, args.asset_kind, args.group)):
+                    raise ValueError("--categories accepts only the optional --type filter")
+                catalog = fetch_map_preset_catalog(
                     api_base=args.api_base,
-                    query=args.query,
-                    workflow_id=args.workflow_id,
-                    template_id=args.template_id,
-                    tile_size=args.tile_size,
-                    asset_kind=args.asset_kind,
-                    group=args.group,
-                    limit=args.limit,
-                    output_dir=str(effective_output_dir),
                     timeout=args.timeout,
                     verify=verify,
                 )
+                payload = public_map_reference_categories(catalog, map_type=args.map_type)
                 _write_meta(
                     run_dir=run_dir,
                     started_at=started_at,
                     finished_at=datetime.now().isoformat(timespec="seconds"),
                     args=args,
-                    request_payload={
-                        "query": args.query,
-                        "workflow_id": args.workflow_id,
-                        "template_id": args.template_id,
-                        "tile_size": args.tile_size,
-                        "asset_kind": args.asset_kind,
-                        "group": args.group,
-                        "limit": args.limit,
-                    },
-                    response_payload=search_payload,
-                    downloads=downloads,
+                    request_payload={"categories": True, "type": args.map_type},
+                    response_payload=payload,
+                    downloads=[],
                     effective_output_dir=str(effective_output_dir),
                 )
-                print(f"[INFO] saved_dir={effective_output_dir}")
-                print(_format_json_for_display(search_payload))
+                print(_format_public_json(payload))
                 return 0
-
             payload = search_map_presets(
                 api_base=args.api_base,
                 query=args.query,
-                workflow_id=args.workflow_id,
-                template_id=args.template_id,
+                workflow_id=workflow_id,
+                template_id=template_id,
                 tile_size=args.tile_size,
                 asset_kind=args.asset_kind,
-                group=args.group,
+                group=group,
                 limit=args.limit,
                 timeout=args.timeout,
                 verify=verify,
@@ -4648,30 +4054,37 @@ def main() -> int:
                 args=args,
                 request_payload={
                     "query": args.query,
-                    "workflow_id": args.workflow_id,
-                    "template_id": args.template_id,
+                    "type": args.map_type,
+                    "theme": args.theme,
+                    "layout": args.layout,
                     "tile_size": args.tile_size,
                     "asset_kind": args.asset_kind,
-                    "group": args.group,
+                    "group": group,
                     "limit": args.limit,
                 },
                 response_payload=payload,
                 downloads=[],
                 effective_output_dir=str(effective_output_dir),
             )
-            print(_format_json_for_display(payload))
+            print(_format_public_json(_public_map_search_payload(payload)))
             return 0
 
         if args.command in {"map-reference-download", "map-preset-download"}:
-            search_payload, downloads = download_map_presets(
+            workflow_id, template_id, group = _resolve_map_reference_filters(
+                map_type=args.map_type,
+                theme=args.theme,
+                layout=args.layout,
+                group=args.group,
+            )
+            public_search_payload, downloads = download_map_presets(
                 api_base=args.api_base,
                 query=args.query,
                 preset_ids=list(args.preset_id or []),
-                workflow_id=args.workflow_id,
-                template_id=args.template_id,
+                workflow_id=workflow_id,
+                template_id=template_id,
                 tile_size=args.tile_size,
                 asset_kind=args.asset_kind,
-                group=args.group,
+                group=group,
                 limit=args.limit,
                 output_dir=str(effective_output_dir),
                 timeout=args.timeout,
@@ -4685,25 +4098,201 @@ def main() -> int:
                 request_payload={
                     "preset_ids": list(args.preset_id or []),
                     "query": args.query,
-                    "workflow_id": args.workflow_id,
-                    "template_id": args.template_id,
+                    "type": args.map_type,
+                    "theme": args.theme,
+                    "layout": args.layout,
                     "tile_size": args.tile_size,
                     "asset_kind": args.asset_kind,
-                    "group": args.group,
+                    "group": group,
                     "limit": args.limit,
                 },
-                response_payload=search_payload,
+                response_payload=public_search_payload,
                 downloads=downloads,
                 effective_output_dir=str(effective_output_dir),
             )
             print(f"[INFO] saved_dir={effective_output_dir}")
-            print(_format_json_for_display(search_payload))
+            print(_format_public_json(public_search_payload))
             return 0
 
-        if args.command == "pixel-gen-template-info":
+        curated_commands = {
+            "image-edit-run",
+            "animation-edit-run",
+            "video-run",
+            "isometric-texture-run",
+            "isometric-tileset-run",
+            "side-scrolling-map-run",
+            "hd-side-scrolling-map-run",
+        }
+        if args.command in curated_commands:
+            endpoint = ""
+            workflow_id = ""
+            slug_seed = "asset"
+            data: dict[str, str] = {}
+            files: list[tuple[str, tuple[str, bytes, str]]] = []
+
+            if args.command == "image-edit-run":
+                references = list(args.reference_image or [])
+                if not 1 <= len(references) <= 8:
+                    raise ValueError("image editing requires 1 to 8 reference images")
+                if args.strict and args.mode != "pixel":
+                    raise ValueError("--strict is available only in pixel mode")
+                endpoint = "/api/workflows/image_edit/run"
+                workflow_id = "image_edit"
+                slug_seed = args.prompt
+                data = {
+                    "prompt": args.prompt,
+                    "mode": args.mode,
+                    "strict": "true" if args.strict else "false",
+                    "remove_bg_method": args.remove_bg_method if args.mode == "pixel" else "none",
+                    "resolution": args.resolution,
+                    "aspect_ratio": args.aspect_ratio,
+                }
+                files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
+
+            elif args.command == "animation-edit-run":
+                animation_path = Path(args.animation_file).expanduser()
+                if animation_path.suffix.lower() not in {".gif", ".webp"}:
+                    raise ValueError("animation editing accepts animated GIF or WebP files")
+                references = list(args.reference_image or [])
+                if len(references) > 8:
+                    raise ValueError("animation editing accepts at most 8 reference images")
+                endpoint = "/api/workflows/frames_edit/run"
+                workflow_id = "frames_edit"
+                slug_seed = args.prompt
+                data = {
+                    "prompt": args.prompt,
+                    "mode": args.mode,
+                    "remove_bg_method": args.remove_bg_method,
+                }
+                files.append(("source_animation", _upload_part(args.animation_file, label="animation file")))
+                files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
+
+            elif args.command == "video-run":
+                if not args.prompt.strip() and not (args.action.strip() and args.direction.strip()):
+                    raise ValueError("video generation requires --prompt or both --action and --direction")
+                endpoint = "/api/workflows/seedance_generator/run"
+                workflow_id = "seedance_generator"
+                slug_seed = args.prompt or f"{args.action}-{args.direction}"
+                data = {
+                    "prompt": args.prompt,
+                    "action": args.action,
+                    "direction": args.direction,
+                    "pixel": "true" if args.pixel else "false",
+                    "resolution": args.resolution,
+                    "ratio": args.aspect_ratio,
+                    "frame_count": str(args.frame_count),
+                    "animation_type": args.animation_type,
+                }
+                files.append(("file", _upload_part(args.first_frame, label="first frame")))
+                if args.last_frame:
+                    files.append(("last_file", _upload_part(args.last_frame, label="last frame")))
+
+            elif args.command == "isometric-texture-run":
+                references = list(args.reference_image or [])
+                if not args.prompt.strip() and not args.preset.strip() and not args.texture_name and not references:
+                    raise ValueError("isometric texture generation requires a prompt, preset, texture name, or reference image")
+                endpoint = "/api/workflows/isometric_texture_gen/run"
+                workflow_id = "isometric_texture_gen"
+                slug_seed = args.prompt or args.preset or "isometric-texture"
+                data = {
+                    "prompt": args.prompt,
+                    "template": args.preset,
+                    "texture_names": ",".join(list(args.texture_name or [])),
+                    "self_loop": "true" if args.self_loop else "false",
+                }
+                files.extend(("reference_files", _upload_part(path, label="reference image")) for path in references)
+
+            elif args.command == "isometric-tileset-run":
+                endpoint = "/api/workflows/isometric_tileset_gen/run"
+                workflow_id = "isometric_tileset_gen"
+                slug_seed = args.prompt or "isometric-tileset"
+                data = {
+                    "prompt": args.prompt,
+                    "terrain_mode": args.terrain_mode,
+                    "single_terrain_region": args.single_terrain_region,
+                    "single_terrain_show_base_color": "true" if args.show_base_color else "false",
+                    "remove_bg_method": args.remove_bg_method if args.terrain_mode == "single" else "none",
+                    "foreground_color": args.foreground_color,
+                    "background_color": args.background_color,
+                    "terrain_color": args.terrain_color,
+                }
+                if args.foreground_texture:
+                    files.append(("foreground_texture", _upload_part(args.foreground_texture, label="foreground texture")))
+                if args.background_texture:
+                    files.append(("background_texture", _upload_part(args.background_texture, label="background texture")))
+
+            elif args.command == "side-scrolling-map-run":
+                endpoint = "/api/workflows/side_scrolling_map_gen/run"
+                workflow_id = "side_scrolling_map_gen"
+                slug_seed = args.midground
+                data = {
+                    "midground_input": args.midground,
+                    "background_input": args.background,
+                    "foreground_input": args.foreground,
+                    "mode": "full",
+                    "remove_bg_method": args.remove_bg_method,
+                    "resolution": "1K",
+                    "aspect_ratio": "16:9",
+                    "loop_midground": "true" if args.loop_midground else "false",
+                    "loop_background": "true" if args.loop_background else "false",
+                    "loop_foreground": "true" if args.loop_foreground else "false",
+                }
+
+            elif args.command == "hd-side-scrolling-map-run":
+                endpoint = "/api/workflows/hd_side_scrolling_map_gen/run"
+                workflow_id = "hd_side_scrolling_map_gen"
+                slug_seed = args.midground
+                data = {
+                    "midground_input": args.midground,
+                    "background_input": args.background,
+                    "foreground_input": args.foreground,
+                    "mode": "full",
+                    "resolution": "1K",
+                    "aspect_ratio": "16:9",
+                    "art_style": args.art_style,
+                    "custom_art_style": args.custom_art_style,
+                    "loop_midground": "true" if args.loop_midground else "false",
+                    "loop_background": "true" if args.loop_background else "false",
+                    "loop_foreground": "true" if args.loop_foreground else "false",
+                }
+
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            submit_payload, final_payload = run_curated_workflow(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                endpoint=endpoint,
+                label=args.command.removesuffix("-run"),
+                data=data,
+                files=files,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=slug_seed,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+                workflow_id=workflow_id,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command in {"pixel-gen-template-info", "large-pixel-template-info"}:
             payload = pixel_gen_template_info(
                 api_base=args.api_base,
                 api_key=args.api_key,
+                workflow_id=(
+                    PIXEL_GENERAL_WORKFLOW_ID
+                    if args.command == "large-pixel-template-info"
+                    else ""
+                ),
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -4717,7 +4306,57 @@ def main() -> int:
                 downloads=[],
                 effective_output_dir=str(effective_output_dir),
             )
-            print(_format_json_for_display(payload))
+            print(_format_public_json(payload))
+            return 0
+
+        if args.command in {"large-pixel-gen-run", "pixel-universal-gen-run"}:
+            references = list(args.reference_image or [])
+            template_config: dict[str, Any] = {}
+            if args.remove_bg_method:
+                template_config["remove_bg_method"] = args.remove_bg_method
+
+            if args.command == "large-pixel-gen-run":
+                template_name = args.template_name
+                validate_pixel_general_template(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    template_name=template_name,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+            else:
+                template_name = PIXEL_UNIVERSAL_TEMPLATE_NAME
+                if args.view == "top-down":
+                    template_config["direction"] = "top-down"
+
+            predicted_output_dir = _predict_saved_dir(effective_output_dir, args.requirement)
+            print(f"[INFO] planned_output_dir={predicted_output_dir}")
+            submit_payload, final_payload = run_pixel_gen(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                template_name=template_name,
+                requirement=args.requirement,
+                template_config=template_config,
+                reference_file=references[0] if references else "",
+                reference_files=references[1:],
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, _downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=args.requirement,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+                workflow_id=PIXEL_GENERAL_WORKFLOW_ID,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
             return 0
 
         if args.command == "pixel-gen-submit":
@@ -4768,25 +4407,6 @@ def main() -> int:
             }
             predicted_output_dir = _predict_saved_dir(effective_output_dir, args.job_name or args.requirement)
             print(f"[INFO] planned_output_dir={predicted_output_dir}")
-            if args.dry_run:
-                dry_payload = {
-                    "dry_run": True,
-                    "submit_endpoint": _normalize_base_url(args.api_base, "/api/pixel-gen"),
-                    "planned_output_dir": str(predicted_output_dir),
-                    "request": request_payload,
-                }
-                _write_meta(
-                    run_dir=run_dir,
-                    started_at=started_at,
-                    finished_at=datetime.now().isoformat(timespec="seconds"),
-                    args=args,
-                    request_payload=request_payload,
-                    response_payload=dry_payload,
-                    downloads=[],
-                    effective_output_dir=str(predicted_output_dir),
-                )
-                print(_format_json_for_display(dry_payload))
-                return 0
             submit_payload = submit_pixel_gen(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -4803,12 +4423,8 @@ def main() -> int:
             api_job_id = str(submit_payload.get("api_job_id") or "").strip()
             if not api_job_id:
                 raise RuntimeError("pixel-gen submit response missing api_job_id")
-            _save_json(
-                predicted_output_dir / "submit_response.json",
-                _sanitize_response_for_local_storage(submit_payload),
-            )
             print(f"[INFO] submitted api_job_id={api_job_id}")
-            print(f"[INFO] waiting_for_completion poll_interval={args.poll_interval}s max_wait={args.max_wait}s")
+            print("[INFO] waiting_for_completion")
             final_payload = wait_pixel_gen_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -4827,6 +4443,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="pixel_gen",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -4947,7 +4564,7 @@ def main() -> int:
                 downloads=[],
                 effective_output_dir=str(effective_output_dir),
             )
-            print(_format_json_for_display(payload))
+            print(_format_public_json(payload))
             return 0
 
         if args.command == "hd-gen-submit":
@@ -4957,12 +4574,10 @@ def main() -> int:
                 "requirement": args.requirement,
                 "template_config": template_config,
                 "job_name": args.job_name,
-                "model_name": args.model_name,
                 "resolution": args.resolution,
                 "aspect_ratio": args.aspect_ratio,
-                "temperature": args.temperature,
-                "hd_remove_bg_mode": args.hd_remove_bg_mode,
-                "include_base64": args.include_base64,
+                "quality_mode": args.quality_mode,
+                "remove_bg_method": args.remove_bg_method,
                 "reference_file": args.reference_file,
                 "reference_files": list(args.reference_files or []),
                 "project_id": args.project_id,
@@ -4975,12 +4590,10 @@ def main() -> int:
                 requirement=args.requirement,
                 template_config=template_config,
                 job_name=args.job_name,
-                model_name=args.model_name,
                 resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
-                temperature=args.temperature,
-                hd_remove_bg_mode=args.hd_remove_bg_mode,
-                include_base64=args.include_base64,
+                quality_mode=args.quality_mode,
+                remove_bg_method=args.remove_bg_method,
                 reference_file=args.reference_file,
                 reference_files=list(args.reference_files or []),
                 project_id=args.project_id,
@@ -5010,12 +4623,10 @@ def main() -> int:
                 "requirement": args.requirement,
                 "template_config": template_config,
                 "job_name": args.job_name,
-                "model_name": args.model_name,
                 "resolution": args.resolution,
                 "aspect_ratio": args.aspect_ratio,
-                "temperature": args.temperature,
-                "hd_remove_bg_mode": args.hd_remove_bg_mode,
-                "include_base64": args.include_base64,
+                "quality_mode": args.quality_mode,
+                "remove_bg_method": args.remove_bg_method,
                 "reference_file": args.reference_file,
                 "reference_files": list(args.reference_files or []),
                 "project_id": args.project_id,
@@ -5028,12 +4639,10 @@ def main() -> int:
                 requirement=args.requirement,
                 template_config=template_config,
                 job_name=args.job_name,
-                model_name=args.model_name,
                 resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
-                temperature=args.temperature,
-                hd_remove_bg_mode=args.hd_remove_bg_mode,
-                include_base64=args.include_base64,
+                quality_mode=args.quality_mode,
+                remove_bg_method=args.remove_bg_method,
                 reference_file=args.reference_file,
                 reference_files=list(args.reference_files or []),
                 project_id=args.project_id,
@@ -5052,6 +4661,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="hd_gen",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5087,6 +4697,7 @@ def main() -> int:
                     verify=verify,
                     api_key=args.api_key,
                     no_download=args.no_download,
+                    workflow_id="hd_gen",
                 )
             _write_meta(
                 run_dir=run_dir,
@@ -5133,7 +4744,6 @@ def main() -> int:
                 api_job_id=args.api_job_id,
                 output_dir=args.output_dir or str(effective_output_dir),
                 output_index=args.output_index,
-                preview=args.preview,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -5142,7 +4752,7 @@ def main() -> int:
                 started_at=started_at,
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 args=args,
-                request_payload={"api_job_id": args.api_job_id, "output_index": args.output_index, "preview": args.preview},
+                request_payload={"api_job_id": args.api_job_id, "output_index": args.output_index},
                 response_payload={"downloaded_path": str(path)},
                 downloads=[{"type": "explicit_download", "path": str(path)}],
                 effective_output_dir=str(path.parent),
@@ -5176,8 +4786,8 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_file=args.image_file,
-                method=args.method,
-                is_white_bg=args.is_white_bg,
+                mode=args.mode,
+                quality=args.quality,
                 prompt=args.prompt,
                 timeout=args.timeout,
                 verify=verify,
@@ -5189,8 +4799,8 @@ def main() -> int:
                 args=args,
                 request_payload={
                     "image_file": args.image_file,
-                    "method": args.method,
-                    "is_white_bg": args.is_white_bg,
+                    "mode": args.mode,
+                    "quality": args.quality,
                     "prompt": args.prompt,
                 },
                 response_payload=payload,
@@ -5206,8 +4816,8 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_file=args.image_file,
-                method=args.method,
-                is_white_bg=args.is_white_bg,
+                mode=args.mode,
+                quality=args.quality,
                 prompt=args.prompt,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
@@ -5222,6 +4832,7 @@ def main() -> int:
                 timeout=args.timeout,
                 verify=verify,
                 no_download=args.no_download,
+                workflow_id="remove_background",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5230,8 +4841,8 @@ def main() -> int:
                 args=args,
                 request_payload={
                     "image_file": args.image_file,
-                    "method": args.method,
-                    "is_white_bg": args.is_white_bg,
+                    "mode": args.mode,
+                    "quality": args.quality,
                     "prompt": args.prompt,
                 },
                 response_payload={"submit": submit_payload, "final": final_payload},
@@ -5284,6 +4895,7 @@ def main() -> int:
                 timeout=args.timeout,
                 verify=verify,
                 no_download=args.no_download,
+                workflow_id="pixelate",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5351,6 +4963,7 @@ def main() -> int:
                 timeout=args.timeout,
                 verify=verify,
                 no_download=args.no_download,
+                workflow_id="pixel_gen_self_loop",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5379,14 +4992,6 @@ def main() -> int:
                 "variants": args.variants,
                 "count": args.count,
                 "language": args.language,
-                "temperature": args.temperature,
-                "normalize_volume": args.normalize_volume,
-                "target_peak_db": args.target_peak_db,
-                "max_gain_db": args.max_gain_db,
-                "provider_api_key": args.provider_api_key,
-                "base_url": args.base_url,
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
             }
             payload = submit_sound_effect_generator(
                 api_base=args.api_base,
@@ -5398,14 +5003,6 @@ def main() -> int:
                 variants=args.variants,
                 count=args.count,
                 language=args.language,
-                temperature=args.temperature,
-                normalize_volume=args.normalize_volume,
-                target_peak_db=args.target_peak_db,
-                max_gain_db=args.max_gain_db,
-                provider_api_key=args.provider_api_key,
-                base_url=args.base_url,
-                project_id=args.project_id,
-                thread_id=args.thread_id,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -5433,14 +5030,6 @@ def main() -> int:
                 "variants": args.variants,
                 "count": args.count,
                 "language": args.language,
-                "temperature": args.temperature,
-                "normalize_volume": args.normalize_volume,
-                "target_peak_db": args.target_peak_db,
-                "max_gain_db": args.max_gain_db,
-                "provider_api_key": args.provider_api_key,
-                "base_url": args.base_url,
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
             }
             submit_payload, final_payload = run_sound_effect_generator(
                 api_base=args.api_base,
@@ -5452,14 +5041,6 @@ def main() -> int:
                 variants=args.variants,
                 count=args.count,
                 language=args.language,
-                temperature=args.temperature,
-                normalize_volume=args.normalize_volume,
-                target_peak_db=args.target_peak_db,
-                max_gain_db=args.max_gain_db,
-                provider_api_key=args.provider_api_key,
-                base_url=args.base_url,
-                project_id=args.project_id,
-                thread_id=args.thread_id,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -5474,6 +5055,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="elevenlabs_generator",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5504,6 +5086,19 @@ def main() -> int:
                 verify=verify,
             )
             downloads: list[dict[str, Any]] = []
+            poll_workflow_id = {
+                "sound-poll": "elevenlabs_generator",
+                "sfx-poll": "elevenlabs_generator",
+                "sound-effect-poll": "elevenlabs_generator",
+                "texture-gen-poll": "texture_gen",
+                "tileset-gen-poll": "tileset_gen",
+            }.get(args.command, "")
+            if args.command in MAP_WORKFLOW_POLL_COMMANDS:
+                poll_workflow_id = MAP_WORKFLOW_COMMANDS[args.command]
+            elif args.command in CHARACTER_MULTI_VIEW_POLL_COMMANDS:
+                poll_workflow_id = "character_multi_view_generator"
+            elif args.command in UI_GEN_POLL_COMMANDS:
+                poll_workflow_id = "general_ui_gen"
             effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
             if str(payload.get("status") or "").strip().lower() in TERMINAL_JOB_STATUSES:
                 effective_poll_output_dir, downloads = _save_run_outputs(
@@ -5515,6 +5110,7 @@ def main() -> int:
                     verify=verify,
                     api_key=args.api_key,
                     no_download=args.no_download,
+                    workflow_id=poll_workflow_id,
                 )
             _write_meta(
                 run_dir=run_dir,
@@ -5536,8 +5132,11 @@ def main() -> int:
                 "reference_image": args.reference_image,
                 "mode": args.mode,
                 "canvas_resolution": args.canvas_resolution,
+                "direction_mode": args.direction_mode,
+                "aspect_ratio": args.aspect_ratio,
+                "remove_bg_method": args.remove_bg_method,
+                "extra_constraint": args.extra_constraint,
                 "output_size": args.output_size,
-                "temperature": args.temperature,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
             }
@@ -5547,8 +5146,11 @@ def main() -> int:
                 reference_image=args.reference_image,
                 mode=args.mode,
                 canvas_resolution=args.canvas_resolution,
+                direction_mode=args.direction_mode,
+                aspect_ratio=args.aspect_ratio,
+                remove_bg_method=args.remove_bg_method,
+                extra_constraint=args.extra_constraint,
                 output_size=args.output_size,
-                temperature=args.temperature,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,
@@ -5574,8 +5176,11 @@ def main() -> int:
                 "reference_image": args.reference_image,
                 "mode": args.mode,
                 "canvas_resolution": args.canvas_resolution,
+                "direction_mode": args.direction_mode,
+                "aspect_ratio": args.aspect_ratio,
+                "remove_bg_method": args.remove_bg_method,
+                "extra_constraint": args.extra_constraint,
                 "output_size": args.output_size,
-                "temperature": args.temperature,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
             }
@@ -5585,8 +5190,11 @@ def main() -> int:
                 reference_image=args.reference_image,
                 mode=args.mode,
                 canvas_resolution=args.canvas_resolution,
+                direction_mode=args.direction_mode,
+                aspect_ratio=args.aspect_ratio,
+                remove_bg_method=args.remove_bg_method,
+                extra_constraint=args.extra_constraint,
                 output_size=args.output_size,
-                temperature=args.temperature,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,
@@ -5603,6 +5211,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="character_multi_view_generator",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5622,8 +5231,6 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "texture_names": list(args.texture_name or []),
-                "padding_mode": args.padding_mode,
-                "edge_fill_pixels": args.edge_fill_pixels,
                 "self_loop": args.self_loop,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
@@ -5633,8 +5240,6 @@ def main() -> int:
                 api_key=args.api_key,
                 prompt=args.prompt,
                 texture_names=list(args.texture_name or []),
-                padding_mode=args.padding_mode,
-                edge_fill_pixels=args.edge_fill_pixels,
                 self_loop=args.self_loop,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
@@ -5660,8 +5265,6 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "texture_names": list(args.texture_name or []),
-                "padding_mode": args.padding_mode,
-                "edge_fill_pixels": args.edge_fill_pixels,
                 "self_loop": args.self_loop,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
@@ -5671,8 +5274,6 @@ def main() -> int:
                 api_key=args.api_key,
                 prompt=args.prompt,
                 texture_names=list(args.texture_name or []),
-                padding_mode=args.padding_mode,
-                edge_fill_pixels=args.edge_fill_pixels,
                 self_loop=args.self_loop,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
@@ -5690,6 +5291,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="texture_gen",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5712,15 +5314,12 @@ def main() -> int:
                 "terrain_mode": args.terrain_mode,
                 "single_terrain_region": args.single_terrain_region,
                 "single_terrain_show_base_color": args.single_terrain_show_base_color,
-                "single_terrain_boundary_gap": args.single_terrain_boundary_gap,
-                "single_terrain_remove_background": args.single_terrain_remove_background,
+                "remove_bg_method": args.remove_bg_method,
                 "foreground_color": args.foreground_color,
                 "background_color": args.background_color,
                 "terrain_color": args.terrain_color,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
-                "texture_reference_size": args.texture_reference_size,
-                "texture_reference_mode": args.texture_reference_mode,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
             }
@@ -5732,15 +5331,12 @@ def main() -> int:
                 terrain_mode=args.terrain_mode,
                 single_terrain_region=args.single_terrain_region,
                 single_terrain_show_base_color=args.single_terrain_show_base_color,
-                single_terrain_boundary_gap=args.single_terrain_boundary_gap,
-                single_terrain_remove_background=args.single_terrain_remove_background,
+                remove_bg_method=args.remove_bg_method,
                 foreground_color=args.foreground_color,
                 background_color=args.background_color,
                 terrain_color=args.terrain_color,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
-                texture_reference_size=args.texture_reference_size,
-                texture_reference_mode=args.texture_reference_mode,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,
@@ -5768,15 +5364,12 @@ def main() -> int:
                 "terrain_mode": args.terrain_mode,
                 "single_terrain_region": args.single_terrain_region,
                 "single_terrain_show_base_color": args.single_terrain_show_base_color,
-                "single_terrain_boundary_gap": args.single_terrain_boundary_gap,
-                "single_terrain_remove_background": args.single_terrain_remove_background,
+                "remove_bg_method": args.remove_bg_method,
                 "foreground_color": args.foreground_color,
                 "background_color": args.background_color,
                 "terrain_color": args.terrain_color,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
-                "texture_reference_size": args.texture_reference_size,
-                "texture_reference_mode": args.texture_reference_mode,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
             }
@@ -5788,15 +5381,12 @@ def main() -> int:
                 terrain_mode=args.terrain_mode,
                 single_terrain_region=args.single_terrain_region,
                 single_terrain_show_base_color=args.single_terrain_show_base_color,
-                single_terrain_boundary_gap=args.single_terrain_boundary_gap,
-                single_terrain_remove_background=args.single_terrain_remove_background,
+                remove_bg_method=args.remove_bg_method,
                 foreground_color=args.foreground_color,
                 background_color=args.background_color,
                 terrain_color=args.terrain_color,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
-                texture_reference_size=args.texture_reference_size,
-                texture_reference_mode=args.texture_reference_mode,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,
@@ -5813,6 +5403,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="tileset_gen",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5832,35 +5423,23 @@ def main() -> int:
             reference_images = list(args.reference_image or [])
             request_payload = {
                 "prompt": args.prompt,
-                "template": args.template,
                 "reference_images": reference_images,
+                "resolution": args.resolution,
                 "aspect_ratio": args.aspect_ratio,
-                "remove_background": args.remove_background,
-                "split_components": args.split_components,
+                "quality": args.quality,
+                "remove_bg_method": args.remove_bg_method,
                 "generation_mode": args.generation_mode,
-                "split_alpha_threshold": args.split_alpha_threshold,
-                "split_connectivity": args.split_connectivity,
-                "split_min_component_size": args.split_min_component_size,
-                "split_bbox_padding": args.split_bbox_padding,
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
             }
             payload = submit_ui_generator(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                template=args.template,
                 reference_images=reference_images,
+                resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
-                remove_background=args.remove_background,
-                split_components=args.split_components,
+                quality=args.quality,
+                remove_bg_method=args.remove_bg_method,
                 generation_mode=args.generation_mode,
-                split_alpha_threshold=args.split_alpha_threshold,
-                split_connectivity=args.split_connectivity,
-                split_min_component_size=args.split_min_component_size,
-                split_bbox_padding=args.split_bbox_padding,
-                project_id=args.project_id,
-                thread_id=args.thread_id,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -5883,35 +5462,23 @@ def main() -> int:
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             request_payload = {
                 "prompt": args.prompt,
-                "template": args.template,
                 "reference_images": reference_images,
+                "resolution": args.resolution,
                 "aspect_ratio": args.aspect_ratio,
-                "remove_background": args.remove_background,
-                "split_components": args.split_components,
+                "quality": args.quality,
+                "remove_bg_method": args.remove_bg_method,
                 "generation_mode": args.generation_mode,
-                "split_alpha_threshold": args.split_alpha_threshold,
-                "split_connectivity": args.split_connectivity,
-                "split_min_component_size": args.split_min_component_size,
-                "split_bbox_padding": args.split_bbox_padding,
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
             }
             submit_payload, final_payload = run_ui_generator(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                template=args.template,
                 reference_images=reference_images,
+                resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
-                remove_background=args.remove_background,
-                split_components=args.split_components,
+                quality=args.quality,
+                remove_bg_method=args.remove_bg_method,
                 generation_mode=args.generation_mode,
-                split_alpha_threshold=args.split_alpha_threshold,
-                split_connectivity=args.split_connectivity,
-                split_min_component_size=args.split_min_component_size,
-                split_bbox_padding=args.split_bbox_padding,
-                project_id=args.project_id,
-                thread_id=args.thread_id,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -5926,6 +5493,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="general_ui_gen",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -5944,24 +5512,19 @@ def main() -> int:
         if args.command in MAP_WORKFLOW_COMMANDS and args.command not in MAP_WORKFLOW_POLL_COMMANDS:
             workflow_id = MAP_WORKFLOW_COMMANDS[args.command]
             reference_images = list(getattr(args, "reference_image", []) or [])
+            project_id = getattr(args, "project_id", None)
+            thread_id = getattr(args, "thread_id", None)
             request_payload = {
                 "workflow_id": workflow_id,
                 "prompt": args.prompt,
                 "reference_images": reference_images,
                 "mode": args.mode,
+                "remove_bg_method": getattr(args, "remove_bg_method", ""),
                 "template": getattr(args, "template", ""),
-                "similar_tiles": getattr(args, "similar_tiles", None),
-                "tile_only": getattr(args, "tile_only", None),
-                "road_template_id": getattr(args, "road_template_id", ""),
-                "road_width": getattr(args, "road_width", None),
                 "style_name": getattr(args, "style_name", ""),
                 "style_description": getattr(args, "style_description", ""),
-                "top_left": getattr(args, "top_left", ""),
-                "top_right": getattr(args, "top_right", ""),
-                "bottom_left": getattr(args, "bottom_left", ""),
-                "bottom_right": getattr(args, "bottom_right", ""),
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
+                "project_id": project_id,
+                "thread_id": thread_id,
             }
             if args.command.endswith("-submit"):
                 payload = submit_map_workflow(
@@ -5971,19 +5534,12 @@ def main() -> int:
                     prompt=args.prompt,
                     reference_images=reference_images,
                     mode=args.mode,
+                    remove_bg_method=getattr(args, "remove_bg_method", ""),
                     template=getattr(args, "template", ""),
-                    similar_tiles=getattr(args, "similar_tiles", None),
-                    tile_only=getattr(args, "tile_only", None),
-                    road_template_id=getattr(args, "road_template_id", ""),
-                    road_width=getattr(args, "road_width", None),
                     style_name=getattr(args, "style_name", ""),
                     style_description=getattr(args, "style_description", ""),
-                    top_left=getattr(args, "top_left", ""),
-                    top_right=getattr(args, "top_right", ""),
-                    bottom_left=getattr(args, "bottom_left", ""),
-                    bottom_right=getattr(args, "bottom_right", ""),
-                    project_id=args.project_id,
-                    thread_id=args.thread_id,
+                    project_id=project_id,
+                    thread_id=thread_id,
                     timeout=args.timeout,
                     verify=verify,
                 )
@@ -6006,22 +5562,16 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 workflow_id=workflow_id,
+                label=args.command.removesuffix("-run"),
                 prompt=args.prompt,
                 reference_images=reference_images,
                 mode=args.mode,
+                remove_bg_method=getattr(args, "remove_bg_method", ""),
                 template=getattr(args, "template", ""),
-                similar_tiles=getattr(args, "similar_tiles", None),
-                tile_only=getattr(args, "tile_only", None),
-                road_template_id=getattr(args, "road_template_id", ""),
-                road_width=getattr(args, "road_width", None),
                 style_name=getattr(args, "style_name", ""),
                 style_description=getattr(args, "style_description", ""),
-                top_left=getattr(args, "top_left", ""),
-                top_right=getattr(args, "top_right", ""),
-                bottom_left=getattr(args, "bottom_left", ""),
-                bottom_right=getattr(args, "bottom_right", ""),
-                project_id=args.project_id,
-                thread_id=args.thread_id,
+                project_id=project_id,
+                thread_id=thread_id,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -6036,6 +5586,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id=workflow_id,
             )
             _write_meta(
                 run_dir=run_dir,
@@ -6048,7 +5599,15 @@ def main() -> int:
                 effective_output_dir=str(output_dir),
             )
             print(f"[INFO] saved_dir={output_dir}")
-            print(_format_json_for_display(final_payload))
+            print(
+                _format_public_json(
+                    _local_run_summary(
+                        submit_payload=submit_payload,
+                        final_payload=final_payload,
+                        downloads=downloads,
+                    )
+                )
+            )
             return 0
 
         if args.command == "music-submit":
@@ -6057,8 +5616,6 @@ def main() -> int:
                 "audio_generate": args.audio_generate,
                 "demo": args.demo,
                 "reference_images": list(args.reference_image or []),
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
             }
             payload = submit_music_generator(
                 api_base=args.api_base,
@@ -6067,8 +5624,6 @@ def main() -> int:
                 audio_generate=args.audio_generate,
                 demo=args.demo,
                 reference_images=list(args.reference_image or []),
-                project_id=args.project_id,
-                thread_id=args.thread_id,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -6093,8 +5648,6 @@ def main() -> int:
                 "audio_generate": args.audio_generate,
                 "demo": args.demo,
                 "reference_images": list(args.reference_image or []),
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
             }
             submit_payload, final_payload = run_music_generator(
                 api_base=args.api_base,
@@ -6103,8 +5656,6 @@ def main() -> int:
                 audio_generate=args.audio_generate,
                 demo=args.demo,
                 reference_images=list(args.reference_image or []),
-                project_id=args.project_id,
-                thread_id=args.thread_id,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -6119,6 +5670,7 @@ def main() -> int:
                 verify=verify,
                 api_key=args.api_key,
                 no_download=args.no_download,
+                workflow_id="music_generator",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -6154,6 +5706,7 @@ def main() -> int:
                     verify=verify,
                     api_key=args.api_key,
                     no_download=args.no_download,
+                    workflow_id="music_generator",
                 )
             _write_meta(
                 run_dir=run_dir,
@@ -6167,80 +5720,6 @@ def main() -> int:
             )
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
-            print(_format_json_for_display(payload))
-            return 0
-
-        if args.command == "gemini-post":
-            payload = gemini_proxy_request(
-                api_base=args.api_base,
-                api_key=args.api_key,
-                path=args.path,
-                method="POST",
-                json_body=_parse_json_arg(args.json_body, name="json_body"),
-                timeout=args.timeout,
-                verify=verify,
-            )
-            output_dir, downloads = _save_gemini_response_assets(
-                payload=payload,
-                output_dir=str(effective_output_dir),
-                timeout=args.timeout,
-                verify=verify,
-                api_key=args.api_key,
-            )
-            _write_meta(
-                run_dir=run_dir,
-                started_at=started_at,
-                finished_at=datetime.now().isoformat(timespec="seconds"),
-                args=args,
-                request_payload={"path": args.path, "json_body": _parse_json_arg(args.json_body, name="json_body")},
-                response_payload=payload,
-                downloads=downloads,
-                effective_output_dir=str(output_dir or effective_output_dir),
-            )
-            if output_dir is not None:
-                print(f"[INFO] saved_dir={output_dir}")
-            print(_format_json_for_display(payload))
-            return 0
-
-        if args.command == "gemini-generate-content":
-            generation_config = _parse_json_arg(args.generation_config or "{}", name="generation_config")
-            contents = build_gemini_generate_content_contents(
-                text=args.text,
-                image_files=list(args.image_files or []),
-            )
-            payload = gemini_generate_content(
-                api_base=args.api_base,
-                api_key=args.api_key,
-                model=args.model,
-                contents=contents,
-                generation_config=generation_config or None,
-                timeout=args.timeout,
-                verify=verify,
-            )
-            output_dir, downloads = _save_gemini_response_assets(
-                payload=payload,
-                output_dir=str(effective_output_dir),
-                timeout=args.timeout,
-                verify=verify,
-                api_key=args.api_key,
-            )
-            _write_meta(
-                run_dir=run_dir,
-                started_at=started_at,
-                finished_at=datetime.now().isoformat(timespec="seconds"),
-                args=args,
-                request_payload={
-                    "model": args.model,
-                    "text": args.text,
-                    "image_files": list(args.image_files or []),
-                    "generation_config": generation_config,
-                },
-                response_payload=payload,
-                downloads=downloads,
-                effective_output_dir=str(output_dir or effective_output_dir),
-            )
-            if output_dir is not None:
-                print(f"[INFO] saved_dir={output_dir}")
             print(_format_json_for_display(payload))
             return 0
 
@@ -6273,6 +5752,8 @@ def main() -> int:
                 is_pixel=args.is_pixel,
                 output_frames=args.output_frames,
                 output_format=args.output_format,
+                animation_type=args.animation_type,
+                remove_bg_method=args.remove_bg_method,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -6299,6 +5780,8 @@ def main() -> int:
                 is_pixel=args.is_pixel,
                 output_frames=args.output_frames,
                 output_format=args.output_format,
+                animation_type=args.animation_type,
+                remove_bg_method=args.remove_bg_method,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -6317,12 +5800,6 @@ def main() -> int:
                     verify=verify,
                 )
             except (RuntimeError, TimeoutError) as exc:
-                output_dir = Path(str(effective_output_dir)).expanduser() / _safe_slug(args.prompt or Path(args.image_file).stem)
-                _save_json(
-                    output_dir / "submit_response.json",
-                    _sanitize_response_for_local_storage(submit_payload),
-                )
-                downloads = [{"type": "json", "path": str(output_dir / "submit_response.json")}]
                 _write_meta(
                     run_dir=run_dir,
                     started_at=started_at,
@@ -6330,12 +5807,11 @@ def main() -> int:
                     args=args,
                     request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
                     response_payload={"submit": submit_payload},
-                    downloads=downloads,
-                    effective_output_dir=str(output_dir),
+                    downloads=[],
+                    effective_output_dir=str(effective_output_dir),
                     error=str(exc),
                 )
                 print(f"[WARN] animate submitted but polling did not complete: {exc}")
-                print(f"[INFO] saved_dir={output_dir}")
                 print(_format_json_for_display(submit_payload))
                 return 1
             output_dir, downloads = _save_run_outputs(
@@ -6346,6 +5822,7 @@ def main() -> int:
                 timeout=args.timeout,
                 verify=verify,
                 no_download=args.no_download,
+                workflow_id="animate",
             )
             _write_meta(
                 run_dir=run_dir,
@@ -6380,6 +5857,7 @@ def main() -> int:
                     timeout=args.timeout,
                     verify=verify,
                     no_download=args.no_download,
+                    workflow_id="animate",
                 )
             _write_meta(
                 run_dir=run_dir,

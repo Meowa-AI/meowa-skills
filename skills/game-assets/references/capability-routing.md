@@ -1,0 +1,42 @@
+# Capability routing
+
+Use this module to select one primary public command. Prefer the most specialized capability that directly produces the requested deliverable; do not build a multi-step chain merely because several commands appear related.
+
+| User intent | Primary command | Read next |
+|---|---|---|
+| Pixel character, prop, icon, item, sprite batch, or preset-driven pixel asset | `pixel-gen-run` | `pixel-and-hd-assets.md` |
+| Large pixel scene, illustration, portrait, building, or other large preset-driven composition | `large-pixel-gen-run` | `pixel-and-hd-assets.md` |
+| General-purpose 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
+| HD character, prop, icon, or asset pack | `hd-gen-run` | `pixel-and-hd-assets.md` |
+| Eight-direction character sheet using mirrored or nine-grid generation | `character-multi-view-run` | `pixel-and-hd-assets.md` |
+| Remove a background | `remove-background-run` | `pixel-and-hd-assets.md` |
+| Convert existing art into crisp pixel art | `pixelate-run` | `pixel-and-hd-assets.md` |
+| Generate a UI sheet, HUD, menu, buttons, icons, or extract UI components | `ui-gen-run` | `ui-and-image-editing.md` |
+| Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
+| Edit an animated GIF or WebP while preserving timing and layout | `animation-edit-run` | `ui-and-image-editing.md` |
+| Create a seamless flat texture | `texture-gen-run` | `maps-tiles-and-textures.md` |
+| Create an isometric texture | `isometric-texture-run` | `maps-tiles-and-textures.md` |
+| Create a terrain tileset | `tileset-gen-run` | `maps-tiles-and-textures.md` |
+| Create an isometric terrain tileset | `isometric-tileset-run` | `maps-tiles-and-textures.md` |
+| Create square isometric or hex-isometric map tiles | `isometric-gen-run`, `hex-isometric-gen-run`, or HD variants | `maps-tiles-and-textures.md` |
+| Create parallax-ready foreground, midground, and background layers | `side-scrolling-map-run` or `hd-side-scrolling-map-run` | `maps-tiles-and-textures.md` |
+| Make an image loop horizontally, vertically, or as a texture | `self-loop-run` | `animation-and-video.md` |
+| Create a short sprite animation | `animate-run` | `animation-and-video.md` |
+| Turn a first frame, or first and last frames, into a short clip | `video-run` | `animation-and-video.md` |
+| Create one sound, a sound pack, or variants | `sound-run` | `audio.md` |
+| Draft music direction or render a track | `music-run` | `audio.md` |
+
+## Selection rules
+
+- Use preset discovery before guessing a pixel, large-pixel, or HD preset: run `pixel-gen-template-info`, `large-pixel-template-info`, or `hd-gen-template-info`.
+- Use `pixel-universal-gen-run` when the request needs a flexible pixel scene or illustration rather than an exact small-sprite contract. Select `top-down` only when the camera must be overhead.
+- Use `pixelate-run` only for explicit visual conversion; it is not a generic exact-size sprite generator.
+- Use map reference search when the selected generator accepts a reference or preset. For side-scrolling maps, treat search results as visual planning material only; those commands do not accept a preset input.
+- Treat preset output size and default count as part of the deliverable contract. If no preset matches the requested size or count, explain the gap instead of implying that prompt text can enforce it.
+- Use pixel commands whenever the requested final asset is pixel art; do not route pixel work through a general illustration path.
+- Use `image-edit-run` for still-image transformations and `animation-edit-run` for an existing animated GIF or WebP.
+- Use `animate-run` for sprite-oriented animation output and `video-run` for a short video clip.
+- Use `texture-gen-run` for a flat seamless texture and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
+- Use `tileset-gen-run` for a flat terrain atlas and `isometric-tileset-run` for an isometric atlas.
+
+If no specialized capability fits, explain the gap instead of exposing an internal workflow or raw request surface.
