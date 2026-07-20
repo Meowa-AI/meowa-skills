@@ -30,11 +30,11 @@
 
 ## Purpose
 
-Use this module to generate a UI sheet, extract an aggregate UI layout, or modify existing still or animated artwork.
+Use this module to generate a UI or general asset sheet with automatic background removal and component segmentation, extract an aggregate UI layout, or modify existing still or animated artwork. Generation is prompt-driven: it can create ordinary game assets or a sprite sheet when the prompt asks for them, even though the module is named for UI.
 
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
-| Generate or extract UI | `ui-gen-run` | Produce one aggregate UI sheet | Does not return separate cropped component files |
+| Generate or extract UI and asset sheets | `ui-gen-run` | Produce one transparent aggregate sheet plus component segmentation data | Does not return separate cropped component media files |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
 | Edit existing animation frames | `animation-edit-run` | Restyle or modify an animated GIF or WebP | Preserve the source frame timing and layout |
 
@@ -76,7 +76,8 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
 - Use `standard` for quick drafts, `detailed` for normal production work, and `ultimate` for a final asset whose small text or dense ornament needs the highest fidelity.
 - Use `standard` background removal for simple, high-contrast edges and `advanced` for transparency around detailed or visually complex edges.
 - Describe the whole UI system: genre, hierarchy, palette, materials, states, and required components.
-- The current final-output contract returns one aggregate UI sheet. It does not return separate cropped files or a component-bounds manifest.
+- Generation is not limited to interface graphics. Describe an ordinary asset batch or sprite sheet when that is the desired output.
+- The workflow can remove the sheet background and automatically detect component bounds. The current public final media remains one aggregate sheet accompanied by component segmentation data; it does not return each component as a separate media file.
 
 ## Edit still images
 
@@ -117,6 +118,6 @@ python3 skills/game-assets/meowart_api.py animation-edit-run \
 ## Validate
 
 - Open every final image and verify that no reference image was returned as an output.
-- For UI extraction, confirm the components are visually separated within the final sheet and have usable transparency. Do not claim that individual component files were produced.
+- For UI extraction or generated asset sheets, confirm the components are visually separated, have usable transparency, and have plausible segmentation bounds. Do not claim that individual component media files were produced.
 - For edits, compare subject identity, pose, layout, and palette against the source.
 - Deliver only files listed in `final_outputs.json`.

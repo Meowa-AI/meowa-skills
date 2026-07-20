@@ -6,8 +6,9 @@ Use this module to select one primary public command. Prefer the most specialize
 |---|---|---|
 | Pixel character, prop, icon, item, sprite batch, or preset-driven pixel asset | `pixel-gen-run` | `pixel-and-hd-assets.md` |
 | Large pixel scene, illustration, portrait, building, or other large preset-driven composition | `large-pixel-gen-run` | `pixel-and-hd-assets.md` |
-| General-purpose 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
+| Low-cost high-volume pixel sprites, a prototype asset sheet, general 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
 | HD character, prop, icon, or asset pack | `hd-gen-run` | `pixel-and-hd-assets.md` |
+| General HD image, scene, illustration, sprite sheet, or batch of art assets | `nano-banana-run` or `image-2-run` | `pixel-and-hd-assets.md` |
 | Eight-direction character sheet using mirrored or nine-grid generation | `character-multi-view-run` | `pixel-and-hd-assets.md` |
 | Remove a background | `remove-background-run` | `pixel-and-hd-assets.md` |
 | Convert existing art into crisp pixel art | `pixelate-run` | `pixel-and-hd-assets.md` |
@@ -29,7 +30,9 @@ Use this module to select one primary public command. Prefer the most specialize
 ## Selection rules
 
 - Use preset discovery before guessing a pixel, large-pixel, or HD preset: run `pixel-gen-template-info`, `large-pixel-template-info`, or `hd-gen-template-info`.
-- Use `pixel-universal-gen-run` when the request needs a flexible pixel scene or illustration rather than an exact small-sprite contract. Select `top-down` only when the camera must be overhead.
+- Use preset-driven `pixel-gen-run` when exact dimensions or maximum pixel quality matter. Use `pixel-universal-gen-run` when low-cost volume and rapid prototyping matter more; it can produce many sprites on one general pixel canvas, but its per-sprite quality and size control are weaker.
+- Use `pixel-universal-gen-run` for a flexible pixel scene or illustration rather than an exact small-sprite contract. Select `top-down` only when the camera must be overhead.
+- Use `nano-banana-run` or `image-2-run` for unrestricted HD generation and batches. Use `ui-gen-run` instead when the requested sheet also needs automatic background removal and component segmentation; UI generation is prompt-driven and can produce ordinary assets or sprite sheets, not only interface graphics.
 - Use `pixelate-run` only for explicit visual conversion; it is not a generic exact-size sprite generator.
 - Use map reference search when the selected generator accepts a reference or preset. For side-scrolling maps, treat search results as visual planning material only; those commands do not accept a preset input.
 - Treat preset output size and default count as part of the deliverable contract. If no preset matches the requested size or count, explain the gap instead of implying that prompt text can enforce it.

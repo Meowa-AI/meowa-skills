@@ -5,6 +5,7 @@
 - Important guidance
 - Purpose and capability boundaries
 - Preset-driven pixel and HD generation
+- General HD generation
 - Large-pixel and Pixel Universal generation
 - Directional characters
 - Background removal and pixel cleanup
@@ -38,6 +39,7 @@ Use this module to create the base still asset for a character, prop, item, icon
 |---|---|---|---|
 | Discover pixel or HD presets | `pixel-gen-template-info`, `hd-gen-template-info` | Choose a supported size, count, and asset family | Discovery does not generate an asset |
 | Generate pixel or HD assets | `pixel-gen-run`, `hd-gen-run` | Produce the base still asset or pack | Preset size and count are fixed contracts |
+| Generate unrestricted HD assets | `nano-banana-run`, `image-2-run` | Produce a scene, illustration, sprite sheet, or batch of assets | Prompt controls the arrangement; no preset asset contract |
 | Discover large-pixel presets | `large-pixel-template-info` | Choose a supported large canvas shape | Lists only the large-pixel family |
 | Generate a large pixel asset | `large-pixel-gen-run` | Produce a scene, illustration, portrait, building, or other large pixel composition | Requires a preset from large-pixel discovery |
 | Generate a general-purpose 4:3 pixel image | `pixel-universal-gen-run` | Produce a normal-view or top-down pixel composition without choosing a preset | Uses the fixed large 4:3 canvas contract |
@@ -46,6 +48,11 @@ Use this module to create the base still asset for a character, prop, item, icon
 | Convert existing artwork to pixel art | `pixelate-run` | Produce a new pixel-style asset | Does not guarantee a hand-authored sprite or preset size |
 
 Use a generated still asset as input to image editing, directional-view generation, sprite animation, or video only after its identity, scale, silhouette, and transparency are stable.
+
+For pixel sprites, choose by production goal:
+
+- Use preset-driven `pixel-gen-run` when exact dimensions or the highest available pixel quality matter.
+- Use the general pixel canvas through `pixel-universal-gen-run` for low-cost, high-volume sprite batches and fast prototypes. Ask for a clearly spaced sprite sheet. Expect somewhat lower per-sprite fidelity and weaker exact-size control than preset-driven generation.
 
 ## Preset-driven generation
 
@@ -88,6 +95,37 @@ Quality labels are:
 | `standard` | Standard |
 | `detailed` | Detailed |
 | `ultimate` | Ultimate |
+
+## General HD generation
+
+Use Nano Banana for flexible composition, broad aspect-ratio support, and reference-guided generation:
+
+```bash
+python3 skills/game-assets/meowart_api.py nano-banana-run \
+  --prompt "A coherent HD fantasy item sheet with twelve clearly separated potions and scrolls" \
+  --resolution 1K \
+  --aspect-ratio 1:1 \
+  --output-dir <output-dir>
+```
+
+Use Image-2 when its quality tiers and direct HD asset generation fit the task:
+
+```bash
+python3 skills/game-assets/meowart_api.py image-2-run \
+  --prompt "A clean HD game asset sheet with eight clearly separated sci-fi props" \
+  --resolution 1K \
+  --aspect-ratio 1:1 \
+  --quality standard \
+  --output-dir <output-dir>
+```
+
+- Default both commands to the shared 1K, 1:1 square working canvas. Treat it as the common 1024×1024-tier contract when moving a composition between Nano Banana and Image-2, and inspect the saved file for its actual delivered dimensions.
+- Start Image-2 prompt iteration with `standard` (`Standard`), which is inexpensive. After the wording and composition are approved, rerun the same prompt with `detailed` (`Detailed`) for the production candidate. Use `ultimate` only when the final asset genuinely benefits from the additional quality and cost.
+- Repeat `--reference-image` for up to eight visual references.
+- Nano Banana supports 1K, 2K, and 4K plus its listed aspect ratios. Image-2 supports 1K and 2K with 1:1, 3:4, 4:3, 9:16, or 16:9.
+- For batch generation, describe the asset count, shared style, spacing, background, and sheet arrangement. Review that every asset is complete and non-overlapping.
+- Inspect for unintended labels or decorative lettering even when the prompt says `no text`; asset sheets can still introduce short item labels and may need regeneration or editing.
+- Use `ui-gen-run` instead when the generated sheet also needs automatic background removal and component segmentation. That module is prompt-driven and can generate ordinary art assets or sprite sheets in addition to interface graphics.
 
 ## Large-pixel and Pixel Universal generation
 

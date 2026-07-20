@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 from datetime import datetime
+import hashlib
 import json
 import mimetypes
 import os
@@ -16,7 +17,7 @@ from urllib.parse import urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.07.20.2"
+MEOWART_API_CLI_VERSION = "2026.07.20.3"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -36,6 +37,9 @@ MEOWART_ENDPOINT_HINT = (
     "Use POST /api/pixel-gen for pixel sprites, POST /api/hd-gen for HD assets, "
     "or a documented workflow command for specialized assets."
 )
+GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
+NANO_BANANA_MODEL = "gemini-3.1-flash-image-preview"
+IMAGE_2_MODEL = "gpt-image-2"
 MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
 PIXEL_GENERAL_WORKFLOW_ID = "pixel_gen_general"
 PIXEL_UNIVERSAL_TEMPLATE_NAME = "xlarge_4_3"
@@ -786,7 +790,15 @@ def _safe_slug(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value.strip())
     while "__" in cleaned:
         cleaned = cleaned.replace("__", "_")
-    return cleaned.strip("_") or "output"
+    cleaned = cleaned.strip("_") or "output"
+    encoded = cleaned.encode("utf-8")
+    if len(encoded) <= 120:
+        return cleaned
+    digest = hashlib.sha256(encoded).hexdigest()[:8]
+    prefix = cleaned
+    while prefix and len(prefix.encode("utf-8")) > 110:
+        prefix = prefix[:-1]
+    return f"{prefix.rstrip('_')}_{digest}"
 
 
 def _base_headers(api_key: str) -> dict[str, str]:
@@ -951,6 +963,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "elevenlabs_generator": frozenset({"audio_path", "audio_paths", "url"}),
     "frames_edit": frozenset({"animation_path", "sprite_sheet_path", "url"}),
     "general_ui_gen": frozenset({"output_path", "url"}),
+    "gemini_image": frozenset({"url"}),
     "hd_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
     "hd_gen_grid_2x2": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "hd_gen_grid_4x4": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
@@ -985,6 +998,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
 }
 _WORKFLOW_FINAL_OUTPUT_CONTAINERS: dict[str, frozenset[str]] = {
     "animate": frozenset({"animation_assets"}),
+    "gemini_image": frozenset({"images"}),
 }
 _FINAL_OUTPUT_FIELDS = frozenset().union(*_WORKFLOW_FINAL_OUTPUT_FIELDS.values())
 _BLOCKED_OUTPUT_KEY_PARTS = {
@@ -1085,7 +1099,7 @@ def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str 
     allowed_containers = _WORKFLOW_FINAL_OUTPUT_CONTAINERS.get(normalized_workflow_id, frozenset())
 
     leaf = key_parts[-1]
-    if leaf not in allowed_fields and not any(part in allowed_containers for part in key_parts[:-1]):
+    if leaf not in allowed_fields:
         return False
 
     if leaf == "url":
@@ -2222,6 +2236,129 @@ def _upload_part(path_value: str, *, label: str) -> tuple[str, bytes, str]:
     return path.name, path.read_bytes(), _mime_for_path(path)
 
 
+def _build_general_image_request_body(
+    *,
+    prompt: str,
+    reference_images: list[str] | None = None,
+) -> dict[str, Any]:
+    normalized_prompt = str(prompt or "").strip()
+    if not normalized_prompt:
+        raise ValueError("general image generation requires --prompt")
+    references = [str(value or "").strip() for value in reference_images or [] if str(value or "").strip()]
+    if len(references) > 8:
+        raise ValueError("general image generation accepts at most 8 reference images")
+
+    parts: list[dict[str, Any]] = [{"text": normalized_prompt}]
+    for raw_path in references:
+        path = Path(raw_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"reference image not found: {path}")
+        mime_type = _mime_for_path(path)
+        if not mime_type.startswith("image/"):
+            raise ValueError(f"reference file is not an image: {path}")
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": mime_type,
+                    "data": base64.b64encode(path.read_bytes()).decode("ascii"),
+                }
+            }
+        )
+    return {"contents": [{"role": "user", "parts": parts}]}
+
+
+def submit_general_image(
+    *,
+    api_base: str,
+    api_key: str,
+    capability: str,
+    prompt: str,
+    reference_images: list[str] | None = None,
+    resolution: str = "1K",
+    aspect_ratio: str = "1:1",
+    quality: str = "standard",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    normalized_capability = str(capability or "").strip().lower()
+    if normalized_capability not in {"nano-banana", "image-2"}:
+        raise ValueError("capability must be nano-banana or image-2")
+
+    quality_map = {"standard": "low", "detailed": "medium", "ultimate": "high"}
+    normalized_quality = str(quality or "standard").strip().lower()
+    if normalized_quality not in quality_map:
+        raise ValueError("quality must be one of: standard, detailed, ultimate")
+
+    request_body = _build_general_image_request_body(
+        prompt=prompt,
+        reference_images=reference_images,
+    )
+    is_nano_banana = normalized_capability == "nano-banana"
+    payload = {
+        "generationProvider": "nanobanana" if is_nano_banana else "image2",
+        "model": NANO_BANANA_MODEL if is_nano_banana else IMAGE_2_MODEL,
+        "image2Quality": "medium" if is_nano_banana else quality_map[normalized_quality],
+        "resolution": resolution,
+        "aspectRatio": aspect_ratio,
+        "requestBody": request_body,
+    }
+    url = _normalize_base_url(api_base, GENERAL_IMAGE_ENDPOINT)
+    response, response_payload = _request_json(
+        method="POST",
+        url=url,
+        headers=_base_headers(api_key),
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(response_payload))
+    return response_payload
+
+
+def run_general_image(
+    *,
+    api_base: str,
+    api_key: str,
+    capability: str,
+    prompt: str,
+    reference_images: list[str] | None = None,
+    resolution: str = "1K",
+    aspect_ratio: str = "1:1",
+    quality: str = "standard",
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_general_image(
+        api_base=api_base,
+        api_key=api_key,
+        capability=capability,
+        prompt=prompt,
+        reference_images=reference_images,
+        resolution=resolution,
+        aspect_ratio=aspect_ratio,
+        quality=quality,
+        timeout=timeout,
+        verify=verify,
+    )
+    api_job_id = str(submit_payload.get("api_job_id") or submit_payload.get("job_id") or "").strip()
+    if api_job_id:
+        print(f"[INFO] submitted api_job_id={api_job_id}")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload=submit_payload,
+        label=capability,
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
+
+
 def submit_curated_workflow(
     *,
     api_base: str,
@@ -3314,6 +3451,65 @@ def parse_args() -> argparse.Namespace:
     add_map_preset_filter_args(map_preset_download)
     map_preset_download.add_argument("--preset-id", action="append", default=[], help="Preset id to download; can be repeated")
 
+    nano_banana_run = subparsers.add_parser(
+        "nano-banana-run",
+        help="Create a general HD image with Nano Banana",
+    )
+    add_shared_path_args(nano_banana_run)
+    nano_banana_run.add_argument("--prompt", required=True, help="Describe the requested image or asset sheet")
+    nano_banana_run.add_argument(
+        "--reference-image",
+        action="append",
+        default=[],
+        help="Optional visual reference; repeat up to 8 times",
+    )
+    nano_banana_run.add_argument(
+        "--resolution",
+        default="1K",
+        choices=["1K", "2K", "4K"],
+        help="Canvas tier; recommended shared default is 1K",
+    )
+    nano_banana_run.add_argument(
+        "--aspect-ratio",
+        default="1:1",
+        choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"],
+        help="Canvas ratio; recommended shared default is 1:1",
+    )
+
+    image_2_run = subparsers.add_parser(
+        "image-2-run",
+        help="Create a general HD image with Image-2",
+    )
+    add_shared_path_args(image_2_run)
+    image_2_run.add_argument("--prompt", required=True, help="Describe the requested image or asset sheet")
+    image_2_run.add_argument(
+        "--reference-image",
+        action="append",
+        default=[],
+        help="Optional visual reference; repeat up to 8 times",
+    )
+    image_2_run.add_argument(
+        "--resolution",
+        default="1K",
+        choices=["1K", "2K"],
+        help="Canvas tier; recommended shared default is 1K",
+    )
+    image_2_run.add_argument(
+        "--aspect-ratio",
+        default="1:1",
+        choices=["1:1", "3:4", "4:3", "9:16", "16:9"],
+        help="Canvas ratio; recommended shared default is 1:1",
+    )
+    image_2_run.add_argument(
+        "--quality",
+        default="standard",
+        choices=["standard", "detailed", "ultimate"],
+        help=(
+            "Output quality; default to Standard for inexpensive prompt testing, then "
+            "rerun with Detailed after the prompt is approved"
+        ),
+    )
+
     image_edit_run = subparsers.add_parser("image-edit-run", help="Edit one or more game-art images")
     add_shared_path_args(image_edit_run)
     image_edit_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 8 times")
@@ -3896,6 +4092,8 @@ def parse_args() -> argparse.Namespace:
     public_commands = {
         "map-reference-search",
         "map-reference-download",
+        "nano-banana-run",
+        "image-2-run",
         "image-edit-run",
         "animation-edit-run",
         "video-run",
@@ -4112,6 +4310,38 @@ def main() -> int:
             )
             print(f"[INFO] saved_dir={effective_output_dir}")
             print(_format_public_json(public_search_payload))
+            return 0
+
+        if args.command in {"nano-banana-run", "image-2-run"}:
+            capability = "nano-banana" if args.command == "nano-banana-run" else "image-2"
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
+            submit_payload, final_payload = run_general_image(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                capability=capability,
+                prompt=args.prompt,
+                reference_images=list(args.reference_image or []),
+                resolution=args.resolution,
+                aspect_ratio=args.aspect_ratio,
+                quality=getattr(args, "quality", "standard"),
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, _downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=args.prompt,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+                workflow_id="gemini_image",
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
             return 0
 
         curated_commands = {

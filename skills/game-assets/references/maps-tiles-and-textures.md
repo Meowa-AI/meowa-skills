@@ -2,6 +2,9 @@
 
 ## Contents
 
+- Important guidance
+- HD isometric and HD hex size contracts
+- Preview and assembly tool
 - Validated small pixel-isometric path
 - Purpose and capability boundaries
 - Reusable map references
@@ -10,9 +13,204 @@
 - Side-scrolling maps
 - Validation
 
+## Important guidance
+
+### Start isometric and hex tile generation from built-in references
+
+- Before generating any isometric or hex map tile, browse the map-reference catalog, download the selected references, and start generation from those downloaded files. These generators have strict tile-size and anchor contracts; an arbitrary image can produce a tile whose gameplay footprint does not match the required grid.
+- Do not substitute a casually selected web image or unrelated local image for a supported map reference. Choose the nearest structural reference first, then use the prompt to describe the desired material, theme, decoration, and art style.
+- The built-in catalog contains more than one thousand references across multiple styles. To explore styles, select different references and describe the intended style in natural language; the generation model can interpret that combination without a rigid style keyword.
+
+### Assemble pixel-isometric tiles by their logical centers
+
+- Treat every generated tile image as dimension- and anchor-correct. Do not crop, resize, stretch, or otherwise change it after generation. The image center is the logical tile center.
+- In standard pixel-isometric mode, use a base diamond of 128×64. Direct neighbors on the two grid axes have center offsets `(64, 32)` and `(-64, 32)`. Centers aligned on the same horizontal line are 128 pixels apart; centers aligned on the same vertical line are 64 pixels apart.
+- Decorations may extend far above the base, so the outer PNG height can be much larger without changing the center lattice.
+- A pixel-isometric `tetraploid` tile covers approximately four base tiles. Reserve twice the base width and twice the base vertical footprint when assembling it: a logical 256×128 area.
+
+### Assemble pixel hex-isometric tiles by center offsets
+
+- Keep every generated image unchanged and align it by its logical center.
+- With a 64-pixel hex side, use an exact 127-pixel same-row center stride. This is `2 × 64 - 1`, so adjacent hexes share one edge-pixel column instead of leaving a seam.
+- Offset each following row by 64 pixels horizontally and 64 pixels vertically. The two downward diagonal offsets are `(64, 64)` and `(-63, 64)`; centers aligned vertically are 128 pixels apart across two rows.
+
+## HD isometric and HD hex size contracts
+
+These values mirror the production backend workflow constants and the production map-editor renderer. Do not derive placement from the outer PNG dimensions: final images are center-anchored and may contain different amounts of transparent padding.
+
+### HD Isometric
+
+- `hd_isometric_gen` uses a base block side length of `372` and a block height of `119`. Its standard top face is logically `744×372` and occupies one map cell.
+- In unscaled workflow coordinates, the two isometric axes move the center by `(372, 186)` and `(-372, 186)`.
+- The product map editor normalizes that source geometry to the same `128×64` logical cell used by the isometric grid. The displayed center offsets are therefore `(64, 32)` and `(-64, 32)`. The preview scales the HD source smoothly; do not use nearest-neighbor sampling for HD art.
+- `tetraploid` doubles the block side to `744`, has a `1488×744` logical top face, and occupies a `2×2` footprint. Reserve all four cells. Its render anchor is the center of that four-cell footprint, not the outer PNG corner.
+- The draw scale for a centered single HD asset is `128 / min(image_width, 744)`. For a `2×2` asset, use `128 / min(image_width / 2, 744)`. Scale width and height by the same factor and place the scaled image center on the logical footprint center.
+
+### HD Hex Isometric
+
+- `hd_hex_isometric_gen` uses a hex side length of `300` and a bottom-layer height of `96`.
+- In unscaled workflow coordinates, same-row centers are `599` pixels apart (`2×300−1`). The next row moves down by `354` pixels (`1.5×300−96`) and shifts right by `300` pixels. The downward offsets are `(300, 354)` and `(-299, 354)`.
+- The product map editor uses a `0.25×` smooth display scale. The resulting side length is `75`, same-row stride is `149.75`, row stride is `88.5`, and odd-row offset is `75`. The displayed downward offsets are `(75, 88.5)` and `(-74.75, 88.5)`.
+- Standard HD hex tiles occupy `1×1`. `tetraploid` occupies `2×2`. For an even anchor row, the occupied cell offsets are `(0,0)`, `(1,0)`, `(-1,1)`, and `(0,1)`; for an odd anchor row they are `(0,0)`, `(1,0)`, `(0,1)`, and `(1,1)`.
+- The backend contains an internal seven-hex layout, but the public `hd-hex-isometric-gen-run` Skill surface currently exposes only `standard` and `tetraploid`. Do not document or route users to the internal mode.
+
+### Shared HD rules
+
+- Keep the generated PNG unchanged. Do not crop, recenter, or resize the source file; transparent padding preserves the center anchor.
+- Use smooth sampling for HD Isometric and HD Hex. Nearest-neighbor and integer-only enlargement remain requirements for pixel modes, not HD modes.
+- A larger outer image does not imply a larger footprint. Footprint comes from the generation mode: `standard = 1×1`, `tetraploid = 2×2`.
+- When standard and tetraploid Isometric assets overlap, depth-sort with every occupied footprint cell and the rendered image bounds. Do not sort only by the anchor cell or by `column + row`; a `2×2` asset can cross the depth of neighboring `1×1` assets.
+
+### Review the assembled map, not isolated canvas bounds
+
+- Tile PNG dimensions may differ because decorations need different amounts of transparent padding, but their centers remain aligned to the logical tile centers. Transparent space around a tile does not change its placement.
+- Assemble a small test area, capture a screenshot, inspect seams and perceived alignment, then adjust placement and iterate. Change the map coordinates or assembly logic when needed; do not crop or scale the generated tile files.
+
+## Preview and assembly tool
+
+- Use [map-tile-layout.js](../scripts/map-tile-layout.js) as the compact frontend coordinate reference. It exposes the verified pixel and HD center functions, neighbor offsets, HD display scales, and center-based image placement.
+- Use [map-preview-server.py](../scripts/map-preview-server.py) as the matching backend. It validates local media, mode names, and `1×1`/`2×2` footprint declarations, then returns only opaque `media/<id>` URLs and public preview fields.
+- Use [map-tile-layout-demo.html](../assets/map-tile-layout-demo.html) as the single frontend for every map review mode. Its top selector switches between Side View, Pixel Isometric, Pixel Hex Isometric, HD Isometric, HD Hex Isometric, Top-down Dual-grid, and Isometric Dual-grid without changing the page or backend. Projected modes let the user select, paint, erase, clear, or fill tiles. Side View repeats three layers, previews smooth parallax, lets the user drag layer offsets, and includes the bundled four-frame cat for movement and depth review.
+- Use the same previewer at two stages: preview references explicitly downloaded through `map-reference-download` before generation to compare their layout and visual direction; preview declared final tiles after generation to check anchors, seams, transitions, and composition. A downloaded reference remains an input and must not be presented as a generated deliverable.
+- The previewer runs entirely in the local browser and loads no external resources. It never rewrites source files. Pixel modes use nearest-neighbor rendering and only 1×–4× integer display zoom. HD Isometric and HD Hex keep the same logical grid but allocate the Canvas backing buffer at `preview zoom × devicePixelRatio`, then render with high-quality smooth sampling; do not enlarge a low-resolution HD Canvas through CSS alone. Side-scrolling layer cards intentionally use nearest-neighbor downsampling to fit the complete layer into their overview boxes. Dual-grid atlas lookup and pointer behavior are reduced from the repository's `scripts/tilesets/dual-grid.html` reference implementation.
+
+### Build the preview for the user
+
+Start the preview yourself from either the downloaded public reference paths or the final tile paths. Do not ask the user to open the generic page and locate files in a deep output directory:
+
+```bash
+python3 skills/game-assets/scripts/map-preview-server.py \
+  --mode isometric \
+  --image <reference-or-final-tile-1.png> \
+  --image <reference-or-final-tile-2.png> \
+  --columns 8 \
+  --rows 6 \
+  --lifetime 900
+```
+
+- Use `isometric` or `hex` with one or more independent reference or final tile images. The generated page initially cycles them across the map and still lets the user select, paint, and erase tiles.
+- Use `hd-isometric` or `hd-hex-isometric` for HD assets. A direct `--image` is treated as a standard `1×1` tile. Use a JSON `libraries` entry with `"footprint": "2x2"` for tetraploid assets.
+- Use `dual-grid` or `iso-dual-grid` with exactly one final 4×4 atlas. The page starts with a filled map and computes the 15 transition variants while the user paints or erases terrain.
+- Use `side-scrolling` with `--side-scrolling-dir <final-output-dir>` when the directory contains `background.png`, `midground.png`, and `foreground.png`. Alternatively pass a user-owned `--manifest <manifest.json>` or the three explicit `--background`, `--midground`, and `--foreground` paths. An optional `--player-sprite` accepts a horizontal four-frame PNG/WebP sprite sheet.
+- The Python backend returns only logical preview settings and allowlisted `media/<id>` URLs. It never sends source filesystem paths to the frontend, never exposes a directory, and loads no external network resource.
+- The single frontend keeps its manual file picker as a fallback. When served by this backend it loads every configured mode library and the Side View layers automatically; switching modes does not start another server or open another page.
+- Load only user-provided local files, map references explicitly obtained through the public `map-reference-download` command, or declared final workflow outputs. Keep the preview on loopback. Never load private workflow templates, masks, raw provider results, metadata, or other internal intermediate artifacts into it.
+
+For repeatable setups, store paths relative to the JSON file or use absolute paths locally:
+
+```json
+{
+  "mode": "isometric",
+  "images": ["tiles/grass.png", "tiles/stone.png"],
+  "columns": 8,
+  "rows": 6,
+  "zoom": 2,
+  "grid": true
+}
+```
+
+Run `map-preview-server.py --config <preview.json>`; explicit CLI values override matching config values. Read the printed JSON URL and open it in the user's browser when browser control is available. The server binds only to `127.0.0.1`, serves the preview directly at the clean `http://127.0.0.1:<port>/` root URL, disables caching, and shuts down automatically. Complete this step yourself; do not ask the user to copy the URL or operate a file picker.
+
+To review several map systems in one page, replace `images` with mode-specific `libraries`. Add `side_scrolling` to the same configuration when a Side View layer set is also available. The mode selector then activates each loaded system without another upload, page, or backend:
+
+```json
+{
+  "mode": "side-scrolling",
+  "side_scrolling": {
+    "directory": "layers"
+  },
+  "libraries": {
+    "dual-grid": ["tiles/dual-grid.png"],
+    "isometric": ["tiles/iso-grass.png", "tiles/iso-water.png"],
+    "hex": ["tiles/hex-desert.png", "tiles/hex-ocean.png"],
+    "hd-isometric": [
+      {"path": "tiles/hd-city.png", "footprint": "1x1"},
+      {"path": "tiles/hd-city-block.png", "footprint": "2x2"}
+    ],
+    "hd-hex-isometric": [
+      {"path": "tiles/hd-hex-city.png", "footprint": "1x1"}
+    ]
+  },
+  "columns": 8,
+  "rows": 6,
+  "zoom": 2,
+  "grid": true
+}
+```
+
+The Side View directory must contain `background.png`, `midground.png`, and `foreground.png` (WebP is also accepted). Each dual-grid library must contain exactly one 4×4 atlas. Isometric and hex libraries may contain multiple independent final tiles. Library entries may be path strings for `1×1`, or objects with `path` and `footprint`; use `2x2` only for a generated tetraploid result. Do not combine `--image` with `libraries`.
+
+Use [build-map-preview.py](../scripts/build-map-preview.py) only when a portable standalone HTML file is explicitly useful. The automatic review path should prefer the lightweight backend so large images are not base64-duplicated into HTML.
+
+Preview a generated side-scrolling layer set without locating each file manually:
+
+```bash
+python3 skills/game-assets/scripts/map-preview-server.py \
+  --mode side-scrolling \
+  --side-scrolling-dir <directory-containing-three-final-layers> \
+  --zoom 1 \
+  --lifetime 900
+```
+
+The server resolves only the three exact final layer filenames and sends the browser opaque local media URLs. A prefab manifest is read only for those image paths and initial Y offsets; prompts, refined prompts, workflow metadata, and unrelated files are not serialized to the page. The preview is read-only with respect to source files: changing offsets affects only the current browser session and exported review frame.
+
+Center a generated image without changing its dimensions:
+
+```javascript
+const center = layout.isometricCenter(column, row, {
+  originX,
+  originY,
+  tileSize: 64,
+});
+const topLeft = layout.centerImageAt(image.width, image.height, center);
+ctx.drawImage(image, topLeft.x, topLeft.y);
+```
+
+Mirror the HD frontend renderer without changing the source file:
+
+```javascript
+const footprintSpan = Math.max(footprintWidth, footprintHeight);
+const isoScale = layout.hdIsometricAssetScale(image.width, footprintSpan);
+const isoCenter = layout.isometricCenter(column, row, { tileSize: 64 });
+ctx.imageSmoothingEnabled = true;
+ctx.drawImage(
+  image,
+  isoCenter.x - image.width * isoScale / 2,
+  isoCenter.y - image.height * isoScale / 2,
+  image.width * isoScale,
+  image.height * isoScale,
+);
+
+const hexCenter = layout.hdHexCenter(column, row);
+const hexScale = layout.HD_HEX_DISPLAY_SCALE;
+ctx.drawImage(
+  image,
+  hexCenter.x - image.width * hexScale / 2,
+  hexCenter.y - image.height * hexScale / 2,
+  image.width * hexScale,
+  image.height * hexScale,
+);
+```
+
+The backend configuration is deliberately path-based and footprint-explicit:
+
+```json
+{
+  "mode": "hd-isometric",
+  "libraries": {
+    "hd-isometric": [
+      {"path": "final_tiles/standard.png", "footprint": "1x1"},
+      {"path": "final_tiles/tetraploid.png", "footprint": "2x2"}
+    ]
+  }
+}
+```
+
+The backend validates the footprint and converts the local path to an opaque `media/<id>` URL. It never sends the source path to the browser.
+
 ## Validated small pixel-isometric path
 
-- Use `isometric-gen-run --mode standard` for the tested small pixel-isometric path. It uses a logical side length of 64 and height of 32, requires exactly two reference images, and produces two independent final tiles plus a pack preview.
+- Use `isometric-gen-run --mode standard` for the tested small pixel-isometric path. It requires exactly two downloaded reference images and produces two independent final tiles plus a pack preview. Assemble the final files with the 128×64 logical footprint defined above.
 - Inspect `map-reference-search --categories --type pixel-isometric`, then select an exact theme and layout such as `--theme grassland --layout single`. Use free-text `--query` only as an optional refinement.
 - Download two selected preset ids with `map-reference-download` and pass both downloaded PNG files through repeated `--reference-image` options.
 - Expect transparent padding around each final RGBA tile. Validate the visible subject bounds and logical geometry rather than assuming the outer PNG canvas is exactly 64×64.
@@ -132,6 +330,7 @@ python3 skills/game-assets/meowart_api.py isometric-tileset-run \
 - Background removal applies only to single-terrain output. Dual terrain keeps both terrain regions and ignores the selected removal level.
 - In single mode, use `none`, `standard`, or `advanced` for background removal. Do not select a provider.
 - Supply texture references only through `--foreground-texture` and `--background-texture`.
+- Review a generated flat dual-grid atlas in `map-tile-layout-demo.html` with `Top-down Dual-grid 15`. Review an isometric dual-grid atlas with `Isometric Dual-grid 15`. Load the final 4×4 atlas, then paint, erase, or fill the preview map to verify transitions before game integration.
 
 ## Isometric and hex map tiles
 
@@ -164,11 +363,13 @@ Use `hd-isometric-gen-run` and `hd-hex-isometric-gen-run` for smooth HD map tile
 - Pixel isometric: `standard` requires 2 references; `edit` 1; `tetraploid` 3; `road` 2; `wall` 1.
 - Pixel hex-isometric: `standard` requires 2 references; `edit` 1; `tetraploid` 2–4; `heptaploid` 2–7.
 - HD isometric `tetraploid` requires 2–4 references.
-- HD hex-isometric `tetraploid` can use its template defaults or 1–4 uploaded references.
+- HD hex-isometric `tetraploid` accepts 1–4 downloaded references. Do not rely on implicit template defaults in the public workflow.
 
 The names `tetraploid` and `heptaploid` are compatibility mode names for multi-tile layouts, not art styles. Use them only when that layout is explicitly required.
 
 ## Side-scrolling maps
+
+Use this workflow when the final deliverable is a parallax-ready horizontal scene rather than one flat background. It generates the playable midground, distant background, and near-camera foreground as aligned layers. Use `side-scrolling-map-run` for pixel art and `hd-side-scrolling-map-run` for HD art; downloaded map references are not required by these two commands.
 
 Pixel map:
 
@@ -200,8 +401,12 @@ python3 skills/game-assets/meowart_api.py hd-side-scrolling-map-run \
 
 The side-scrolling commands produce 1K-tier, 16:9 layer sets; inspect the saved files for their actual pixel dimensions. Every loop flag requests a horizontal end-to-start seam. Pixel side-scrolling requires foreground and midground background removal and therefore offers only `standard` and `advanced`; use `advanced` for difficult edges. Supported HD styles are `2d_hd`, `2d_cartoon`, `2d_ink`, `clay`, `low_poly_3d`, `steampunk`, and `anime_hd`. A non-empty `--custom-art-style` overrides the selected preset style; use it only when none of the presets matches.
 
+After generation, start `map-preview-server.py --mode side-scrolling --side-scrolling-dir <saved-output-directory>`, or add the layer directory to the unified JSON configuration above when tile modes must be reviewed at the same time. Review the complete fitted layer thumbnails, select a layer and drag vertically on the main canvas, pause and resume the parallax, adjust relative speeds and Y offsets, drag or move the bundled cat, and inspect the repeated left/right seam. Keep the main canvas at 1× unless an integer enlargement is needed; only the navigation thumbnails may shrink.
+
 ## Validate
 
+- Confirm the generated tile files have not been cropped, resized, stretched, or re-anchored.
+- Assemble a small test map with the center intervals defined above and review a screenshot before scaling up the layout.
 - Verify tile dimensions and grid alignment.
 - Inspect seams by repeating textures in both axes.
 - Confirm isometric tiles use the expected 2:1 projection and consistent anchor points.

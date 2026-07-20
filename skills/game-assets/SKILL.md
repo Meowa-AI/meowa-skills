@@ -41,6 +41,7 @@ Treat preset-defined dimensions and output counts as fixed contracts. Do not imp
 
 - Use transparency only when the runtime asset needs it; backgrounds and repeatable terrain materials may intentionally remain opaque.
 - Keep style, scale, camera, palette, light direction, and anchor conventions consistent across related assets.
+- For HD Isometric and HD Hex tiles, preserve the generated transparent canvas and center anchor, use smooth sampling, and take the footprint from the generation mode: `standard = 1×1`, `tetraploid = 2×2`. Never infer footprint from the outer PNG size. Read the exact placement contract in [Maps, tiles, and textures](references/maps-tiles-and-textures.md) before assembly.
 - Treat source images and downloaded references as inputs, never as generated deliverables.
 - Prefer a specialized capability over a generic image path.
 - Validate the asset at its intended gameplay scale, not only in a large preview.
@@ -49,18 +50,20 @@ Treat preset-defined dimensions and output counts as fixed contracts. Do not imp
 
 ### Pixel workflow
 
-1. **Characters and props:** use preset-driven pixel generation when the final sprite dimensions matter. Select the target resolution first, describe one readable asset, and add a reference image when art direction or identity must match an existing game.
+1. **Characters and props:** use preset-driven `pixel-gen-run` when exact sprite dimensions or the highest available pixel quality matter. Select the target resolution first, describe one readable asset, and add a reference image when art direction or identity must match an existing game.
 2. **Large pixel assets:** use `large-pixel-gen-run` for larger scenes, illustrations, portraits, buildings, and other compositions that do not fit a small sprite preset.
-3. **Pixel Universal Generation:** use `pixel-universal-gen-run` as the pixel-art counterpart to a general Nano Banana-style image workflow. It uses a large 4:3 canvas and supports a normal composition or a top-down game view. Typical uses include converting HD artwork into a new pixel composition, generating pixel scenes or character illustrations, and designing multi-stage building-upgrade artwork.
-4. **Animation:** animate only after the character or prop design is stable. Prefer assets at 128×128 or smaller; pixel images above 256×256 commonly lose pixel character and motion consistency when animated.
+3. **Low-cost sprite batches and prototypes:** use the general pixel canvas through `pixel-universal-gen-run` when speed, volume, and low cost matter more than exact per-sprite sizing or maximum fidelity. Ask for a clearly arranged sprite sheet or asset batch. Its pixel quality is somewhat lower than preset-driven pixel generation, but it is efficient for producing many assets and quickly building a playable prototype.
+4. **Pixel Universal Generation:** the same command is the pixel-art counterpart to a general Nano Banana-style image workflow. It uses a large 4:3 canvas and supports a normal composition or a top-down game view. Typical uses include converting HD artwork into a new pixel composition, generating pixel scenes or character illustrations, and designing multi-stage building-upgrade artwork.
+5. **Animation:** animate only after the character or prop design is stable. Prefer assets at 128×128 or smaller; pixel images above 256×256 commonly lose pixel character and motion consistency when animated.
 
 Do not run standalone pixelation after any Meowa pixel-generation command. Pixel outputs are already perfectly pixelated.
 
 ### HD workflow
 
 1. **Characters and props:** use an HD preset when the deliverable needs a controlled asset family, count, or composition, and use references for style or identity consistency.
-2. **Large or general compositions:** use a general Nano Banana or Image-2 still-image path for scenes, illustrations, portraits, and unrestricted recomposition. Unlike preset generation, this path prioritizes composition freedom over a fixed sprite-size contract.
-3. **Animation:** finalize the still asset, framing, and available motion space before using sprite animation or short video. Choose sprite animation for game-ready looping motion and video for larger, more complex HD movement.
+2. **General or batch generation:** use `nano-banana-run` or `image-2-run` for scenes, illustrations, portraits, sprite sheets, and batches of art assets. Default both to a shared 1K, 1:1 square canvas so a prompt or composition can move between them. Start Image-2 with `standard` for inexpensive prompt testing, then rerun an approved prompt with `detailed`. These paths prioritize composition freedom and throughput over a preset asset contract.
+3. **Automatic background removal and component segmentation:** use `ui-gen-run` when an HD asset sheet should be generated with background removal and automatic component detection. It can generate UI, ordinary art assets, or a sprite sheet; the result depends primarily on the prompt, not on the name of the module. The public final media remains one aggregate sheet accompanied by component segmentation data.
+4. **Animation:** finalize the still asset, framing, and available motion space before using sprite animation or short video. Choose sprite animation for game-ready looping motion and video for larger, more complex HD movement.
 
 ## Understand the modules
 
@@ -83,8 +86,11 @@ Use these common chains only when each downstream module accepts the preceding f
 - Large pixel composition: large-pixel preset discovery → `large-pixel-gen-run` → still edit when required.
 - General pixel composition: `pixel-universal-gen-run` with a normal or top-down view → still edit when required → animate only when the resulting asset is suitably small.
 - HD character or prop: HD generation → still edit → optional background removal → sprite animation or short video.
+- HD batch: `nano-banana-run` or `image-2-run` → inspect the generated asset arrangement → use `ui-gen-run` instead when automatic background removal and component segmentation are required.
 - Existing animation: animated-frame editing. Do not regenerate it as a new animation unless the user asks for a new motion design.
-- Environment: inspect map-reference categories before selecting a type, theme, and layout → seamless texture, terrain tileset, or isometric generation → map-ready validation. Generate side-scrolling layers directly because that command does not accept downloaded map presets.
+- Environment materials: seamless texture or terrain tileset generation → seam and transition validation → map integration.
+- Isometric or hex environment tiles: inspect map-reference categories → select and download matching built-in references → preview the references when layout or style needs comparison → generate from those references → preview and assemble the final tiles by logical centers → validate the composed map. Do not start these tile generators from arbitrary images. Generate side-scrolling layers directly because that command does not accept downloaded map presets.
+- Side-scrolling environment: define the playable midground, distant background, and near-camera foreground separately → run `side-scrolling-map-run` for pixel layers or `hd-side-scrolling-map-run` for HD layers → open all three final layers in the bundled map preview → validate shared canvas alignment, parallax speed, layer offsets, and any requested horizontal loop.
 - UI: UI generation or extraction → still-image refinement. UI extraction currently returns one aggregate sheet, not separate component files.
 - Audio-visual asset: finalize timing and action first → create matching effects or music.
 
@@ -99,6 +105,7 @@ Avoid unnecessary chains. Every generative step can change identity, scale, pale
 5. Run one primary `*-run` command with a new explicit `--output-dir`.
 6. Apply a downstream edit or post-process only when required by the asset contract.
 7. Open the saved media, inspect `final_outputs.json`, and validate every promised property before handoff.
+8. For isometric, hex, dual-grid, or side-scrolling work, start `scripts/map-preview-server.py` with downloaded public references or declared final outputs. Select `hd-isometric` or `hd-hex-isometric` for HD tiles, and declare tetraploid assets as `"footprint": "2x2"` in a JSON library; direct `--image` entries default to `1×1`. For side-scrolling, pass the directory containing the three final layers or a user-owned prefab manifest. Open its temporary loopback URL with the user's browser when browser control is available. Do not make the user browse deep directories, select files, copy paths, or navigate manually.
 
 ## Keep the public boundary clean
 
