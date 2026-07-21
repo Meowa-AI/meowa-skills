@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.07.20.3"
+MEOWART_API_CLI_VERSION = "2026.07.21.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -40,6 +40,10 @@ MEOWART_ENDPOINT_HINT = (
 GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
 NANO_BANANA_MODEL = "gemini-3.1-flash-image-preview"
 IMAGE_2_MODEL = "gpt-image-2"
+VIDEO_MOTION_MODE_TO_MODEL = {
+    "controlled": "doubao-seedance-1-5-pro-251215",
+    "complex": "doubao-seedance-2-0-mini-260615",
+}
 MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
 PIXEL_GENERAL_WORKFLOW_ID = "pixel_gen_general"
 PIXEL_UNIVERSAL_TEMPLATE_NAME = "xlarge_4_3"
@@ -218,6 +222,15 @@ def _format_json_for_display(payload: Any) -> str:
 
 def _format_public_json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _video_model_name(motion_mode: str) -> str:
+    normalized = str(motion_mode or "controlled").strip().lower() or "controlled"
+    try:
+        return VIDEO_MOTION_MODE_TO_MODEL[normalized]
+    except KeyError as exc:
+        supported = ", ".join(VIDEO_MOTION_MODE_TO_MODEL)
+        raise ValueError(f"motion_mode must be one of: {supported}") from exc
 
 
 def _map_preset_catalog_endpoint(api_base: str) -> str:
@@ -1965,6 +1978,70 @@ def submit_animate(
     return body
 
 
+def _parse_keyframe_file_specs(specs: list[str], *, total_frames: int) -> list[dict[str, Any]]:
+    if len(specs) < 2:
+        raise ValueError("keyframe animation requires at least two --keyframe values")
+    if total_frames < 2 or total_frames % 2 != 0:
+        raise ValueError("total_frames must be an even integer of at least 2")
+
+    frames: list[dict[str, Any]] = []
+    seen_indexes: set[int] = set()
+    for raw_spec in specs:
+        index_text, separator, path_text = str(raw_spec or "").partition("=")
+        if not separator or not index_text.strip() or not path_text.strip():
+            raise ValueError("each --keyframe must use INDEX=PATH")
+        try:
+            index = int(index_text.strip())
+        except ValueError as exc:
+            raise ValueError("keyframe index must be an integer") from exc
+        if index < 0 or index >= total_frames:
+            raise ValueError(f"keyframe index must be between 0 and {total_frames - 1}")
+        if index in seen_indexes:
+            raise ValueError("keyframe indexes must be unique")
+        path = Path(path_text.strip()).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"keyframe image not found: {path}")
+        seen_indexes.add(index)
+        frames.append({"index": index, "image": image_file_to_data_url(str(path)), "strength": 1.0})
+    if 0 not in seen_indexes:
+        raise ValueError("keyframe 0 is required")
+    return sorted(frames, key=lambda frame: int(frame["index"]))
+
+
+def submit_keyframes(
+    *,
+    api_base: str,
+    api_key: str,
+    keyframe_specs: list[str],
+    prompt: str,
+    total_frames: int = 8,
+    output_format: str = "webp",
+    animation_type: str = "other",
+    remove_bg_method: str = "standard",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "prompt": str(prompt or "").strip(),
+        "frames": _parse_keyframe_file_specs(keyframe_specs, total_frames=total_frames),
+        "total_frames": total_frames,
+        "output_format": output_format,
+        "animation_type": animation_type,
+        "remove_bg_method": remove_bg_method,
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/animate/keyframes"),
+        headers=_base_headers(api_key),
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(json.dumps(body, ensure_ascii=False, indent=2))
+    return body
+
+
 def submit_remove_background(
     *,
     api_base: str,
@@ -3532,6 +3609,18 @@ def parse_args() -> argparse.Namespace:
     animation_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
     animation_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
 
+    video_prompt_list = subparsers.add_parser(
+        "video-prompt-list",
+        help="List recommended short-video action prompts",
+    )
+    add_shared_path_args(video_prompt_list)
+    video_prompt_list.add_argument(
+        "--motion-mode",
+        default="controlled",
+        choices=list(VIDEO_MOTION_MODE_TO_MODEL),
+        help="Use controlled for first/last-frame control or complex for general motion",
+    )
+
     video_run = subparsers.add_parser("video-run", help="Animate a still image into a short game clip")
     add_shared_path_args(video_run)
     video_run.add_argument("--first-frame", required=True)
@@ -3543,6 +3632,12 @@ def parse_args() -> argparse.Namespace:
     video_run.add_argument("--resolution", default="480p", choices=["480p", "720p"])
     video_run.add_argument("--aspect-ratio", default="1:1", choices=["16:9", "4:3", "1:1", "3:4", "9:16"])
     video_run.add_argument("--frame-count", type=int, default=32, choices=[32, 40, 48])
+    video_run.add_argument(
+        "--motion-mode",
+        default="controlled",
+        choices=list(VIDEO_MOTION_MODE_TO_MODEL),
+        help="Use controlled for first/last-frame control or complex for general motion",
+    )
     video_run.add_argument(
         "--animation-type",
         default="other",
@@ -4085,6 +4180,32 @@ def parse_args() -> argparse.Namespace:
             animate_run_parser._add_action(action)
     add_shared_runtime_args(animate_run_parser)
 
+    keyframes_run_parser = subparsers.add_parser(
+        "keyframes-run",
+        help="Create frame animation controlled by two or more keyframes",
+    )
+    add_shared_path_args(keyframes_run_parser)
+    keyframes_run_parser.add_argument(
+        "--keyframe",
+        action="append",
+        required=True,
+        help="Keyframe in INDEX=PATH form; repeat at least twice and include index 0",
+    )
+    keyframes_run_parser.add_argument("--prompt", required=True)
+    keyframes_run_parser.add_argument("--total-frames", type=int, default=8)
+    keyframes_run_parser.add_argument("--output-format", default="webp", choices=["webp", "gif", "spritesheet"])
+    keyframes_run_parser.add_argument(
+        "--animation-type",
+        default="other",
+        choices=["idle", "walk", "run", "jump", "attack", "hit", "defeated", "other"],
+    )
+    keyframes_run_parser.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard", "advanced"],
+    )
+    add_shared_runtime_args(keyframes_run_parser)
+
     animate_poll_parser = subparsers.add_parser("animate-poll", help="Poll one animate job")
     add_shared_path_args(animate_poll_parser)
     animate_poll_parser.add_argument("--api-job-id", required=True)
@@ -4096,6 +4217,7 @@ def parse_args() -> argparse.Namespace:
         "image-2-run",
         "image-edit-run",
         "animation-edit-run",
+        "video-prompt-list",
         "video-run",
         "isometric-texture-run",
         "isometric-tileset-run",
@@ -4123,6 +4245,7 @@ def parse_args() -> argparse.Namespace:
         "music-run",
         "credits-balance",
         "animate-run",
+        "keyframes-run",
     }
     subparsers._choices_actions[:] = [
         action for action in subparsers._choices_actions if action.dest in public_commands
@@ -4204,6 +4327,21 @@ def main() -> int:
         }
         needs_api_key = args.command not in no_auth_commands
         args.api_key = _resolve_auth_token() if needs_api_key else ""
+
+        if args.command == "video-prompt-list":
+            payload = submit_curated_workflow(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                endpoint="/api/workflows/seedance_generator/run",
+                data={
+                    "get_prompt": "true",
+                    "model_name": _video_model_name(args.motion_mode),
+                },
+                timeout=args.timeout,
+                verify=verify,
+            )
+            print(_format_public_json(payload))
+            return 0
 
         if args.command in {"map-reference-search", "map-preset-search"}:
             workflow_id, template_id, group = _resolve_map_reference_filters(
@@ -4412,6 +4550,7 @@ def main() -> int:
                     "ratio": args.aspect_ratio,
                     "frame_count": str(args.frame_count),
                     "animation_type": args.animation_type,
+                    "model_name": _video_model_name(args.motion_mode),
                 }
                 files.append(("file", _upload_part(args.first_frame, label="first frame")))
                 if args.last_frame:
@@ -6063,6 +6202,53 @@ def main() -> int:
                 response_payload={"submit": submit_payload, "final": final_payload},
                 downloads=downloads,
                 effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command == "keyframes-run":
+            slug_seed = args.prompt or "keyframes"
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            submit_payload = submit_keyframes(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                keyframe_specs=list(args.keyframe or []),
+                prompt=args.prompt,
+                total_frames=args.total_frames,
+                output_format=args.output_format,
+                animation_type=args.animation_type,
+                remove_bg_method=args.remove_bg_method,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            api_job_id = str(submit_payload.get("api_job_id") or "").strip()
+            if not api_job_id:
+                raise RuntimeError("keyframes submit response missing api_job_id")
+            print(f"[INFO] submitted api_job_id={api_job_id}")
+            try:
+                final_payload = wait_animate_job(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    api_job_id=api_job_id,
+                    timeout=args.timeout,
+                    max_wait=args.max_wait,
+                    poll_interval=args.poll_interval,
+                    verify=verify,
+                )
+            except (RuntimeError, TimeoutError) as exc:
+                print(f"[WARN] keyframes submitted but polling did not complete: {exc}")
+                print(_format_json_for_display(submit_payload))
+                return 1
+            output_dir, _downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=slug_seed,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                no_download=args.no_download,
+                workflow_id="animate",
             )
             print(f"[INFO] saved_dir={output_dir}")
             print(_format_json_for_display(final_payload))

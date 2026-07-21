@@ -23,6 +23,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Create parallax-ready foreground, midground, and background layers | `side-scrolling-map-run` or `hd-side-scrolling-map-run` | `maps-tiles-and-textures.md` |
 | Make an image loop horizontally, vertically, or as a texture | `self-loop-run` | `animation-and-video.md` |
 | Create a short sprite animation | `animate-run` | `animation-and-video.md` |
+| Control a complex frame animation with intermediate poses | `keyframes-run` | `animation-and-video.md` |
 | Turn a first frame, or first and last frames, into a short clip | `video-run` | `animation-and-video.md` |
 | Create one sound, a sound pack, or variants | `sound-run` | `audio.md` |
 | Draft music direction or render a track | `music-run` | `audio.md` |
@@ -38,7 +39,7 @@ Use this module to select one primary public command. Prefer the most specialize
 - Treat preset output size and default count as part of the deliverable contract. If no preset matches the requested size or count, explain the gap instead of implying that prompt text can enforce it.
 - Use pixel commands whenever the requested final asset is pixel art; do not route pixel work through a general illustration path.
 - Use `image-edit-run` for still-image transformations and `animation-edit-run` for an existing animated GIF or WebP.
-- Use `animate-run` for sprite-oriented animation output and `video-run` for a short video clip.
+- Use `animate-run` for most animation because it directly produces WebP, GIF, or sprite-sheet frames. For an ordinary complex action, use `keyframes-run` to constrain intermediate poses while keeping frame-animation output. Its general frame mode still outputs at no more than 480p, regardless of a higher-resolution source. Use `video-run` only when frame animation remains insufficient or higher-resolution video is required.
 - Use `texture-gen-run` for a flat seamless texture and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
 - Use `tileset-gen-run` for a flat terrain atlas and `isometric-tileset-run` for an isometric atlas.
 
