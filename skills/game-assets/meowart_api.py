@@ -17,7 +17,12 @@ from urllib.parse import urlparse
 
 import requests
 
-MEOWART_API_CLI_VERSION = "2026.07.21.2"
+try:
+    from PIL import Image
+except ImportError:  # Pillow is required only for strict texture validation.
+    Image = None
+
+MEOWART_API_CLI_VERSION = "2026.07.27.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -45,6 +50,8 @@ VIDEO_MOTION_MODE_TO_MODEL = {
     "complex": "doubao-seedance-2-0-mini-260615",
 }
 MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
+TEXTURE_REFERENCE_CATALOG_MAX_BYTES = 2 * 1024 * 1024
+STANDARD_TEXTURE_SIZE = 64
 PIXEL_GENERAL_WORKFLOW_ID = "pixel_gen_general"
 PIXEL_UNIVERSAL_TEMPLATE_NAME = "xlarge_4_3"
 MAP_REFERENCE_TYPE_TO_WORKFLOW = {
@@ -259,6 +266,257 @@ def fetch_map_preset_catalog(
     if not isinstance(presets, list):
         raise ValueError("map preset catalog response missing presets list")
     return payload
+
+
+def _texture_reference_catalog_endpoint(api_base: str) -> str:
+    return _normalize_base_url(api_base, "/api/workflows/texture_gen")
+
+
+def _texture_reference_id(item: dict[str, Any]) -> str:
+    item_path = str(item.get("path") or "").strip()
+    return f"texture-{hashlib.sha256(item_path.encode('utf-8')).hexdigest()[:16]}"
+
+
+def fetch_texture_reference_catalog(
+    *,
+    api_base: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    response, payload = _request_json(
+        method="GET",
+        url=_texture_reference_catalog_endpoint(api_base),
+        headers={"Accept": "application/json"},
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    if len(response.content) > TEXTURE_REFERENCE_CATALOG_MAX_BYTES:
+        raise RuntimeError(f"texture reference catalog too large: {len(response.content)} bytes")
+
+    templates = payload.get("templates")
+    if not isinstance(templates, list):
+        raise ValueError("texture reference catalog response missing templates list")
+    default_template = next(
+        (
+            template
+            for template in templates
+            if isinstance(template, dict) and str(template.get("template_id") or "") == "default"
+        ),
+        None,
+    )
+    if not isinstance(default_template, dict):
+        raise ValueError("texture reference catalog response missing the public 64px template")
+    catalog = (default_template.get("params") or {}).get("texture_catalog")
+    if not isinstance(catalog, dict) or not isinstance(catalog.get("items"), list):
+        raise ValueError("texture reference catalog response missing items list")
+    return catalog
+
+
+def _texture_reference_text_blob(item: dict[str, Any]) -> str:
+    values: list[Any] = [
+        item.get("name"),
+        item.get("name_en"),
+        item.get("name_zh"),
+        item.get("category"),
+        item.get("category_zh"),
+        *(item.get("color_tags") or []),
+        *(item.get("color_tags_zh") or []),
+    ]
+    return " ".join(str(value) for value in values if value).lower()
+
+
+def _public_texture_reference(item: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "reference_id": _texture_reference_id(item),
+        "name": str(item.get("name") or ""),
+        "category": str(item.get("category") or ""),
+        "dimensions": f"{STANDARD_TEXTURE_SIZE}x{STANDARD_TEXTURE_SIZE}",
+    }
+    for source_key, public_key in (
+        ("name_en", "name_en"),
+        ("name_zh", "name_zh"),
+        ("category_zh", "category_zh"),
+        ("color_tags", "color_tags"),
+        ("color_tags_zh", "color_tags_zh"),
+    ):
+        value = item.get(source_key)
+        if value:
+            result[public_key] = value
+    return result
+
+
+def _search_texture_reference_catalog(
+    catalog: dict[str, Any],
+    *,
+    query: str = "",
+    category: str = "",
+    limit: int = 20,
+) -> dict[str, Any]:
+    normalized_category = str(category or "").strip()
+    tokens = _query_tokens(query)
+    candidates = [
+        item
+        for item in catalog.get("items") or []
+        if isinstance(item, dict)
+        and (not normalized_category or str(item.get("category") or "") == normalized_category)
+    ]
+    matches = [
+        item
+        for item in candidates
+        if not tokens or all(token in _texture_reference_text_blob(item) for token in tokens)
+    ]
+    match_mode = "all"
+    if tokens and not matches:
+        matches = [
+            item
+            for item in candidates
+            if any(token in _texture_reference_text_blob(item) for token in tokens)
+        ]
+        match_mode = "any-fallback"
+    capped_limit = max(int(limit or 20), 1)
+    return {
+        "texture_size": STANDARD_TEXTURE_SIZE,
+        "dimensions": f"{STANDARD_TEXTURE_SIZE}x{STANDARD_TEXTURE_SIZE}",
+        "query": query,
+        "category": normalized_category,
+        "match_mode": match_mode,
+        "count": len(matches),
+        "matches": [_public_texture_reference(item) for item in matches[:capped_limit]],
+    }
+
+
+def search_texture_references(
+    *,
+    api_base: str,
+    query: str = "",
+    category: str = "",
+    limit: int = 20,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    catalog = fetch_texture_reference_catalog(api_base=api_base, timeout=timeout, verify=verify)
+    return _search_texture_reference_catalog(
+        catalog,
+        query=query,
+        category=category,
+        limit=limit,
+    )
+
+
+def public_texture_reference_categories(catalog: dict[str, Any]) -> dict[str, Any]:
+    counts: dict[str, dict[str, Any]] = {}
+    for item in catalog.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        category = str(item.get("category") or "").strip()
+        if not category:
+            continue
+        bucket = counts.setdefault(
+            category,
+            {
+                "category": category,
+                "category_zh": str(item.get("category_zh") or ""),
+                "count": 0,
+            },
+        )
+        bucket["count"] += 1
+    return {
+        "texture_size": STANDARD_TEXTURE_SIZE,
+        "dimensions": f"{STANDARD_TEXTURE_SIZE}x{STANDARD_TEXTURE_SIZE}",
+        "count": sum(item["count"] for item in counts.values()),
+        "categories": [counts[key] for key in sorted(counts)],
+    }
+
+
+def _require_standard_texture(path: Path, *, label: str) -> None:
+    if Image is None:
+        raise RuntimeError("Pillow is required for texture validation; run: python3 -m pip install Pillow")
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            image.verify()
+    except Exception as exc:
+        raise ValueError(f"{label} must be a valid image: {path}") from exc
+    if (width, height) != (STANDARD_TEXTURE_SIZE, STANDARD_TEXTURE_SIZE):
+        raise ValueError(
+            f"{label} must be exactly {STANDARD_TEXTURE_SIZE}x{STANDARD_TEXTURE_SIZE} pixels; "
+            f"got {width}x{height}: {path}"
+        )
+
+
+def download_texture_references(
+    *,
+    api_base: str,
+    reference_ids: list[str] | None = None,
+    query: str = "",
+    category: str = "",
+    limit: int = 20,
+    output_dir: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    catalog = fetch_texture_reference_catalog(api_base=api_base, timeout=timeout, verify=verify)
+    items = [item for item in catalog.get("items") or [] if isinstance(item, dict)]
+    wanted = {str(item).strip() for item in reference_ids or [] if str(item).strip()}
+    if wanted:
+        selected = [item for item in items if _texture_reference_id(item) in wanted]
+        unknown = wanted - {_texture_reference_id(item) for item in selected}
+        if unknown:
+            raise ValueError(f"unknown texture reference id: {', '.join(sorted(unknown))}")
+        public_search = {
+            "texture_size": STANDARD_TEXTURE_SIZE,
+            "dimensions": f"{STANDARD_TEXTURE_SIZE}x{STANDARD_TEXTURE_SIZE}",
+            "count": len(selected),
+            "matches": [_public_texture_reference(item) for item in selected],
+        }
+    else:
+        search_payload = _search_texture_reference_catalog(
+            catalog,
+            query=query,
+            category=category,
+            limit=limit,
+        )
+        selected_ids = {item["reference_id"] for item in search_payload["matches"]}
+        selected = [item for item in items if _texture_reference_id(item) in selected_ids]
+        public_search = search_payload
+    if not selected:
+        raise RuntimeError("no 64x64 texture reference matched the requested filters")
+
+    target_dir = Path(output_dir).expanduser()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = target_dir / "texture_reference_search.json"
+    _save_json(manifest_path, public_search)
+    downloads: list[dict[str, Any]] = [{"type": "json", "path": str(manifest_path)}]
+    for index, item in enumerate(selected[: max(int(limit or len(selected)), 1)], start=1):
+        source_url = str(item.get("preview_url") or "").strip()
+        if not source_url.startswith("https://"):
+            raise ValueError(f"texture reference has no secure download URL: {_texture_reference_id(item)}")
+        filename = Path(str(item.get("path") or "texture.png")).name
+        target_path = target_dir / f"{index:02d}_{_safe_slug(str(item.get('name') or Path(filename).stem))}.png"
+        mime_type = _download_file(
+            source_url,
+            target_path,
+            timeout=timeout,
+            verify=verify,
+            require_media=True,
+        )
+        try:
+            _require_standard_texture(target_path, label="downloaded texture reference")
+        except Exception:
+            target_path.unlink(missing_ok=True)
+            raise
+        downloads.append(
+            {
+                "type": "texture_reference",
+                "reference_id": _texture_reference_id(item),
+                "mime_type": mime_type,
+                "path": str(target_path),
+            }
+        )
+        print(f"[INFO] downloaded={target_path}")
+    return public_search, downloads
 
 
 def _preset_text_blob(preset: dict[str, Any]) -> str:
@@ -2670,52 +2928,66 @@ def submit_tileset_generator(
     api_base: str,
     api_key: str,
     prompt: str = "",
-    tileset_mode: str = "dual-grid-15",
     terrain_mode: str = "dual",
-    single_terrain_region: str = "",
-    single_terrain_show_base_color: bool = False,
-    remove_bg_method: str = "standard",
-    foreground_color: str = "",
-    background_color: str = "",
-    terrain_color: str = "",
     foreground_texture: str = "",
     background_texture: str = "",
+    remove_bg_method: str = "standard",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
+    normalized_terrain_mode = str(terrain_mode or "").strip().lower()
+    if normalized_terrain_mode not in {"foreground", "background", "dual"}:
+        raise ValueError("terrain_mode must be one of: foreground, background, dual")
+    normalized_remove_bg_method = str(remove_bg_method or "").strip().lower()
+    if normalized_remove_bg_method not in {"none", "standard", "advanced"}:
+        raise ValueError("remove_bg_method must be one of: none, standard, advanced")
+    has_foreground_texture = bool(str(foreground_texture or "").strip())
+    has_background_texture = bool(str(background_texture or "").strip())
+    expected_inputs = {
+        "foreground": (True, False),
+        "background": (False, True),
+        "dual": (True, True),
+    }[normalized_terrain_mode]
+    if (has_foreground_texture, has_background_texture) != expected_inputs:
+        requirements = {
+            "foreground": "only --foreground-texture",
+            "background": "only --background-texture",
+            "dual": "both --foreground-texture and --background-texture",
+        }
+        raise ValueError(
+            f"terrain_mode={normalized_terrain_mode} requires {requirements[normalized_terrain_mode]}"
+        )
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    if has_foreground_texture:
+        path = Path(foreground_texture).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"foreground texture not found: {path}")
+        _require_standard_texture(path, label="foreground texture")
+        files.append(("foreground_texture", (path.name, path.read_bytes(), _mime_for_path(path))))
+    if has_background_texture:
+        path = Path(background_texture).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"background texture not found: {path}")
+        _require_standard_texture(path, label="background texture")
+        files.append(("background_texture", (path.name, path.read_bytes(), _mime_for_path(path))))
+    single_terrain = normalized_terrain_mode != "dual"
     data: dict[str, str] = {
         "prompt": prompt,
-        "tileset_mode": tileset_mode,
-        "terrain_mode": terrain_mode,
-        "single_terrain_show_base_color": "true" if single_terrain_show_base_color else "false",
-        "remove_bg_method": remove_bg_method if str(terrain_mode).strip().lower() == "single" else "none",
+        "tileset_template": "dual_grid_15",
+        "tileset_mode": "dual-grid-15",
+        "terrain_mode": "single" if single_terrain else "dual",
+        "remove_bg_method": normalized_remove_bg_method if single_terrain else "none",
     }
-    if str(single_terrain_region or "").strip():
-        data["single_terrain_region"] = str(single_terrain_region).strip()
-    if str(foreground_color or "").strip():
-        data["foreground_color"] = str(foreground_color).strip()
-    if str(background_color or "").strip():
-        data["background_color"] = str(background_color).strip()
-    if str(terrain_color or "").strip():
-        data["terrain_color"] = str(terrain_color).strip()
+    if normalized_terrain_mode == "foreground":
+        data["single_terrain_region"] = "foreground"
+    elif normalized_terrain_mode == "background":
+        data["single_terrain_region"] = "background"
     if project_id is not None:
         data["project_id"] = project_id
     if thread_id is not None:
         data["thread_id"] = thread_id
-
-    files: list[tuple[str, tuple[str, bytes, str]]] = []
-    if str(foreground_texture or "").strip():
-        path = Path(foreground_texture).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"foreground texture not found: {path}")
-        files.append(("foreground_texture", (path.name, path.read_bytes(), _mime_for_path(path))))
-    if str(background_texture or "").strip():
-        path = Path(background_texture).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"background texture not found: {path}")
-        files.append(("background_texture", (path.name, path.read_bytes(), _mime_for_path(path))))
 
     url = _normalize_base_url(api_base, "/api/workflows/tileset_gen/run")
     response, payload = _request_json(
@@ -2737,16 +3009,10 @@ def run_tileset_generator(
     api_base: str,
     api_key: str,
     prompt: str = "",
-    tileset_mode: str = "dual-grid-15",
     terrain_mode: str = "dual",
-    single_terrain_region: str = "",
-    single_terrain_show_base_color: bool = False,
-    remove_bg_method: str = "standard",
-    foreground_color: str = "",
-    background_color: str = "",
-    terrain_color: str = "",
     foreground_texture: str = "",
     background_texture: str = "",
+    remove_bg_method: str = "standard",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -2758,16 +3024,10 @@ def run_tileset_generator(
         api_base=api_base,
         api_key=api_key,
         prompt=prompt,
-        tileset_mode=tileset_mode,
         terrain_mode=terrain_mode,
-        single_terrain_region=single_terrain_region,
-        single_terrain_show_base_color=single_terrain_show_base_color,
-        remove_bg_method=remove_bg_method,
-        foreground_color=foreground_color,
-        background_color=background_color,
-        terrain_color=terrain_color,
         foreground_texture=foreground_texture,
         background_texture=background_texture,
+        remove_bg_method=remove_bg_method,
         project_id=project_id,
         thread_id=thread_id,
         timeout=timeout,
@@ -3528,6 +3788,31 @@ def parse_args() -> argparse.Namespace:
     add_map_preset_filter_args(map_preset_download)
     map_preset_download.add_argument("--preset-id", action="append", default=[], help="Preset id to download; can be repeated")
 
+    texture_reference_search = subparsers.add_parser(
+        "texture-reference-search",
+        help="Search the public library of standard 64x64 texture references",
+    )
+    texture_reference_search.add_argument("--query", default="", help="Search texture names, categories, colors, and tags")
+    texture_reference_search.add_argument("--category", default="", help="Exact category from --categories")
+    texture_reference_search.add_argument("--limit", type=int, default=20)
+    texture_reference_search.add_argument("--categories", action="store_true", help="List available 64x64 texture categories")
+
+    texture_reference_download = subparsers.add_parser(
+        "texture-reference-download",
+        help="Download standard 64x64 texture references",
+    )
+    texture_reference_download.add_argument(
+        "--output-dir",
+        "--output_dir",
+        dest="output_dir",
+        default=argparse.SUPPRESS,
+        help="Directory that will receive the selected 64x64 textures",
+    )
+    texture_reference_download.add_argument("--reference-id", action="append", default=[], help="Reference id to download; can be repeated")
+    texture_reference_download.add_argument("--query", default="", help="Search texture names, categories, colors, and tags")
+    texture_reference_download.add_argument("--category", default="", help="Exact category from texture-reference-search --categories")
+    texture_reference_download.add_argument("--limit", type=int, default=20)
+
     nano_banana_run = subparsers.add_parser(
         "nano-banana-run",
         help="Create a general HD image with Nano Banana",
@@ -3954,8 +4239,7 @@ def parse_args() -> argparse.Namespace:
 
     texture_submit = subparsers.add_parser("texture-gen-submit", help="Submit a texture_gen job")
     add_shared_path_args(texture_submit)
-    texture_submit.add_argument("--prompt", default="", help="Texture requirement")
-    texture_submit.add_argument("--texture-name", action="append", default=[], help="Reference texture name; can be repeated or comma-separated")
+    texture_submit.add_argument("--prompt", required=True, help="Describe the required 64x64 seamless texture")
     texture_submit.add_argument("--self-loop", action="store_true", default=True)
     texture_submit.add_argument("--no-self-loop", action="store_false", dest="self_loop")
     texture_submit.set_defaults(project_id=None, thread_id=None)
@@ -3964,6 +4248,7 @@ def parse_args() -> argparse.Namespace:
     for action in texture_submit._actions[1:]:
         if action.dest not in {"help"}:
             texture_run._add_action(action)
+    texture_run.set_defaults(project_id=None, thread_id=None)
     add_shared_runtime_args(texture_run)
 
     texture_poll = subparsers.add_parser("texture-gen-poll", help="Poll one texture_gen workflow job")
@@ -3972,29 +4257,28 @@ def parse_args() -> argparse.Namespace:
 
     tileset_submit = subparsers.add_parser("tileset-gen-submit", help="Submit a tileset_gen job")
     add_shared_path_args(tileset_submit)
-    tileset_submit.add_argument("--prompt", default="", help="Foreground/background terrain requirement")
-    tileset_submit.set_defaults(tileset_mode="dual-grid-15")
-    tileset_submit.add_argument("--terrain-mode", default="dual", choices=["dual", "single"])
-    tileset_submit.add_argument("--single-terrain-region", default="", choices=["", "foreground", "background"])
-    tileset_submit.add_argument("--single-terrain-base-color", action="store_true", dest="single_terrain_show_base_color", default=False)
-    tileset_submit.add_argument("--no-single-terrain-base-color", action="store_false", dest="single_terrain_show_base_color")
+    tileset_submit.add_argument("--prompt", default="", help="Optional transition or style instruction")
+    tileset_submit.add_argument(
+        "--terrain-mode",
+        required=True,
+        choices=["foreground", "background", "dual"],
+        help="Generate only the foreground, only the background, or both terrains",
+    )
+    tileset_submit.add_argument("--foreground-texture", default="", help="Exact 64x64 foreground texture")
+    tileset_submit.add_argument("--background-texture", default="", help="Exact 64x64 background texture")
     tileset_submit.add_argument(
         "--remove-bg-method",
         default="standard",
         choices=["none", "standard", "advanced"],
-        help="Background removal for single-terrain output",
+        help="Used only when exactly one texture is supplied; default: standard",
     )
-    tileset_submit.add_argument("--foreground-color", default="", help="Optional exact foreground guide color, e.g. #67B84F")
-    tileset_submit.add_argument("--background-color", default="", help="Optional exact background guide color, e.g. #3D8EDB")
-    tileset_submit.add_argument("--terrain-color", default="", help="Optional exact single-terrain guide color")
-    tileset_submit.add_argument("--foreground-texture", default="", help="Optional foreground texture reference image")
-    tileset_submit.add_argument("--background-texture", default="", help="Optional background texture reference image")
     tileset_submit.set_defaults(project_id=None, thread_id=None)
 
     tileset_run = subparsers.add_parser("tileset-gen-run", help="Create a terrain tileset")
     for action in tileset_submit._actions[1:]:
         if action.dest not in {"help"}:
             tileset_run._add_action(action)
+    tileset_run.set_defaults(project_id=None, thread_id=None)
     add_shared_runtime_args(tileset_run)
 
     tileset_poll = subparsers.add_parser("tileset-gen-poll", help="Poll one tileset_gen workflow job")
@@ -4213,6 +4497,8 @@ def parse_args() -> argparse.Namespace:
     public_commands = {
         "map-reference-search",
         "map-reference-download",
+        "texture-reference-search",
+        "texture-reference-download",
         "nano-banana-run",
         "image-2-run",
         "image-edit-run",
@@ -4324,6 +4610,8 @@ def main() -> int:
             "map-preset-search",
             "map-reference-download",
             "map-preset-download",
+            "texture-reference-search",
+            "texture-reference-download",
         }
         needs_api_key = args.command not in no_auth_commands
         args.api_key = _resolve_auth_token() if needs_api_key else ""
@@ -4447,6 +4735,72 @@ def main() -> int:
                 effective_output_dir=str(effective_output_dir),
             )
             print(f"[INFO] saved_dir={effective_output_dir}")
+            print(_format_public_json(public_search_payload))
+            return 0
+
+        if args.command == "texture-reference-search":
+            if args.categories:
+                if args.query or args.category:
+                    raise ValueError("--categories cannot be combined with --query or --category")
+                catalog = fetch_texture_reference_catalog(
+                    api_base=args.api_base,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                payload = public_texture_reference_categories(catalog)
+            else:
+                payload = search_texture_references(
+                    api_base=args.api_base,
+                    query=args.query,
+                    category=args.category,
+                    limit=args.limit,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload={
+                    "query": args.query,
+                    "category": args.category,
+                    "categories": args.categories,
+                    "limit": args.limit,
+                },
+                response_payload=payload,
+                downloads=[],
+                effective_output_dir=str(effective_output_dir),
+            )
+            print(_format_public_json(payload))
+            return 0
+
+        if args.command == "texture-reference-download":
+            public_search_payload, downloads = download_texture_references(
+                api_base=args.api_base,
+                reference_ids=list(args.reference_id or []),
+                query=args.query,
+                category=args.category,
+                limit=args.limit,
+                output_dir=str(effective_output_dir),
+                timeout=args.timeout,
+                verify=verify,
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload={
+                    "reference_ids": list(args.reference_id or []),
+                    "query": args.query,
+                    "category": args.category,
+                    "limit": args.limit,
+                },
+                response_payload=public_search_payload,
+                downloads=downloads,
+                effective_output_dir=str(effective_output_dir),
+            )
             print(_format_public_json(public_search_payload))
             return 0
 
@@ -5599,7 +5953,6 @@ def main() -> int:
         if args.command == "texture-gen-submit":
             request_payload = {
                 "prompt": args.prompt,
-                "texture_names": list(args.texture_name or []),
                 "self_loop": args.self_loop,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
@@ -5608,7 +5961,6 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                texture_names=list(args.texture_name or []),
                 self_loop=args.self_loop,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
@@ -5633,7 +5985,6 @@ def main() -> int:
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             request_payload = {
                 "prompt": args.prompt,
-                "texture_names": list(args.texture_name or []),
                 "self_loop": args.self_loop,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
@@ -5642,7 +5993,6 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                texture_names=list(args.texture_name or []),
                 self_loop=args.self_loop,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
@@ -5679,16 +6029,10 @@ def main() -> int:
         if args.command == "tileset-gen-submit":
             request_payload = {
                 "prompt": args.prompt,
-                "tileset_mode": args.tileset_mode,
                 "terrain_mode": args.terrain_mode,
-                "single_terrain_region": args.single_terrain_region,
-                "single_terrain_show_base_color": args.single_terrain_show_base_color,
-                "remove_bg_method": args.remove_bg_method,
-                "foreground_color": args.foreground_color,
-                "background_color": args.background_color,
-                "terrain_color": args.terrain_color,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
+                "remove_bg_method": args.remove_bg_method,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
             }
@@ -5696,16 +6040,10 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                tileset_mode=args.tileset_mode,
                 terrain_mode=args.terrain_mode,
-                single_terrain_region=args.single_terrain_region,
-                single_terrain_show_base_color=args.single_terrain_show_base_color,
-                remove_bg_method=args.remove_bg_method,
-                foreground_color=args.foreground_color,
-                background_color=args.background_color,
-                terrain_color=args.terrain_color,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
+                remove_bg_method=args.remove_bg_method,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,
@@ -5729,16 +6067,10 @@ def main() -> int:
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             request_payload = {
                 "prompt": args.prompt,
-                "tileset_mode": args.tileset_mode,
                 "terrain_mode": args.terrain_mode,
-                "single_terrain_region": args.single_terrain_region,
-                "single_terrain_show_base_color": args.single_terrain_show_base_color,
-                "remove_bg_method": args.remove_bg_method,
-                "foreground_color": args.foreground_color,
-                "background_color": args.background_color,
-                "terrain_color": args.terrain_color,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
+                "remove_bg_method": args.remove_bg_method,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
             }
@@ -5746,16 +6078,10 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                tileset_mode=args.tileset_mode,
                 terrain_mode=args.terrain_mode,
-                single_terrain_region=args.single_terrain_region,
-                single_terrain_show_base_color=args.single_terrain_show_base_color,
-                remove_bg_method=args.remove_bg_method,
-                foreground_color=args.foreground_color,
-                background_color=args.background_color,
-                terrain_color=args.terrain_color,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
+                remove_bg_method=args.remove_bg_method,
                 project_id=args.project_id,
                 thread_id=args.thread_id,
                 timeout=args.timeout,

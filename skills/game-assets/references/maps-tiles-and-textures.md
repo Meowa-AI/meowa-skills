@@ -224,6 +224,7 @@ Use this module to create environment materials and map-ready assets: seamless t
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
 | Discover reusable map references | `map-reference-search`, `map-reference-download` | Supply planning or supported reference inputs | Not every map command accepts downloaded references |
+| Discover standard flat textures | `texture-reference-search`, `texture-reference-download` | Supply exact 64×64 material inputs for top-down dual-grid generation | The Skill currently exposes only 64px textures |
 | Generate flat or isometric textures | `texture-gen-run`, `isometric-texture-run` | Produce repeatable material tiles | Validate seams before tileset use |
 | Generate flat or isometric tilesets | `tileset-gen-run`, `isometric-tileset-run` | Produce terrain transition atlases | Single- and dual-terrain modes have different contracts |
 | Generate isometric or hex map tiles | `isometric-gen-run`, `hex-isometric-gen-run`, HD variants | Produce map-ready projected tile sets | Mode names and supported references vary by command |
@@ -278,7 +279,44 @@ Treat downloaded references as inputs, never as newly generated deliverables. Pa
 
 ## Seamless textures
 
-Flat texture:
+### What counts as a texture
+
+A texture is a small, repeatable material sample that fills its entire square canvas edge to edge. For the public flat-texture and top-down dual-grid path in this Skill, it must be exactly `64×64` pixels.
+
+A valid texture:
+
+- shows one continuous material such as grass, dirt, stone, water, bricks, or floor boards;
+- has no perspective and no visible camera angle;
+- has no isolated object, character, building, landscape, horizon, frame, label, or text;
+- has no transparent padding or large empty margin;
+- can be repeated in both directions without changing scale.
+
+A standalone HD illustration or a photo of one object is not a texture, even if its subject is a material. Do not upload a large image and rely on the tileset workflow to shrink it. Search or generate a real `64×64` texture instead.
+
+This Skill currently exposes only the 64px texture library and the 64px top-down dual-grid workflow. It does not expose the backend's 32px texture or dual-grid branches. A `32×32`, `128×128`, or other-sized image is rejected rather than silently resized.
+
+### Search and download standard 64px references
+
+List the public categories, then search and download one or more exact references:
+
+```bash
+python3 skills/game-assets/meowart_api.py texture-reference-search \
+  --categories
+
+python3 skills/game-assets/meowart_api.py texture-reference-search \
+  --query "mossy grass" \
+  --limit 12
+
+python3 skills/game-assets/meowart_api.py texture-reference-download \
+  --reference-id <reference-id> \
+  --output-dir <output-dir>
+```
+
+`texture-reference-download` saves the selected official `64×64` files locally. These files are standard inputs for `tileset-gen-run`; they are references, not newly generated deliverables.
+
+### Generate and download a new 64px texture
+
+Use `texture-gen-run` when the standard library does not contain the required material:
 
 ```bash
 python3 skills/game-assets/meowart_api.py texture-gen-run \
@@ -286,6 +324,8 @@ python3 skills/game-assets/meowart_api.py texture-gen-run \
   --self-loop \
   --output-dir <output-dir>
 ```
+
+The command waits for the job and downloads the final `64×64` texture into the output directory. Inspect that final file before using it as a tileset input.
 
 Isometric texture:
 
@@ -299,22 +339,61 @@ python3 skills/game-assets/meowart_api.py isometric-texture-run \
 
 Use the isometric command when the final texture must already be projected as a 2:1 isometric tile. Keep `--self-loop` enabled for repeatable terrain unless the user explicitly wants a non-tiling sample.
 
-Do not guess `--texture-name` from a semantic material name. It must match an installed reference name exactly, and the public runner does not currently provide a reference-name catalog. Prefer a prompt and optional image reference unless a valid name is already known.
-
 ## Terrain tilesets
 
-Flat dual-terrain tileset:
+### Top-down dual-grid tileset
+
+The public Skill path is texture-first. Select one explicit terrain mode:
+
+- `foreground`: generate only the central/filled terrain. Supply only `--foreground-texture`.
+- `background`: generate only the surrounding terrain. Supply only `--background-texture`.
+- `dual`: generate the transition between both terrains. Supply both texture options.
+
+Every supplied texture must be exactly `64×64`.
+
+Choose the terrain mode based on how the atlas will be reused:
+
+- `foreground` is the usual choice. Generate the secondary terrain as a cutout atlas with `--remove-bg-method`, then paint it over any compatible base terrain. This is well suited to reusable patches such as grass, dirt, flowers, rock, snow, or shallow water.
+- `dual` usually gives the best visual transition because the workflow sees both materials together, but the result is tied to that exact pair. For example, a grass-to-water atlas is not a reusable desert-to-water atlas. Use dual after the base terrain is fixed and the atlas only needs to serve that one material pairing.
+- A practical environment workflow is to choose one base texture for the large scene first, such as grass or desert, then generate multiple foreground-only secondary textures that can be painted over that base.
+- `background` is available for cases that specifically need the surrounding region as the reusable cutout, but it is less commonly needed than `foreground`.
 
 ```bash
 python3 skills/game-assets/meowart_api.py tileset-gen-run \
-  --prompt "Bright grass transitioning into shallow clear water" \
   --terrain-mode dual \
-  --foreground-color "#67B84F" \
-  --background-color "#3D8EDB" \
+  --foreground-texture <grass-64x64.png> \
+  --background-texture <water-64x64.png> \
+  --prompt "Background is water; foreground is grass." \
   --output-dir <output-dir>
 ```
 
-Isometric single-terrain tileset:
+For a foreground-only atlas:
+
+```bash
+python3 skills/game-assets/meowart_api.py tileset-gen-run \
+  --terrain-mode foreground \
+  --foreground-texture <grass-64x64.png> \
+  --remove-bg-method standard \
+  --output-dir <output-dir>
+```
+
+`--remove-bg-method {none,standard,advanced}` applies only to `foreground` and `background`. It removes the unused white region so the one-terrain atlas can be layered over a map. `dual` keeps both terrain regions and always disables background removal.
+
+Keep the prompt minimal because the textures already provide the important visual information. A complex prompt can interfere with the workflow's terrain and transition decisions. Prefer one short relationship such as:
+
+- `Background is dirt; foreground is grass.`
+- `Grass in a pond.`
+- `Lava in obsidian.`
+
+If you are unsure what to write, omitting `--prompt` is generally fine because the texture inputs already provide the essential visual information. Do not write a long scene description, detailed composition instructions, repeated texture requirements, or elaborate transition prose for this workflow.
+
+The prompt is optional and cannot replace the required texture inputs or change their dimensions. Foreground/background guide colors are inferred internally and are intentionally not exposed. The public `foreground` and `background` modes map to the backend's internal single-terrain workflow; users do not need to handle that internal term. The Skill also hides texture reference sizing and the 32px template.
+
+The final result is a `256×256` 4×4 atlas containing 64px dual-grid tiles. Review it with the `dual-grid` preview mode before game integration.
+
+### Isometric terrain tileset
+
+The isometric command has a separate contract:
 
 ```bash
 python3 skills/game-assets/meowart_api.py isometric-tileset-run \
@@ -325,11 +404,6 @@ python3 skills/game-assets/meowart_api.py isometric-tileset-run \
   --output-dir <output-dir>
 ```
 
-- Use `dual` for foreground/background transitions and `single` for one isolated terrain family.
-- In single mode, select `foreground` or `background` as the occupied region.
-- Background removal applies only to single-terrain output. Dual terrain keeps both terrain regions and ignores the selected removal level.
-- In single mode, use `none`, `standard`, or `advanced` for background removal. Do not select a provider.
-- Supply texture references only through `--foreground-texture` and `--background-texture`.
 - Review a generated flat dual-grid atlas in `map-tile-layout-demo.html` with `Top-down Dual-grid 15`. Review an isometric dual-grid atlas with `Isometric Dual-grid 15`. Load the final 4×4 atlas, then paint, erase, or fill the preview map to verify transitions before game integration.
 
 ## Isometric and hex map tiles

@@ -18,6 +18,12 @@ Determine these requirements before selecting a command:
 
 Treat preset-defined dimensions and output counts as fixed contracts. Do not imply that prompt wording can override them.
 
+## Write simple natural-language prompts
+
+Meowa capabilities use advanced generative models that understand ordinary natural language. Describe the required asset as simply and clearly as possible. Include only details that materially affect the deliverable, such as the subject, action, viewpoint, material, or relationship between elements.
+
+Do not use legacy diffusion-style prompt engineering: no long keyword stacks, separate positive and negative prompt blocks, repeated quality terms, token weights, sampler syntax, or excessive camera and rendering jargon. These additions can interfere with the model's own interpretation and reduce consistency. Start with the shortest sufficient prompt, inspect the result, and add one necessary constraint at a time only when the output proves it is needed.
+
 ## Apply game-art fundamentals
 
 ### Pixel art
@@ -88,7 +94,7 @@ Use these common chains only when each downstream module accepts the preceding f
 - HD character or prop: HD generation → still edit → optional background removal → sprite animation or short video.
 - HD batch: `nano-banana-run` or `image-2-run` → inspect the generated asset arrangement → use `ui-gen-run` instead when automatic background removal and component segmentation are required.
 - Existing animation: animated-frame editing. Do not regenerate it as a new animation unless the user asks for a new motion design.
-- Environment materials: seamless texture or terrain tileset generation → seam and transition validation → map integration.
+- Environment materials: search and download a standard 64×64 texture reference, or generate a new 64×64 seamless texture → choose a foreground-only, background-only, or dual top-down tileset → pass the matching validated texture inputs → remove the unused background for a one-terrain atlas when needed → validate the 4×4 atlas → map integration. A standalone HD image, object render, photo, or scene is not a texture.
 - Isometric or hex environment tiles: inspect map-reference categories → select and download matching built-in references → preview the references when layout or style needs comparison → generate from those references → preview and assemble the final tiles by logical centers → validate the composed map. Do not start these tile generators from arbitrary images. Generate side-scrolling layers directly because that command does not accept downloaded map presets.
 - Side-scrolling environment: define the playable midground, distant background, and near-camera foreground separately → run `side-scrolling-map-run` for pixel layers or `hd-side-scrolling-map-run` for HD layers → open all three final layers in the bundled map preview → validate shared canvas alignment, parallax speed, layer offsets, and any requested horizontal loop.
 - UI: UI generation or extraction → still-image refinement. UI extraction currently returns one aggregate sheet, not separate component files.

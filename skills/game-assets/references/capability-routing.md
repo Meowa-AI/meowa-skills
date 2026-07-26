@@ -15,6 +15,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Generate a UI sheet, HUD, menu, buttons, icons, or extract UI components | `ui-gen-run` | `ui-and-image-editing.md` |
 | Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
 | Edit an animated GIF or WebP while preserving timing and layout | `animation-edit-run` | `ui-and-image-editing.md` |
+| Find or download a standard 64×64 flat material texture | `texture-reference-search`, `texture-reference-download` | `maps-tiles-and-textures.md` |
 | Create a seamless flat texture | `texture-gen-run` | `maps-tiles-and-textures.md` |
 | Create an isometric texture | `isometric-texture-run` | `maps-tiles-and-textures.md` |
 | Create a terrain tileset | `tileset-gen-run` | `maps-tiles-and-textures.md` |
@@ -40,7 +41,7 @@ Use this module to select one primary public command. Prefer the most specialize
 - Use pixel commands whenever the requested final asset is pixel art; do not route pixel work through a general illustration path.
 - Use `image-edit-run` for still-image transformations and `animation-edit-run` for an existing animated GIF or WebP.
 - Use `animate-run` for most animation because it directly produces WebP, GIF, or sprite-sheet frames. For an ordinary complex action, use `keyframes-run` to constrain intermediate poses while keeping frame-animation output. Its general frame mode still outputs at no more than 480p, regardless of a higher-resolution source. Use `video-run` only when frame animation remains insufficient or higher-resolution video is required.
-- Use `texture-gen-run` for a flat seamless texture and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
-- Use `tileset-gen-run` for a flat terrain atlas and `isometric-tileset-run` for an isometric atlas.
+- Use `texture-reference-search` and `texture-reference-download` first when a standard 64×64 flat material already fits. Use `texture-gen-run` to create and download a new 64×64 seamless texture, and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
+- Use `tileset-gen-run` for a 64px top-down dual-grid atlas. Select `foreground` or `background` with one matching 64×64 texture, or `dual` with both textures. Single-terrain modes can remove the unused background; dual mode cannot. Use `isometric-tileset-run` for an isometric atlas.
 
 If no specialized capability fits, explain the gap instead of exposing an internal workflow or raw request surface.

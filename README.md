@@ -25,7 +25,7 @@ cd meowa-skills
 
 mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills/game-assets"
 cp -R skills/game-assets/. "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/"
-python3 -m pip install requests
+python3 -m pip install requests Pillow
 ```
 
 Create a key from [Meowa API Keys](https://meowa.ai/#/api-keys), then configure it locally:

@@ -7,7 +7,7 @@
 在 Skill 仓库根目录安装 runner 依赖：
 
 ```bash
-python3 -m pip install requests
+python3 -m pip install requests Pillow
 python3 skills/game-assets/meowart_api.py --help
 ```
 
