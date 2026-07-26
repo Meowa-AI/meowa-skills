@@ -293,6 +293,16 @@ A valid texture:
 
 A standalone HD illustration or a photo of one object is not a texture, even if its subject is a material. Do not upload a large image and rely on the tileset workflow to shrink it. Search or generate a real `64×64` texture instead.
 
+Prefer a self-looping texture whose left and right edges match and whose top and bottom edges match. Top-down dual-grid generation has a strict tiling requirement: it reuses the texture across many cells, so a visible edge seam in the source becomes a repeated defect in the atlas and painted map. Do not use an arbitrary image merely because it is square.
+
+Obtain suitable source textures in one of these ways:
+
+- search and download a Meowa preset with `texture-reference-search` and `texture-reference-download`;
+- generate a new texture with `texture-gen-run --self-loop`;
+- download a tileable texture or game-art texture pack from a source such as itch.io.
+
+For any external texture, confirm that the license permits the intended use, crop or select the actual material tile rather than a preview sheet, verify that it is exactly `64×64`, and preview it repeated in both axes before running the tileset workflow.
+
 This Skill currently exposes only the 64px texture library and the 64px top-down dual-grid workflow. It does not expose the backend's 32px texture or dual-grid branches. A `32×32`, `128×128`, or other-sized image is rejected rather than silently resized.
 
 ### Search and download standard 64px references
