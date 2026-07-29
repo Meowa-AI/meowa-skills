@@ -5,6 +5,7 @@
 - Important guidance
 - Purpose and capability boundaries
 - UI generation and extraction
+- Consistent upgrades and variants
 - Still-image and animated-frame editing
 - Validation
 
@@ -35,6 +36,7 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
 | Generate or extract UI and asset sheets | `ui-gen-run` | Produce one transparent aggregate sheet plus component segmentation data | Does not return separate cropped component media files |
+| Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
 | Edit existing animation frames | `animation-edit-run` | Restyle or modify an animated GIF or WebP | Preserve the source frame timing and layout |
 
@@ -79,6 +81,43 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
 - Generation is not limited to interface graphics. Describe an ordinary asset batch or sprite sheet when that is the desired output.
 - The workflow can remove the sheet background and automatically detect component bounds. The current public final media remains one aggregate sheet accompanied by component segmentation data; it does not return each component as a separate media file.
 
+## Create consistent upgrades or variants
+
+Use one-click upgrade to quickly improve one item or character, create a progression, or obtain several variants that retain a similar style, scale, and canvas. Use `image-edit-run` instead when only one exact, tightly controlled edit is needed.
+
+Start with the free prompt-only step:
+
+```bash
+python3 skills/game-assets/meowart_api.py one-click-upgrade-prompts \
+  --reference-image <source.png> \
+  --prompt "Create three increasingly ornate equipment upgrades" \
+  --count 3 \
+  --language en
+```
+
+Review the returned prompt list before generation. Correct any unwanted direction, remove redundant wording, and keep each prompt concise. Then pass one reviewed prompt for each output:
+
+The prompt-only command automatically makes at most three attempts, waiting five seconds after each retryable failure. Authentication and invalid-input errors fail immediately.
+
+```bash
+python3 skills/game-assets/meowart_api.py one-click-upgrade-run \
+  --reference-image <prepared-source.png> \
+  --variant-prompt "Add reinforced leather panels and a small bronze clasp while preserving the style" \
+  --variant-prompt "Add layered steel plates and restrained blue trim while preserving the style" \
+  --variant-prompt "Add ornate silver plates and a compact blue crystal crest while preserving the style" \
+  --mode pixel \
+  --remove-bg-method none \
+  --output-dir <output-dir>
+```
+
+- Supply one to eight `--variant-prompt` values. Their count is the output count.
+- Preserve one visual identity and style across the prompt list. Describe only the concrete change for each output; avoid long quality phrases.
+- Inspect the source canvas before prompt generation. If the largest requested variant becomes taller, wider, or adds a weapon or effect beyond the current bounds, add only the transparent margin required along that motion or growth direction. Keep the subject at its original scale and anchor. Do not enlarge the canvas when the requested changes already fit.
+- Use the same prepared source for every variant. A prompt cannot create reliable space outside the supplied canvas.
+- Pixel mode defaults to a 1K service tier and HD mode to 2K. Omit `--resolution` unless the asset contract requires a different tier.
+- Background removal defaults to `none`. Use `standard` or `advanced` for pixel outputs that must be isolated; HD mode supports `none` or `standard`.
+- Open every result and compare style, approximate subject size, anchor, silhouette, transparency, and actual canvas dimensions.
+
 ## Edit still images
 
 ```bash
@@ -106,7 +145,7 @@ python3 skills/game-assets/meowart_api.py animation-edit-run \
   --reference-image <armor-reference.png> \
   --prompt "Apply the armor design consistently to every frame" \
   --mode pixel \
-  --remove-bg-method standard \
+  --remove-bg-method advanced \
   --output-dir <output-dir>
 ```
 

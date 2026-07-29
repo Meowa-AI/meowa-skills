@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required only for strict texture validation.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.07.27.1"
+MEOWART_API_CLI_VERSION = "2026.07.30.3"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -43,7 +43,7 @@ MEOWART_ENDPOINT_HINT = (
     "or a documented workflow command for specialized assets."
 )
 GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
-NANO_BANANA_MODEL = "gemini-3.1-flash-image-preview"
+NANO_BANANA_MODEL = "gemini-3.1-flash-image"
 IMAGE_2_MODEL = "gpt-image-2"
 VIDEO_MOTION_MODE_TO_MODEL = {
     "controlled": "doubao-seedance-1-5-pro-251215",
@@ -149,6 +149,10 @@ UI_GEN_POLL_COMMANDS = {
     "ui-gen-poll",
     "general-ui-gen-poll",
 }
+ONE_CLICK_UPGRADE_ENDPOINT = "/api/workflows/one_click_upgrade/run"
+ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT = "/api/workflows/one_click_upgrade/prompts"
+PROMPT_ONLY_MAX_ATTEMPTS = 3
+PROMPT_ONLY_RETRY_DELAY_SECONDS = 5
 
 
 def _configure_stdio() -> None:
@@ -1246,6 +1250,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
+    "one_click_upgrade": frozenset({"output_paths"}),
     "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
     "pixel_gen_general": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_grid_24px": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
@@ -1271,6 +1276,11 @@ _WORKFLOW_FINAL_OUTPUT_CONTAINERS: dict[str, frozenset[str]] = {
     "animate": frozenset({"animation_assets"}),
     "gemini_image": frozenset({"images"}),
 }
+_ANIMATE_DOWNLOAD_FORMATS = frozenset({"webp", "gif", "png"})
+_ANIMATE_DOWNLOAD_PATH_PATTERN = re.compile(
+    r"^/api/animate/jobs/[^/]+/outputs/"
+    r"(?P<output_format>webp|gif|png)/download$"
+)
 _FINAL_OUTPUT_FIELDS = frozenset().union(*_WORKFLOW_FINAL_OUTPUT_FIELDS.values())
 _BLOCKED_OUTPUT_KEY_PARTS = {
     "base_texture_path",
@@ -1346,13 +1356,34 @@ def _payload_workflow_id(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _is_declared_animate_download_url(
+    key_parts: list[str],
+    parsed_url: Any,
+) -> bool:
+    if (parsed_url.hostname or "").lower() != AUTH_HEADER_HOST:
+        return False
+    match = _ANIMATE_DOWNLOAD_PATH_PATTERN.fullmatch(parsed_url.path or "")
+    if match is None:
+        return False
+
+    output_format = str(match.group("output_format") or "").strip()
+    if output_format not in _ANIMATE_DOWNLOAD_FORMATS:
+        return False
+
+    if key_parts in (["output", "url"], ["result", "output", "url"]):
+        return True
+    if len(key_parts) not in {3, 4}:
+        return False
+    if key_parts[-3] != "output":
+        return False
+    if key_parts[-2] not in {"transparent_output_urls", "download_urls"}:
+        return False
+    return key_parts[-1] == output_format
+
+
 def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str = "") -> bool:
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        return False
-
-    path = parsed.path or ""
-    if path.endswith("/") or Path(path).suffix.lower() not in _DOWNLOADABLE_MEDIA_EXTENSIONS:
         return False
 
     key_parts = _output_key_parts(key)
@@ -1366,6 +1397,12 @@ def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str 
     normalized_workflow_id = str(workflow_id or "").strip()
     allowed_fields = _WORKFLOW_FINAL_OUTPUT_FIELDS.get(normalized_workflow_id)
     if not allowed_fields:
+        return False
+    if normalized_workflow_id == "animate" and _is_declared_animate_download_url(key_parts, parsed):
+        return True
+
+    path = parsed.path or ""
+    if path.endswith("/") or Path(path).suffix.lower() not in _DOWNLOADABLE_MEDIA_EXTENSIONS:
         return False
     allowed_containers = _WORKFLOW_FINAL_OUTPUT_CONTAINERS.get(normalized_workflow_id, frozenset())
 
@@ -2206,7 +2243,7 @@ def submit_animate(
     output_frames: int = 8,
     output_format: str = "webp",
     animation_type: str = "other",
-    remove_bg_method: str = "standard",
+    remove_bg_method: str = "advanced",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -2275,12 +2312,13 @@ def submit_keyframes(
     total_frames: int = 8,
     output_format: str = "webp",
     animation_type: str = "other",
-    remove_bg_method: str = "standard",
+    remove_bg_method: str = "advanced",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "prompt": str(prompt or "").strip(),
+        "optimize_prompt": True,
         "frames": _parse_keyframe_file_specs(keyframe_specs, total_frames=total_frames),
         "total_frames": total_frames,
         "output_format": output_format,
@@ -2717,6 +2755,104 @@ def submit_curated_workflow(
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
     return payload
+
+
+def design_one_click_upgrade_prompts(
+    *,
+    api_base: str,
+    api_key: str,
+    reference_image: str,
+    prompt: str = "",
+    count: int = 1,
+    language: str = "zh",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> list[str]:
+    if count < 1 or count > 8:
+        raise ValueError("count must be between 1 and 8")
+    normalized_language = str(language or "zh").strip().lower()
+    if normalized_language not in {"zh", "en"}:
+        raise ValueError("language must be one of: zh, en")
+
+    request_data = {
+        "prompt": str(prompt or "").strip(),
+        "count": str(count),
+        "language": normalized_language,
+    }
+    request_files = {
+        "reference_image": _upload_part(reference_image, label="reference image")
+    }
+    last_error: Exception | None = None
+
+    for attempt in range(1, PROMPT_ONLY_MAX_ATTEMPTS + 1):
+        try:
+            response = requests.request(
+                method="POST",
+                url=_normalize_base_url(api_base, ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT),
+                headers=_base_headers(api_key),
+                data=request_data,
+                files=request_files,
+                timeout=timeout,
+                verify=verify,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+        else:
+            content_type = response.headers.get("content-type", "")
+            if (
+                response.status_code >= 400
+                and response.status_code != 429
+                and response.status_code < 500
+            ):
+                if "application/json" in content_type.lower():
+                    try:
+                        error_payload = response.json()
+                    except (requests.RequestException, ValueError):
+                        error_payload = {"detail": response.text[:500].strip()}
+                else:
+                    error_payload = {"detail": response.text[:500].strip()}
+                raise RuntimeError(
+                    json.dumps(error_payload, ensure_ascii=False, indent=2)
+                )
+            if "application/json" not in content_type.lower():
+                body = response.text[:500].strip()
+                last_error = ValueError(
+                    f"expected JSON response, got {content_type or 'unknown'}: {body}"
+                )
+            else:
+                try:
+                    payload = response.json()
+                except (requests.RequestException, ValueError) as exc:
+                    last_error = exc
+                else:
+                    if response.status_code >= 400:
+                        error = RuntimeError(
+                            json.dumps(payload, ensure_ascii=False, indent=2)
+                        )
+                        last_error = error
+                    elif not isinstance(payload, list):
+                        last_error = ValueError(
+                            f"expected JSON array, got {type(payload).__name__}"
+                        )
+                    else:
+                        prompts = [str(item or "").strip() for item in payload]
+                        if len(prompts) == count and all(prompts):
+                            return prompts
+                        last_error = ValueError(
+                            f"expected exactly {count} non-empty upgrade prompts"
+                        )
+
+        if attempt < PROMPT_ONLY_MAX_ATTEMPTS:
+            print(
+                f"[WARN] prompt-only attempt {attempt}/{PROMPT_ONLY_MAX_ATTEMPTS} "
+                f"failed; retrying in {PROMPT_ONLY_RETRY_DELAY_SECONDS}s",
+                file=sys.stderr,
+            )
+            time.sleep(PROMPT_ONLY_RETRY_DELAY_SECONDS)
+
+    if last_error is None:
+        raise RuntimeError("prompt-only request failed")
+    raise last_error
 
 
 def run_curated_workflow(
@@ -3542,27 +3678,13 @@ def poll_animate_job(
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
-    url = _normalize_base_url(api_base, "/api/jobs")
-    response, payload = _request_json(
-        method="GET",
-        url=url,
-        headers=_base_headers(api_key),
-        params={"id": api_job_id},
+    return poll_job(
+        api_base=api_base,
+        api_key=api_key,
+        api_job_id=api_job_id,
         timeout=timeout,
         verify=verify,
     )
-    if response.status_code >= 400:
-        raise RuntimeError(_format_json_for_display(payload))
-    returned_job_id = str(payload.get("job_id") or payload.get("api_job_id") or "").strip()
-    if returned_job_id == api_job_id:
-        return payload
-
-    items = payload.get("items")
-    if isinstance(items, list):
-        for item in items:
-            if isinstance(item, dict) and str(item.get("job_id") or "").strip() == api_job_id:
-                return item
-    raise RuntimeError(f"animate job not found in /api/jobs response: {api_job_id}")
 
 
 def wait_animate_job(
@@ -3892,7 +4014,32 @@ def parse_args() -> argparse.Namespace:
     animation_edit_run.add_argument("--reference-image", action="append", default=[], help="Optional visual reference; repeat up to 8 times")
     animation_edit_run.add_argument("--prompt", required=True, help="Describe the requested animation edit")
     animation_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
-    animation_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
+    animation_edit_run.add_argument("--remove-bg-method", default="advanced", choices=["none", "standard", "advanced"])
+
+    one_click_prompts = subparsers.add_parser(
+        "one-click-upgrade-prompts",
+        help="Design a concise prompt list for consistent asset upgrades",
+    )
+    one_click_prompts.add_argument("--reference-image", required=True)
+    one_click_prompts.add_argument("--prompt", default="", help="Optional overall upgrade direction")
+    one_click_prompts.add_argument("--count", type=int, default=1, choices=range(1, 9))
+    one_click_prompts.add_argument("--language", default="zh", choices=["zh", "en"])
+
+    one_click_run = subparsers.add_parser(
+        "one-click-upgrade-run",
+        help="Create one to eight consistent upgrades or variants of an asset",
+    )
+    add_shared_path_args(one_click_run)
+    one_click_run.add_argument("--reference-image", required=True)
+    one_click_run.add_argument(
+        "--variant-prompt",
+        action="append",
+        required=True,
+        help="One concise prompt per output; repeat from one to eight times",
+    )
+    one_click_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    one_click_run.add_argument("--resolution", default="", choices=["1K", "2K"])
+    one_click_run.add_argument("--remove-bg-method", default="none", choices=["none", "standard", "advanced"])
 
     video_prompt_list = subparsers.add_parser(
         "video-prompt-list",
@@ -3908,14 +4055,13 @@ def parse_args() -> argparse.Namespace:
 
     video_run = subparsers.add_parser("video-run", help="Animate a still image into a short game clip")
     add_shared_path_args(video_run)
-    video_run.add_argument("--first-frame", required=True)
-    video_run.add_argument("--last-frame", default="")
+    video_run.add_argument("--first-frame", "--start-keyframe", dest="first_frame", required=True)
+    video_run.add_argument("--last-frame", "--end-keyframe", dest="last_frame", default="")
     video_run.add_argument("--prompt", default="")
     video_run.add_argument("--action", default="")
     video_run.add_argument("--direction", default="")
     video_run.add_argument("--pixel", action="store_true", help="Preserve pixel-art motion")
     video_run.add_argument("--resolution", default="480p", choices=["480p", "720p"])
-    video_run.add_argument("--aspect-ratio", default="1:1", choices=["16:9", "4:3", "1:1", "3:4", "9:16"])
     video_run.add_argument("--frame-count", type=int, default=32, choices=[32, 40, 48])
     video_run.add_argument(
         "--motion-mode",
@@ -4454,7 +4600,7 @@ def parse_args() -> argparse.Namespace:
     animate_submit_parser.add_argument("--animation-type", default="other")
     animate_submit_parser.add_argument(
         "--remove-bg-method",
-        default="standard",
+        default="advanced",
         choices=["none", "standard", "advanced"],
     )
 
@@ -4485,7 +4631,7 @@ def parse_args() -> argparse.Namespace:
     )
     keyframes_run_parser.add_argument(
         "--remove-bg-method",
-        default="standard",
+        default="advanced",
         choices=["none", "standard", "advanced"],
     )
     add_shared_runtime_args(keyframes_run_parser)
@@ -4503,6 +4649,8 @@ def parse_args() -> argparse.Namespace:
         "image-2-run",
         "image-edit-run",
         "animation-edit-run",
+        "one-click-upgrade-prompts",
+        "one-click-upgrade-run",
         "video-prompt-list",
         "video-run",
         "isometric-texture-run",
@@ -4625,6 +4773,20 @@ def main() -> int:
                     "get_prompt": "true",
                     "model_name": _video_model_name(args.motion_mode),
                 },
+                timeout=args.timeout,
+                verify=verify,
+            )
+            print(_format_public_json(payload))
+            return 0
+
+        if args.command == "one-click-upgrade-prompts":
+            payload = design_one_click_upgrade_prompts(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                reference_image=args.reference_image,
+                prompt=args.prompt,
+                count=args.count,
+                language=args.language,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -4839,6 +5001,7 @@ def main() -> int:
         curated_commands = {
             "image-edit-run",
             "animation-edit-run",
+            "one-click-upgrade-run",
             "video-run",
             "isometric-texture-run",
             "isometric-tileset-run",
@@ -4889,6 +5052,27 @@ def main() -> int:
                 files.append(("source_animation", _upload_part(args.animation_file, label="animation file")))
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
 
+            elif args.command == "one-click-upgrade-run":
+                prompts = [str(prompt or "").strip() for prompt in args.variant_prompt]
+                if not 1 <= len(prompts) <= 8:
+                    raise ValueError("one-click upgrade requires 1 to 8 --variant-prompt values")
+                if any(not prompt for prompt in prompts):
+                    raise ValueError("--variant-prompt values must not be empty")
+                if args.mode == "hd" and args.remove_bg_method == "advanced":
+                    raise ValueError("HD one-click upgrade supports only none or standard background removal")
+                endpoint = ONE_CLICK_UPGRADE_ENDPOINT
+                workflow_id = "one_click_upgrade"
+                slug_seed = prompts[0]
+                data = {
+                    "prompt_list": json.dumps(prompts, ensure_ascii=False),
+                    "count": str(len(prompts)),
+                    "mode": args.mode,
+                    "remove_bg_method": args.remove_bg_method,
+                }
+                if args.resolution:
+                    data["resolution"] = args.resolution
+                files.append(("reference_image", _upload_part(args.reference_image, label="reference image")))
+
             elif args.command == "video-run":
                 if not args.prompt.strip() and not (args.action.strip() and args.direction.strip()):
                     raise ValueError("video generation requires --prompt or both --action and --direction")
@@ -4901,7 +5085,7 @@ def main() -> int:
                     "direction": args.direction,
                     "pixel": "true" if args.pixel else "false",
                     "resolution": args.resolution,
-                    "ratio": args.aspect_ratio,
+                    "reference_mode": "first_last" if args.last_frame else "reference_image",
                     "frame_count": str(args.frame_count),
                     "animation_type": args.animation_type,
                     "model_name": _video_model_name(args.motion_mode),
@@ -5554,6 +5738,7 @@ def main() -> int:
                 final_payload=final_payload,
                 timeout=args.timeout,
                 verify=verify,
+                api_key=args.api_key,
                 no_download=args.no_download,
                 workflow_id="remove_background",
             )
@@ -5617,6 +5802,7 @@ def main() -> int:
                 final_payload=final_payload,
                 timeout=args.timeout,
                 verify=verify,
+                api_key=args.api_key,
                 no_download=args.no_download,
                 workflow_id="pixelate",
             )
@@ -5685,6 +5871,7 @@ def main() -> int:
                 final_payload=final_payload,
                 timeout=args.timeout,
                 verify=verify,
+                api_key=args.api_key,
                 no_download=args.no_download,
                 workflow_id="pixel_gen_self_loop",
             )
@@ -6516,6 +6703,7 @@ def main() -> int:
                 final_payload=final_payload,
                 timeout=args.timeout,
                 verify=verify,
+                api_key=args.api_key,
                 no_download=args.no_download,
                 workflow_id="animate",
             )
@@ -6573,6 +6761,7 @@ def main() -> int:
                 final_payload=final_payload,
                 timeout=args.timeout,
                 verify=verify,
+                api_key=args.api_key,
                 no_download=args.no_download,
                 workflow_id="animate",
             )
@@ -6598,6 +6787,7 @@ def main() -> int:
                     final_payload=payload,
                     timeout=args.timeout,
                     verify=verify,
+                    api_key=args.api_key,
                     no_download=args.no_download,
                     workflow_id="animate",
                 )

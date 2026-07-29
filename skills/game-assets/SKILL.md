@@ -1,6 +1,6 @@
 ---
 name: game-assets
-description: Create, edit, animate, and prepare production-ready game assets with Meowa, including pixel and HD sprites, multi-view characters, UI sheets, image and frame edits, seamless textures, terrain tilesets, isometric and side-scrolling maps, short video, sound effects, and game music. Use when a task requires choosing the right game-art workflow, planning a pixel or HD asset pipeline, running the bundled Meowa CLI, or validating final media for a game project.
+description: Create, edit, upgrade, animate, and prepare production-ready game assets with Meowa, including pixel and HD sprites, consistent item or character variants, multi-view characters, UI sheets, image and frame edits, seamless textures, terrain tilesets, isometric and side-scrolling maps, short video, sound effects, and game music. Use when a task requires choosing the right game-art workflow, planning a pixel or HD asset pipeline, running the bundled Meowa CLI, or validating final media for a game project.
 ---
 
 # Meowa Game Assets
@@ -78,7 +78,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 | [CLI setup and authentication](meowart_api.md) | Install the runner, configure a Meowa account key locally, and verify the first authenticated request | Read for a new installation or missing authentication |
 | [Capability routing](references/capability-routing.md) | Select the correct capability and public command | Read first for every task |
 | [Pixel and HD assets](references/pixel-and-hd-assets.md) | Create base assets and directional characters; perform background removal or pixel conversion | Feed finalized still assets into editing or animation |
-| [UI and image editing](references/ui-and-image-editing.md) | Generate UI sheets, extract an aggregate UI sheet, and edit still images or animated frames | Refine an existing visual asset without changing its media role |
+| [UI and image editing](references/ui-and-image-editing.md) | Generate UI sheets, create consistent upgrade variants, extract an aggregate UI sheet, and edit still images or animated frames | Refine or branch an existing visual asset without changing its media role |
 | [Maps, tiles, and textures](references/maps-tiles-and-textures.md) | Create repeatable materials, terrain atlases, isometric or hex tiles, and side-scrolling layers | Build environment assets from materials through map-ready outputs |
 | [Animation and video](references/animation-and-video.md) | Create seamless image loops, sprite animation, or short video clips | Consume a stable, finalized still asset |
 | [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, and rendered tracks | Add audio after gameplay timing and visual direction are known |
@@ -93,6 +93,7 @@ Use these common chains only when each downstream module accepts the preceding f
 - General pixel composition: `pixel-universal-gen-run` with a normal or top-down view → still edit when required → animate only when the resulting asset is suitably small.
 - HD character or prop: HD generation → still edit → optional background removal → sprite animation or short video.
 - HD batch: `nano-banana-run` or `image-2-run` → inspect the generated asset arrangement → use `ui-gen-run` instead when automatic background removal and component segmentation are required.
+- Consistent upgrades or variants: inspect and minimally pad the source canvas when the largest requested change needs more room → use `one-click-upgrade-prompts` for a concise editable prompt list → run `one-click-upgrade-run` with the reviewed prompts → compare style, scale, anchor, and dimensions across every result.
 - Existing animation: animated-frame editing. Do not regenerate it as a new animation unless the user asks for a new motion design.
 - Environment materials: search and download a standard 64×64 texture reference, or generate a new 64×64 seamless texture → choose a foreground-only, background-only, or dual top-down tileset → pass the matching validated texture inputs → remove the unused background for a one-terrain atlas when needed → validate the 4×4 atlas → map integration. A standalone HD image, object render, photo, or scene is not a texture.
 - Isometric or hex environment tiles: inspect map-reference categories → select and download matching built-in references → preview the references when layout or style needs comparison → generate from those references → preview and assemble the final tiles by logical centers → validate the composed map. Do not start these tile generators from arbitrary images. Generate side-scrolling layers directly because that command does not accept downloaded map presets.

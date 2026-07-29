@@ -15,7 +15,7 @@ Follow this preparation sequence before every `animate-run` or `keyframes-run`:
 1. **Start from the action's first pose.** The source image becomes the first animation frame, so do not default to a neutral standing pose for every action. For an attack, start with the character holding the weapon in a ready-to-strike pose. For walking or running, start with the legs already separated, one forward and one back. Jump and idle animations are less sensitive to the starting pose. A correct action-ready first frame lets the model spend its frame budget on the action and return naturally to the starting pose; beginning from an unrelated idle pose creates wind-up or transition frames that often look like waste frames and make a clean loop harder.
 2. **Prepare the pose with the appropriate still-image tool.** Use `image-edit-run` when one precise action pose is required; it is the highest-precision route. Use `character-multi-view-run` with an explicit action requirement in `--extra-constraint` when the same pose is needed across several directions. Eight-direction generation is faster for batching, but pose accuracy and directional consistency are usually lower than a focused still edit. Review the pose before animation.
 3. **Describe the motion simply.** Use a short, direct action description rather than a complicated story. Good inputs include `The character slashes to the right, with flames on the sword`, `The character makes a small jump in place`, and `The character runs forward`. State the principal action, direction, and one important effect; give the animation model room to resolve the motion.
-4. **Use the default prompt enhancement.** `animate-run` enables prompt enhancement by default. The backend reads the source image and the user's motion description, translates non-English input into English, and rewrites it into language that the animation model can understand more reliably. Keep the user's input focused on intent; do not manually add a long technical prompt unless the enhanced result has been reviewed and needs a specific correction.
+4. **Use the default prompt enhancement.** `animate-run` and `keyframes-run` enable prompt enhancement by default. The backend reads the source image and the user's motion description, translates non-English input into English, and rewrites it into language that the animation model can understand more reliably. Keep the user's input focused on intent; do not manually add a long technical prompt unless the enhanced result has been reviewed and needs a specific correction.
 5. **Route by source size.** For a PNG whose width and height are both no greater than 256 pixels, use pixel mode by passing `--is-pixel`. When either dimension exceeds 256 pixels, omit `--is-pixel` and use the general animation mode. Pixel mode applies pixel-specific motion and edge handling. General mode supports larger pixel artwork, chibi characters, and small HD or 2D characters, but it does not apply pixel-specific optimization, so large pixel-art edges may be less sharp. General-mode inputs must still satisfy its minimum dimensions; pad a narrow source when necessary instead of stretching its content.
 6. **Reserve transparent motion space.** The source image dimensions become the animation canvas, and canvas preparation is one of the strongest constraints on final quality. The model cannot reliably move a subject or effect into space that does not exist. Reserve transparent canvas along the full motion path: an attack needs room in the attack direction for the body, weapon, and effects; a jump needs room above; a backward jump, retreat, or dodge needs room behind. If direction is not fixed, reserve room on both sides. Prompt enhancement cannot compensate for missing canvas space.
 7. **Keep pixel characters compact, then pad.** Keep the pixel character content at 128×128 or smaller whenever practical, then expand the transparent canvas without resampling the character. The padded canvas may be larger than 128×128, but must remain within the selected animation mode's limits. Preserve the subject's anchor while padding, and verify that the subject, weapon, and effects will not touch a required edge during the motion.
@@ -78,7 +78,7 @@ python3 skills/game-assets/meowart_api.py animate-run \
   --output-frames 8 \
   --output-format webp \
   --animation-type idle \
-  --remove-bg-method standard \
+  --remove-bg-method advanced \
   --output-dir <output-dir>
 ```
 
@@ -101,6 +101,7 @@ python3 skills/game-assets/meowart_api.py keyframes-run \
   --total-frames 8 \
   --output-format webp \
   --animation-type attack \
+  --remove-bg-method advanced \
   --output-dir <output-dir>
 ```
 
@@ -115,7 +116,7 @@ python3 skills/game-assets/meowart_api.py video-prompt-list \
   --motion-mode controlled
 ```
 
-Use `controlled` for Seedance 1.5 and prefer it when the final frame must be controlled. Use `complex` for Seedance 2.0 when the motion is more complex and general video quality matters more than strict first-to-last-frame control.
+Use `controlled` when the final keyframe must be followed closely. Use `complex` when the motion is more complex and general video quality matters more than strict first-to-last-keyframe control.
 
 Keep video prompts short, clear, and literal. Video models follow long or complicated instructions less reliably than language or image-generation models. Describe the subject, one principal action, its direction, and at most one important effect. Use a built-in `--action` and `--direction` prompt when it already matches the request.
 
@@ -123,32 +124,30 @@ Create from a first frame:
 
 ```bash
 python3 skills/game-assets/meowart_api.py video-run \
-  --first-frame <start.png> \
+  --start-keyframe <start.png> \
   --prompt "The knight raises the shield, braces, and returns to the starting stance; locked camera" \
   --resolution 480p \
-  --aspect-ratio 1:1 \
   --frame-count 32 \
   --motion-mode complex \
   --animation-type idle \
   --output-dir <output-dir>
 ```
 
-Create a transition with an explicit last frame:
+Create a transition controlled by explicit start and end keyframes:
 
 ```bash
 python3 skills/game-assets/meowart_api.py video-run \
-  --first-frame <start.png> \
-  --last-frame <end.png> \
+  --start-keyframe <start.png> \
+  --end-keyframe <end.png> \
   --prompt "A clean attack transition from the first pose to the final pose; locked camera" \
   --resolution 720p \
-  --aspect-ratio 16:9 \
   --frame-count 48 \
   --motion-mode controlled \
   --animation-type attack \
   --output-dir <output-dir>
 ```
 
-Supported frame counts are 32, 40, and 48. Supported aspect ratios are 16:9, 4:3, 1:1, 3:4, and 9:16. Use `--pixel` for pixel-art motion. Public `video-run` generations do not generate audio.
+`--first-frame` and `--last-frame` remain aliases for `--start-keyframe` and `--end-keyframe`. Supplying only a start keyframe uses it as the visual reference. Supplying both selects first-to-last keyframe control. The service chooses the output canvas automatically from the prepared references; do not pass or invent an aspect ratio. Supported frame counts are 32, 40, and 48. Use `--pixel` for pixel-art motion. Public `video-run` generations do not generate audio.
 
 Instead of a free-form prompt, action templates may be selected with both `--action` and `--direction`. Never pass only one of the pair.
 
