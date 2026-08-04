@@ -114,6 +114,8 @@ Avoid unnecessary chains. Every generative step can change identity, scale, pale
 7. Open the saved media, inspect `final_outputs.json`, and validate every promised property before handoff.
 8. For isometric, hex, dual-grid, or side-scrolling work, start `scripts/map-preview-server.py` with downloaded public references or declared final outputs. Select `hd-isometric` or `hd-hex-isometric` for HD tiles, and declare tetraploid assets as `"footprint": "2x2"` in a JSON library; direct `--image` entries default to `1×1`. For side-scrolling, pass the directory containing the three final layers or a user-owned prefab manifest. Open its temporary loopback URL with the user's browser when browser control is available. Do not make the user browse deep directories, select files, copy paths, or navigate manually.
 
+For account-specific capabilities, run `custom-workflow-list` with the user's locally configured API key, then use `custom-workflow-run --workflow-id <id> --template-id <id> --params-json <file> --project-id <id> --thread-id <id>`. The params file is one JSON object; an `image_upload` value is a local file path. These commands use the authenticated catalog as the only discovery source. The runner downloads only the exact `final_outputs[]` projection and writes a sanitized `final_outputs.json`; it never traverses or persists other job fields or URLs.
+
 ## Keep the public boundary clean
 
 - Guide users to configure Meowa account authentication locally when needed, but never request the key itself or expose credentials, provider, model, endpoint, sampling, internal-stage, or raw-request controls.

@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 
@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required only for strict texture validation.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.07.30.3"
+MEOWART_API_CLI_VERSION = "2026.08.03.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -1571,6 +1571,186 @@ def get_credits_balance(
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
     return payload
+
+
+def list_custom_workflows(
+    *,
+    api_base: str,
+    api_key: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    response, payload = _request_json(
+        method="GET",
+        url=_normalize_base_url(api_base, "/api/custom-workflows"),
+        headers=_base_headers(api_key),
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    items = payload.get("items")
+    if not isinstance(items, list):
+        raise ValueError("custom workflow catalog response missing items list")
+    return {"items": [item for item in items if isinstance(item, dict)]}
+
+
+def _custom_workflow_catalog_item(
+    catalog: dict[str, Any],
+    workflow_id: str,
+    template_id: str,
+) -> dict[str, Any]:
+    normalized = str(workflow_id or "").strip()
+    normalized_template = str(template_id or "").strip()
+    for item in catalog.get("items") or []:
+        if (
+            isinstance(item, dict)
+            and str(item.get("workflow_id") or "").strip() == normalized
+            and str(item.get("template_id") or "").strip() == normalized_template
+        ):
+            return item
+    raise ValueError(
+        "custom workflow template is not available for this API key: "
+        f"{normalized}:{normalized_template}"
+    )
+
+
+def submit_custom_workflow(
+    *,
+    api_base: str,
+    api_key: str,
+    workflow_id: str,
+    template_id: str,
+    params_path: str,
+    project_id: str,
+    thread_id: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    catalog_item = _custom_workflow_catalog_item(
+        list_custom_workflows(api_base=api_base, api_key=api_key, timeout=timeout, verify=verify),
+        workflow_id,
+        template_id,
+    )
+    schema = catalog_item.get("ui_schema")
+    if not isinstance(schema, dict) or not isinstance(schema.get("fields"), list):
+        raise ValueError("custom workflow catalog contains an invalid UI schema")
+    schema_version = str(catalog_item.get("schema_version") or "").strip()
+    if not schema_version or schema_version != str(schema.get("schema_version") or "").strip():
+        raise ValueError("custom workflow schema version is invalid")
+
+    source_path = Path(params_path).expanduser().resolve()
+    if not source_path.is_file():
+        raise FileNotFoundError(f"params JSON not found: {source_path}")
+    try:
+        values = json.loads(source_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"params JSON is invalid: {exc}") from exc
+    if not isinstance(values, dict):
+        raise ValueError("params JSON must contain one JSON object")
+
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    for field in schema.get("fields") or []:
+        if not isinstance(field, dict) or str(field.get("type") or "") != "image_upload":
+            continue
+        name = str(field.get("name") or "").strip()
+        raw_path = values.pop(name, None)
+        if raw_path in (None, ""):
+            if field.get("required") is True:
+                raise ValueError(f"missing required image path in params JSON: {name}")
+            continue
+        if not isinstance(raw_path, str):
+            raise ValueError(f"image upload value must be a local path: {name}")
+        image_path = Path(raw_path).expanduser().resolve()
+        if not image_path.is_file():
+            raise FileNotFoundError(f"image upload not found: {image_path}")
+        mime_type = _mime_for_path(image_path)
+        if not mime_type.startswith("image/"):
+            raise ValueError(f"upload is not an image: {image_path}")
+        files.append((name, (image_path.name, image_path.read_bytes(), mime_type)))
+
+    operation_seed = json.dumps(
+        {
+            "workflow_id": workflow_id,
+            "template_id": template_id,
+            "project_id": project_id,
+            "thread_id": thread_id,
+            "time_ns": time.time_ns(),
+        },
+        sort_keys=True,
+    )
+    request_payload = {
+        "schema_version": schema_version,
+        "values": values,
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "client_operation_id": f"custom-workflow:{hashlib.sha256(operation_seed.encode('utf-8')).hexdigest()[:32]}",
+    }
+    response, payload = _request_json(
+        method="POST",
+        url=_normalize_base_url(
+            api_base,
+            f"/api/custom-workflows/{quote(workflow_id, safe='')}"
+            f"/templates/{quote(template_id, safe='')}/jobs",
+        ),
+        headers=_base_headers(api_key),
+        data={"payload": json.dumps(request_payload, ensure_ascii=False)} if files else None,
+        files=files or None,
+        json_body=None if files else request_payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def _save_custom_workflow_outputs(
+    *,
+    output_root: str,
+    workflow_id: str,
+    final_payload: dict[str, Any],
+    api_key: str,
+    timeout: int,
+    verify: bool,
+    no_download: bool,
+) -> tuple[Path, list[dict[str, Any]]]:
+    output_dir = _predict_saved_dir(output_root, workflow_id)
+    result = final_payload.get("result")
+    raw_outputs = result.get("final_outputs") if isinstance(result, dict) else None
+    exact_urls: list[tuple[str, str]] = []
+    seen_urls: set[str] = set()
+    for item in raw_outputs if isinstance(raw_outputs, list) else []:
+        if not isinstance(item, dict):
+            continue
+        output_key = str(item.get("output_key") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not output_key or not url.startswith("https://") or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        exact_urls.append((output_key, url))
+
+    downloads: list[dict[str, Any]] = []
+    if not no_download:
+        downloads = _download_named_urls(
+            urls=exact_urls,
+            output_dir=output_dir,
+            timeout=timeout,
+            verify=verify,
+            headers=_base_headers(api_key),
+        )
+    manifest_path = output_dir / "final_outputs.json"
+    manifest = {
+        "status": str(final_payload.get("status") or "").strip(),
+        "job_id": str(final_payload.get("job_id") or "").strip(),
+        "outputs": [
+            {"type": item.get("type"), "path": item.get("path"), "mime_type": item.get("mime_type")}
+            for item in downloads
+        ],
+    }
+    _save_json(manifest_path, manifest)
+    downloads.insert(0, {"type": "manifest", "path": str(manifest_path)})
+    return output_dir, downloads
 
 
 def poll_job_until_done(
@@ -4590,6 +4770,21 @@ def parse_args() -> argparse.Namespace:
 
     subparsers.add_parser("credits-balance", help="Get current credits balance")
 
+    subparsers.add_parser(
+        "custom-workflow-list",
+        help="List custom workflows enabled for the authenticated account",
+    )
+    custom_workflow_run = subparsers.add_parser(
+        "custom-workflow-run",
+        help="Submit and wait for one authorized custom workflow",
+    )
+    add_shared_path_args(custom_workflow_run)
+    custom_workflow_run.add_argument("--workflow-id", required=True)
+    custom_workflow_run.add_argument("--template-id", required=True)
+    custom_workflow_run.add_argument("--params-json", required=True, help="JSON object; image-upload values are local file paths")
+    custom_workflow_run.add_argument("--project-id", required=True)
+    custom_workflow_run.add_argument("--thread-id", required=True)
+
     animate_submit_parser = subparsers.add_parser("animate-submit", help="Submit an animate job")
     add_shared_path_args(animate_submit_parser)
     animate_submit_parser.add_argument("--image-file", required=True)
@@ -4678,6 +4873,8 @@ def parse_args() -> argparse.Namespace:
         "hd-hex-isometric-gen-run",
         "music-run",
         "credits-balance",
+        "custom-workflow-list",
+        "custom-workflow-run",
         "animate-run",
         "keyframes-run",
     }
@@ -4763,6 +4960,65 @@ def main() -> int:
         }
         needs_api_key = args.command not in no_auth_commands
         args.api_key = _resolve_auth_token() if needs_api_key else ""
+
+        if args.command == "custom-workflow-list":
+            payload = list_custom_workflows(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            print(_format_public_json(payload))
+            return 0
+
+        if args.command == "custom-workflow-run":
+            submit_payload = submit_custom_workflow(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                workflow_id=args.workflow_id,
+                template_id=args.template_id,
+                params_path=args.params_json,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            api_job_id = str(submit_payload.get("job_id") or "").strip()
+            if not api_job_id:
+                raise RuntimeError("custom workflow submit response missing job_id")
+            print(f"[INFO] submitted job_id={api_job_id}")
+            final_payload = poll_job_until_done(
+                jobs_url=_normalize_base_url(args.api_base, f"/api/jobs/{api_job_id}"),
+                api_key=args.api_key,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_custom_workflow_outputs(
+                output_root=str(effective_output_dir),
+                workflow_id=args.workflow_id,
+                final_payload=final_payload,
+                api_key=args.api_key,
+                timeout=args.timeout,
+                verify=verify,
+                no_download=args.no_download,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display({
+                "status": str(final_payload.get("status") or "").strip(),
+                "job_id": str(final_payload.get("job_id") or "").strip(),
+                "outputs": [
+                    {
+                        "type": item.get("type"),
+                        "path": item.get("path"),
+                        "mime_type": item.get("mime_type"),
+                    }
+                    for item in downloads
+                    if item.get("type") != "manifest"
+                ],
+            }))
+            return 0 if str(final_payload.get("status") or "").lower() == "success" else 1
 
         if args.command == "video-prompt-list":
             payload = submit_curated_workflow(
