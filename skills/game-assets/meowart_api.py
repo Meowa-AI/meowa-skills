@@ -1246,7 +1246,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "hd_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "hd_side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
     "image_edit": frozenset({"edited_path", "remove_bg_path", "url"}),
-    "image_expander": frozenset({"assembled_preview_path", "image_paths", "images", "tile_paths", "url"}),
+    "image_expander": frozenset({"target_tile_paths", "url"}),
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
