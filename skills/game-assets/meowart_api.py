@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required only for strict texture validation.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.03.1"
+MEOWART_API_CLI_VERSION = "2026.08.06.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -151,6 +151,7 @@ UI_GEN_POLL_COMMANDS = {
 }
 ONE_CLICK_UPGRADE_ENDPOINT = "/api/workflows/one_click_upgrade/run"
 ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT = "/api/workflows/one_click_upgrade/prompts"
+CUSTOM_SIZE_PIXEL_GEN_ENDPOINT = "/api/workflows/one_click_pixelate/run"
 PROMPT_ONLY_MAX_ATTEMPTS = 3
 PROMPT_ONLY_RETRY_DELAY_SECONDS = 5
 
@@ -1250,6 +1251,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
+    "one_click_pixelate": frozenset({"output_path"}),
     "one_click_upgrade": frozenset({"output_paths"}),
     "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
     "pixel_gen_general": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
@@ -4384,6 +4386,59 @@ def parse_args() -> argparse.Namespace:
         help="Keep the composed background or remove a simple background",
     )
 
+    custom_size_pixel_run = subparsers.add_parser(
+        "custom-size-pixel-gen-run",
+        help="Generate pixel art at a user-specified width and height",
+    )
+    add_shared_path_args(custom_size_pixel_run)
+    custom_size_pixel_run.add_argument(
+        "--prompt",
+        required=True,
+        help="Describe one pixel-art result and any simplification constraints",
+    )
+    custom_size_pixel_run.add_argument(
+        "--width",
+        required=True,
+        type=int,
+        help="Requested final width in pixels",
+    )
+    custom_size_pixel_run.add_argument(
+        "--height",
+        required=True,
+        type=int,
+        help="Requested final height in pixels",
+    )
+    custom_size_pixel_run.add_argument(
+        "--reference-image",
+        action="append",
+        default=[],
+        help="Optional content reference; repeat up to 8 times",
+    )
+    custom_size_pixel_run.add_argument(
+        "--generation-model",
+        default="nano-banana",
+        choices=["nano-banana", "image-2"],
+        help="Generation model; Nano Banana is recommended and used by default",
+    )
+    custom_size_pixel_run.set_defaults(fill_canvas=True)
+    custom_size_pixel_run.add_argument(
+        "--fill-canvas",
+        action="store_true",
+        dest="fill_canvas",
+        help="Ask the subject to occupy as much of the requested canvas as its shape allows",
+    )
+    custom_size_pixel_run.add_argument(
+        "--no-fill-canvas",
+        action="store_false",
+        dest="fill_canvas",
+        help="Do not ask the subject to fill the requested canvas",
+    )
+    custom_size_pixel_run.add_argument(
+        "--strong-pixelation",
+        action="store_true",
+        help="With a reference, use stronger redraw preprocessing before pixel generation",
+    )
+
     pixel_poll = subparsers.add_parser("pixel-gen-poll", help="Poll one pixel-gen job")
     add_shared_path_args(pixel_poll)
     pixel_poll.add_argument("--api-job-id", required=True)
@@ -4857,6 +4912,7 @@ def parse_args() -> argparse.Namespace:
         "large-pixel-template-info",
         "large-pixel-gen-run",
         "pixel-universal-gen-run",
+        "custom-size-pixel-gen-run",
         "hd-gen-template-info",
         "hd-gen-run",
         "character-multi-view-run",
@@ -5257,6 +5313,7 @@ def main() -> int:
         curated_commands = {
             "image-edit-run",
             "animation-edit-run",
+            "custom-size-pixel-gen-run",
             "one-click-upgrade-run",
             "video-run",
             "isometric-texture-run",
@@ -5289,6 +5346,35 @@ def main() -> int:
                     "aspect_ratio": args.aspect_ratio,
                 }
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
+
+            elif args.command == "custom-size-pixel-gen-run":
+                references = list(args.reference_image or [])
+                if len(references) > 8:
+                    raise ValueError("custom-size pixel generation accepts at most 8 reference images")
+                if args.width < 1 or args.height < 1:
+                    raise ValueError("custom-size pixel generation width and height must be positive")
+                if args.strong_pixelation and not references:
+                    raise ValueError("--strong-pixelation requires at least one --reference-image")
+                endpoint = CUSTOM_SIZE_PIXEL_GEN_ENDPOINT
+                workflow_id = "one_click_pixelate"
+                slug_seed = args.prompt
+                data = {
+                    "prompt": args.prompt,
+                    "width": str(args.width),
+                    "height": str(args.height),
+                    "content_mode": "other",
+                    "fill_canvas": "true" if args.fill_canvas else "false",
+                    "strong_mode": "true" if args.strong_pixelation else "false",
+                    "remove_bg_method": "none",
+                    "generation_provider": (
+                        "nanobanana" if args.generation_model == "nano-banana" else "image2"
+                    ),
+                    "generation_speed": "normal",
+                }
+                files.extend(
+                    ("reference_images", _upload_part(path, label="reference image"))
+                    for path in references
+                )
 
             elif args.command == "animation-edit-run":
                 animation_path = Path(args.animation_file).expanduser()

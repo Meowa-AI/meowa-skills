@@ -6,6 +6,7 @@
 - Purpose and capability boundaries
 - Preset-driven pixel and HD generation
 - General HD generation
+- Custom-size pixel generation
 - Large-pixel and Pixel Universal generation
 - Directional characters
 - Background removal and pixel cleanup
@@ -42,7 +43,8 @@ Use this module to create the base still asset for a character, prop, item, icon
 | Generate unrestricted HD assets | `nano-banana-run`, `image-2-run` | Produce a scene, illustration, sprite sheet, or batch of assets | Prompt controls the arrangement; no preset asset contract |
 | Discover large-pixel presets | `large-pixel-template-info` | Choose a supported large canvas shape | Lists only the large-pixel family |
 | Generate a large pixel asset | `large-pixel-gen-run` | Produce a scene, illustration, portrait, building, or other large pixel composition | Requires a preset from large-pixel discovery |
-| Generate a general-purpose 4:3 pixel image | `pixel-universal-gen-run` | Produce a normal-view or top-down pixel composition without choosing a preset | Uses the fixed large 4:3 canvas contract |
+| Generate a general-purpose 4:3 pixel image or asset pack | `pixel-universal-gen-run` | Produce a normal-view or top-down pixel composition without choosing a preset | Uses the fixed large 4:3 `xlarge` canvas contract |
+| Generate one pixel object at a custom size | `custom-size-pixel-gen-run` | Produce one object, or regenerate one source image, at a user-specified width and height | Not suitable for asset packs; less reliable than a matching fixed-size preset |
 | Generate directional character views | `character-multi-view-run` | Produce an eight-direction character set | Requires a stable character reference |
 | Remove a background | `remove-background-run` | Produce a transparent version of an existing asset | Edge quality depends on source complexity |
 | Convert existing artwork to pixel art | `pixelate-run` | Produce a new pixel-style asset | Does not guarantee a hand-authored sprite or preset size |
@@ -52,7 +54,9 @@ Use a generated still asset as input to image editing, directional-view generati
 For pixel sprites, choose by production goal:
 
 - Use preset-driven `pixel-gen-run` when exact dimensions or the highest available pixel quality matter.
-- Use the general pixel canvas through `pixel-universal-gen-run` for low-cost, high-volume sprite batches and fast prototypes. Ask for a clearly spaced sprite sheet. Expect somewhat lower per-sprite fidelity and weaker exact-size control than preset-driven generation.
+- Use `custom-size-pixel-gen-run` only when the requested width and height do not match a suitable fixed preset. It targets the requested dimensions but is less reliable than 32px, 64px, and other preset-driven templates.
+- Use `custom-size-pixel-gen-run` for one object or to regenerate one source image at a specified pixel size. Do not use it to generate an asset pack.
+- Use the general pixel canvas through `pixel-universal-gen-run` for asset packs, low-cost high-volume sprite batches, and fast prototypes. Its built-in 4:3 `xlarge` mode includes asset-pack optimizations and allows many assets with different sizes to share one freer canvas. Expect lower fidelity and weaker exact-size control than preset-driven generation.
 
 ## Preset-driven generation
 
@@ -126,6 +130,42 @@ python3 skills/game-assets/meowart_api.py image-2-run \
 - For batch generation, describe the asset count, shared style, spacing, background, and sheet arrangement. Review that every asset is complete and non-overlapping.
 - Inspect for unintended labels or decorative lettering even when the prompt says `no text`; asset sheets can still introduce short item labels and may need regeneration or editing.
 - Use `ui-gen-run` instead when the generated sheet also needs automatic background removal and component segmentation. That module is prompt-driven and can generate ordinary art assets or sprite sheets in addition to interface graphics.
+
+## Custom-size pixel generation
+
+Use this mode when one object's final pixel dimensions are explicit and no fixed-size preset fits, or when one source image should be regenerated as pixel art at a specified size:
+
+```bash
+python3 skills/game-assets/meowart_api.py custom-size-pixel-gen-run \
+  --prompt "A minimal standing forest ranger, simple color blocks, no complex textures" \
+  --width 48 \
+  --height 80 \
+  --generation-model nano-banana \
+  --output-dir <output-dir>
+```
+
+Add one or more references only when identity, pose, or art direction must be retained:
+
+```bash
+python3 skills/game-assets/meowart_api.py custom-size-pixel-gen-run \
+  --prompt "Keep the character recognizable, but keep the design minimal and replace complex textures with simple color blocks" \
+  --width 48 \
+  --height 80 \
+  --reference-image <character.png> \
+  --strong-pixelation \
+  --output-dir <output-dir>
+```
+
+- Prefer a matching fixed-size preset whenever one exists. User-specified dimensions are supported when they fit the generation canvas, but generation is less reliable than a purpose-built 32px, 64px, or similar preset.
+- Generate one object at a time. This mode is also suitable for converting one specified-size source image into a new pixel-art result, but it is not suitable for an asset pack.
+- For an asset pack, use `pixel-universal-gen-run`. Its built-in 4:3 `xlarge` mode contains asset-pack optimizations and offers enough freedom to produce many differently sized assets in one image. Prefer a basic fixed template when one fits, because it remains more reliable than the freer large canvas.
+- Text-only generation is relatively stable. Reference-guided generation is less stable, especially for complex references, so expect to test and refine the prompt.
+- Reduce reference complexity explicitly when needed. Useful constraints include “keep the design minimal” and “reduce complex textures and express the character with simple color blocks.” Describe one subject and preserve only the visual details that matter.
+- Use Nano Banana by default. `--generation-model image-2` is available for comparison when the default result is unsuitable.
+- Background removal is intentionally disabled in this command. First approve the generated image, then call `remove-background-run`; this avoids paying for background removal on generations that will be discarded.
+- Fill-canvas is enabled by default. It asks the subject to occupy as much of the target frame as its shape allows, which can bring the result closer to the requested size. It cannot make incompatible geometry fit: a standing character may still leave horizontal space on a wide canvas. Pass `--no-fill-canvas` when preserving breathing room or proportions matters more.
+- `--strong-pixelation` requires at least one reference. Try it when the reference is low quality or already pixelated, because those sources can encourage copying instead of regeneration. Strong pixelation applies a more forceful redraw step, but it still cannot guarantee a successful result.
+- Inspect the final dimensions, silhouette, readable pixel clusters, and reference fidelity. If the first result is too detailed or too close to the source, simplify the prompt before changing models.
 
 ## Large-pixel and Pixel Universal generation
 

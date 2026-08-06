@@ -6,7 +6,8 @@ Use this module to select one primary public command. Prefer the most specialize
 |---|---|---|
 | Pixel character, prop, icon, item, sprite batch, or preset-driven pixel asset | `pixel-gen-run` | `pixel-and-hd-assets.md` |
 | Large pixel scene, illustration, portrait, building, or other large preset-driven composition | `large-pixel-gen-run` | `pixel-and-hd-assets.md` |
-| Low-cost high-volume pixel sprites, a prototype asset sheet, general 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
+| Pixel asset pack, low-cost high-volume sprites, prototype asset sheet, general 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
+| One pixel object at a user-specified width and height, or one source image regenerated as pixel art at a specified size | `custom-size-pixel-gen-run` | `pixel-and-hd-assets.md` |
 | HD character, prop, icon, or asset pack | `hd-gen-run` | `pixel-and-hd-assets.md` |
 | General HD image, scene, illustration, sprite sheet, or batch of art assets | `nano-banana-run` or `image-2-run` | `pixel-and-hd-assets.md` |
 | Eight-direction character sheet using mirrored or nine-grid generation | `character-multi-view-run` | `pixel-and-hd-assets.md` |
@@ -34,6 +35,11 @@ Use this module to select one primary public command. Prefer the most specialize
 
 - Use preset discovery before guessing a pixel, large-pixel, or HD preset: run `pixel-gen-template-info`, `large-pixel-template-info`, or `hd-gen-template-info`.
 - Use preset-driven `pixel-gen-run` when exact dimensions or maximum pixel quality matter. Use `pixel-universal-gen-run` when low-cost volume and rapid prototyping matter more; it can produce many sprites on one general pixel canvas, but its per-sprite quality and size control are weaker.
+- Prefer a fixed-size preset such as a 32px or 64px template when one matches the deliverable. `custom-size-pixel-gen-run` accepts user-specified dimensions when they fit the generation canvas, but it is less reliable than preset-driven generation.
+- Keep custom-size generation to one object or one source image converted into a requested pixel size. Do not use it for asset packs. For a pack, prefer a matching fixed template; when the pack needs freer composition or many differently sized assets, use `pixel-universal-gen-run`, whose built-in 4:3 `xlarge` mode includes asset-pack optimizations. The large canvas is more flexible but remains less reliable than basic template-driven generation.
+- Prefer text-only custom-size generation. A reference-guided run is less stable, especially when the reference is visually complex; simplify and iterate the prompt with constraints such as “keep the design minimal” or “reduce complex textures and express the character with simple color blocks.”
+- Default custom-size generation to Nano Banana. Switch to Image-2 only when comparison is useful. Keep background removal off during prompt iteration, then run `remove-background-run` on an approved result to avoid paying for removal on discarded generations.
+- Treat fill-canvas as a composition request, not a geometric guarantee. A tall standing character cannot necessarily fill a wide canvas without distortion or cropping. Use strong pixelation only with a reference, especially when a low-quality or already-pixelated source causes the model to copy instead of redraw; it improves enforcement but does not guarantee success.
 - Use `pixel-universal-gen-run` for a flexible pixel scene or illustration rather than an exact small-sprite contract. Select `top-down` only when the camera must be overhead.
 - Use `nano-banana-run` or `image-2-run` for unrestricted HD generation and batches. Use `ui-gen-run` instead when the requested sheet also needs automatic background removal and component segmentation; UI generation is prompt-driven and can produce ordinary assets or sprite sheets, not only interface graphics.
 - Use `pixelate-run` only for explicit visual conversion; it is not a generic exact-size sprite generator.
