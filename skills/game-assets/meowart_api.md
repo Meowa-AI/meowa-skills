@@ -53,7 +53,10 @@ MEOWART_API_KEY="ma_live_xxxxxxxxxxxxxxxxxxxx"
 python3 skills/game-assets/meowart_api.py credits-balance
 ```
 
-能够返回当前账户余额即表示配置成功。`map-reference-search` 和 `map-reference-download` 可在未认证时使用，但图片、动画、视频和音频生成命令都需要有效的 Meowa API key。
+能够返回当前账户余额即表示配置成功。输出中的 `total_credits` 是总可用积分，等于
+`paid_credits + subscription_credits + trial_credits`；`trial_credits` 是有期限的体验积分，
+其最近到期时间由 `next_trial_credit_expires_at` 表示。`map-reference-search` 和
+`map-reference-download` 可在未认证时使用，但图片、动画、视频和音频生成命令都需要有效的 Meowa API key。
 
 如果看到以下错误：
 

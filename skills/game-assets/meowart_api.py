@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required only for strict texture validation.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.06.1"
+MEOWART_API_CLI_VERSION = "2026.08.12.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -1573,6 +1573,27 @@ def get_credits_balance(
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
     return payload
+
+
+def _credits_balance_for_display(payload: dict[str, Any]) -> dict[str, Any]:
+    """Present wallet buckets without implying that `credits` is the total."""
+    non_trial_credits = max(0, int(payload.get("credits") or 0))
+    trial_credits = max(0, int(payload.get("trial_credits") or 0))
+    subscription_credits = max(0, int(payload.get("subscription_credits") or 0))
+    permanent_value = payload.get("permanent_credits")
+    paid_credits = (
+        max(0, int(permanent_value))
+        if isinstance(permanent_value, int)
+        else max(0, non_trial_credits - subscription_credits)
+    )
+    return {
+        "total_credits": non_trial_credits + trial_credits,
+        "paid_credits": paid_credits,
+        "subscription_credits": subscription_credits,
+        "trial_credits": trial_credits,
+        "next_trial_credit_expires_at": payload.get("next_trial_credit_expires_at"),
+        "next_subscription_credit_expires_at": payload.get("next_subscription_credit_expires_at"),
+    }
 
 
 def list_custom_workflows(
@@ -6964,7 +6985,7 @@ def main() -> int:
                 downloads=[],
                 effective_output_dir=str(effective_output_dir),
             )
-            print(_format_json_for_display(payload))
+            print(_format_public_json(_credits_balance_for_display(payload)))
             return 0
 
         if args.command == "animate-submit":
