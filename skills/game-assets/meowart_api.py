@@ -3946,6 +3946,15 @@ def _save_run_outputs(
         for key, url in _collect_http_urls(final_payload)
         if _looks_like_downloadable_output_url(key, url, workflow_id=normalized_workflow_id)
     ]
+    require_animate_media = (
+        normalized_workflow_id == "animate"
+        and str(final_payload.get("status") or "").strip().lower() in SUCCESS_ANIMATE_STATUSES
+        and not no_download
+    )
+    if require_animate_media and not urls:
+        raise RuntimeError(
+            "animate job succeeded but the job response contained no downloadable final media"
+        )
     if not no_download and urls:
         print(f"[INFO] downloading_outputs count={len(urls)} to={output_dir}")
         headers = _base_headers(api_key) if api_key else None
@@ -3956,6 +3965,10 @@ def _save_run_outputs(
             verify=verify,
             headers=headers,
         ))
+    if require_animate_media and not downloads:
+        raise RuntimeError(
+            "animate job succeeded but no final media could be downloaded"
+        )
     final_outputs_path = output_dir / "final_outputs.json"
     manifest = {
         "status": str(final_payload.get("status") or "").strip(),
