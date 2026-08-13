@@ -19,10 +19,10 @@ import requests
 
 try:
     from PIL import Image
-except ImportError:  # Pillow is required only for strict texture validation.
+except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.12.1"
+MEOWART_API_CLI_VERSION = "2026.08.12.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -1553,6 +1553,25 @@ def image_file_to_data_url(image_path: str) -> str:
     mime = _mime_for_path(path)
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def resolve_animate_is_pixel(image_path: str, *, requested_is_pixel: bool = False) -> bool:
+    if requested_is_pixel:
+        return True
+    if Image is None:
+        raise RuntimeError("Pillow is required for animation routing; run: python3 -m pip install Pillow")
+
+    path = Path(image_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"image not found: {path}")
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            image_format = str(image.format or "").upper()
+    except Exception as exc:
+        raise ValueError(f"animation source must be a valid image: {path}") from exc
+
+    return image_format == "PNG" and width <= 256 and height <= 256
 
 
 def get_credits_balance(
@@ -4878,7 +4897,11 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(animate_submit_parser)
     animate_submit_parser.add_argument("--image-file", required=True)
     animate_submit_parser.add_argument("--prompt", default="")
-    animate_submit_parser.add_argument("--is-pixel", action="store_true")
+    animate_submit_parser.add_argument(
+        "--is-pixel",
+        action="store_true",
+        help="Force pixel mode; PNG inputs up to 256x256 select it automatically",
+    )
     animate_submit_parser.add_argument("--output-frames", type=int, default=8)
     animate_submit_parser.add_argument("--output-format", default="webp", choices=["webp", "gif", "spritesheet"])
     animate_submit_parser.add_argument("--animation-type", default="other")
@@ -7002,12 +7025,16 @@ def main() -> int:
             return 0
 
         if args.command == "animate-submit":
+            is_pixel = resolve_animate_is_pixel(
+                args.image_file,
+                requested_is_pixel=args.is_pixel,
+            )
             payload = submit_animate(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_data_url=image_file_to_data_url(args.image_file),
                 prompt=args.prompt,
-                is_pixel=args.is_pixel,
+                is_pixel=is_pixel,
                 output_frames=args.output_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
@@ -7020,7 +7047,7 @@ def main() -> int:
                 started_at=started_at,
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 args=args,
-                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
+                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": is_pixel},
                 response_payload=payload,
                 downloads=[],
                 effective_output_dir=str(effective_output_dir),
@@ -7030,12 +7057,16 @@ def main() -> int:
 
         if args.command == "animate-run":
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt or Path(args.image_file).stem)}")
+            is_pixel = resolve_animate_is_pixel(
+                args.image_file,
+                requested_is_pixel=args.is_pixel,
+            )
             submit_payload = submit_animate(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_data_url=image_file_to_data_url(args.image_file),
                 prompt=args.prompt,
-                is_pixel=args.is_pixel,
+                is_pixel=is_pixel,
                 output_frames=args.output_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
@@ -7063,7 +7094,7 @@ def main() -> int:
                     started_at=started_at,
                     finished_at=datetime.now().isoformat(timespec="seconds"),
                     args=args,
-                    request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
+                    request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": is_pixel},
                     response_payload={"submit": submit_payload},
                     downloads=[],
                     effective_output_dir=str(effective_output_dir),
@@ -7088,7 +7119,7 @@ def main() -> int:
                 started_at=started_at,
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 args=args,
-                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
+                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": is_pixel},
                 response_payload={"submit": submit_payload, "final": final_payload},
                 downloads=downloads,
                 effective_output_dir=str(output_dir),
