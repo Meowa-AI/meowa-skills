@@ -19,11 +19,17 @@ import requests
 
 try:
     from PIL import Image
-except ImportError:  # Pillow is required only for strict texture validation.
+except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.12.1"
+MEOWART_API_CLI_VERSION = "2026.08.13.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
+GAME_ASSETS_SKILL_NAME = "game-assets"
+GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
+GAME_ASSETS_SKILL_VERSION_HEADER = "X-Meowa-Skill-Version"
+GAME_ASSETS_SKILL_LATEST_VERSION_HEADER = "X-Meowa-Skill-Latest-Version"
+GAME_ASSETS_UPGRADE_ERROR_CODE = "skill_upgrade_required"
+GAME_ASSETS_UPDATE_URL = "https://github.com/Meowa-AI/meowa-skills"
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
 _DEV_AUTH_PREFIX = "x-dev-key:"
@@ -156,6 +162,14 @@ PROMPT_ONLY_MAX_ATTEMPTS = 3
 PROMPT_ONLY_RETRY_DELAY_SECONDS = 5
 
 
+class SkillUpgradeRequiredError(RuntimeError):
+    """The service requires a newer game-assets runner."""
+
+
+class SkillCompatibilityError(RuntimeError):
+    """The service response no longer matches this runner's public contract."""
+
+
 def _configure_stdio() -> None:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -190,6 +204,108 @@ def _parse_json_response(response: requests.Response) -> dict[str, Any]:
     return payload
 
 
+def _skill_version_headers() -> dict[str, str]:
+    return {
+        "User-Agent": f"MeowaGameAssets/{MEOWART_API_CLI_VERSION}",
+        GAME_ASSETS_SKILL_NAME_HEADER: GAME_ASSETS_SKILL_NAME,
+        GAME_ASSETS_SKILL_VERSION_HEADER: MEOWART_API_CLI_VERSION,
+    }
+
+
+def _request_headers_for_url(
+    url: str,
+    headers: dict[str, str] | None = None,
+) -> dict[str, str]:
+    merged = dict(headers or {})
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme.lower() == "https" and (parsed.hostname or "").lower() == AUTH_HEADER_HOST:
+        merged.update(_skill_version_headers())
+    return merged
+
+
+def _upgrade_detail(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    detail = payload.get("detail")
+    if isinstance(detail, dict) and str(detail.get("code") or "").strip() == GAME_ASSETS_UPGRADE_ERROR_CODE:
+        return detail
+    if str(payload.get("error_code") or payload.get("code") or "").strip() == GAME_ASSETS_UPGRADE_ERROR_CODE:
+        return payload
+    return None
+
+
+def _upgrade_required_message(
+    *,
+    required_version: str,
+    update_url: str,
+) -> str:
+    required = str(required_version or "latest").strip() or "latest"
+    source = str(update_url or GAME_ASSETS_UPDATE_URL).strip() or GAME_ASSETS_UPDATE_URL
+    return (
+        "Your Meowa game-assets Skill must be updated before this request can continue. "
+        f"Installed version: {MEOWART_API_CLI_VERSION}; required version: {required}. "
+        f"Update the Skill from {source}, copy the complete skills/game-assets directory "
+        "into your Codex skills directory, then verify it with "
+        "python3 skills/game-assets/meowart_api.py --version. "
+        "If a paid job was already submitted, retry the matching *-poll command with the "
+        "original job ID; do not submit the generation again."
+    )
+
+
+def _raise_for_skill_upgrade(response: Any, payload: Any) -> None:
+    detail = _upgrade_detail(payload)
+    if int(getattr(response, "status_code", 0) or 0) != 426 and detail is None:
+        return
+    detail = detail or {}
+    response_headers = getattr(response, "headers", {}) or {}
+    required_version = str(
+        detail.get("required_version")
+        or response_headers.get(GAME_ASSETS_SKILL_LATEST_VERSION_HEADER)
+        or "latest"
+    ).strip()
+    update_url = str(detail.get("update_url") or GAME_ASSETS_UPDATE_URL).strip()
+    raise SkillUpgradeRequiredError(
+        _upgrade_required_message(
+            required_version=required_version,
+            update_url=update_url,
+        )
+    )
+
+
+def _compatibility_error(reason: str, *, job_id: str = "") -> SkillCompatibilityError:
+    recovery = (
+        f" After updating, retry the matching *-poll command with job ID {job_id}; "
+        "do not submit the generation again."
+        if str(job_id or "").strip()
+        else ""
+    )
+    return SkillCompatibilityError(
+        "The Meowa API response is incompatible with this Skill; check for a Skill update at "
+        f"{GAME_ASSETS_UPDATE_URL}. Details: {reason}.{recovery}"
+    )
+
+
+def _validate_job_payload(payload: dict[str, Any], *, expected_job_id: str = "") -> None:
+    status = str(payload.get("status") or "").strip().lower()
+    if not status:
+        raise _compatibility_error("job response is missing status", job_id=expected_job_id)
+    known_statuses = ACTIVE_JOB_STATUSES | TERMINAL_JOB_STATUSES | TERMINAL_ANIMATE_STATUSES
+    if status not in known_statuses:
+        raise _compatibility_error(
+            f"job response returned unknown status {status!r}",
+            job_id=expected_job_id,
+        )
+
+    returned_job_id = str(
+        payload.get("job_id") or payload.get("api_job_id") or payload.get("id") or ""
+    ).strip()
+    if expected_job_id and returned_job_id and returned_job_id != expected_job_id:
+        raise _compatibility_error(
+            f"job response identity {returned_job_id!r} did not match {expected_job_id!r}",
+            job_id=expected_job_id,
+        )
+
+
 def _request_json(
     *,
     method: str,
@@ -205,7 +321,7 @@ def _request_json(
     response = requests.request(
         method=method,
         url=url,
-        headers=headers,
+        headers=_request_headers_for_url(url, headers),
         params=params,
         data=data,
         files=files,
@@ -214,11 +330,24 @@ def _request_json(
         verify=verify,
     )
     try:
-        return response, _parse_json_response(response)
+        payload = _parse_json_response(response)
+        _raise_for_skill_upgrade(response, payload)
+        return response, payload
     except ValueError as exc:
+        if int(getattr(response, "status_code", 0) or 0) == 426:
+            _raise_for_skill_upgrade(response, {})
         hint = _endpoint_hint_for_response(response)
         if hint and hint not in str(exc):
             raise ValueError(f"{exc}{hint}") from exc
+        response_status = int(getattr(response, "status_code", 0) or 0)
+        response_path = urlparse(str(url)).path.rstrip("/")
+        is_job_poll = (
+            response_path == "/api/jobs"
+            or response_path.startswith("/api/jobs/")
+            or response_path in {"/api/pixel-gen/jobs", "/api/hd-gen/jobs"}
+        )
+        if 200 <= response_status < 300 and is_job_poll:
+            raise _compatibility_error(str(exc)) from exc
         raise
 
 
@@ -1052,7 +1181,19 @@ def _download_file(
 ) -> str:
     if urlparse(url).scheme.lower() != "https":
         raise ValueError("refusing non-HTTPS download")
-    response = requests.get(url, timeout=timeout, verify=verify, headers=headers or None)
+    request_headers = _request_headers_for_url(url, headers)
+    response = requests.get(
+        url,
+        timeout=timeout,
+        verify=verify,
+        headers=request_headers or None,
+    )
+    if int(getattr(response, "status_code", 200) or 200) == 426:
+        try:
+            payload = response.json()
+        except (requests.RequestException, ValueError, AttributeError):
+            payload = {}
+        _raise_for_skill_upgrade(response, payload)
     response.raise_for_status()
     content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
     if require_media and not content_type.startswith(("image/", "audio/", "video/")):
@@ -1079,9 +1220,12 @@ def _safe_slug(value: str) -> str:
 
 def _base_headers(api_key: str) -> dict[str, str]:
     token = str(api_key or "").strip()
+    headers = _skill_version_headers()
     if token.startswith(_DEV_AUTH_PREFIX):
-        return {"X-Dev-Key": token.removeprefix(_DEV_AUTH_PREFIX)}
-    return {"Authorization": f"Bearer {token}"}
+        headers["X-Dev-Key"] = token.removeprefix(_DEV_AUTH_PREFIX)
+        return headers
+    headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _should_send_auth_headers(url: str) -> bool:
@@ -1555,6 +1699,25 @@ def image_file_to_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
+def resolve_animate_is_pixel(image_path: str, *, requested_is_pixel: bool = False) -> bool:
+    if requested_is_pixel:
+        return True
+    if Image is None:
+        raise RuntimeError("Pillow is required for animation routing; run: python3 -m pip install Pillow")
+
+    path = Path(image_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"image not found: {path}")
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            image_format = str(image.format or "").upper()
+    except Exception as exc:
+        raise ValueError(f"animation source must be a valid image: {path}") from exc
+
+    return image_format == "PNG" and width <= 256 and height <= 256
+
+
 def get_credits_balance(
     *,
     api_base: str,
@@ -1754,6 +1917,15 @@ def _save_custom_workflow_outputs(
         exact_urls.append((output_key, url))
 
     downloads: list[dict[str, Any]] = []
+    succeeded = str(final_payload.get("status") or "").strip().lower() in {
+        "success",
+        "completed",
+    }
+    if succeeded and not no_download and not exact_urls:
+        raise _compatibility_error(
+            "successful custom workflow response contained no declared final outputs",
+            job_id=str(final_payload.get("job_id") or "").strip(),
+        )
     if not no_download:
         downloads = _download_named_urls(
             urls=exact_urls,
@@ -1803,6 +1975,7 @@ def poll_job_until_done(
             continue
 
         _print_status("[INFO]", payload)
+        _validate_job_payload(payload)
         status = str(payload.get("status") or "").strip().lower()
         if status in TERMINAL_JOB_STATUSES:
             final_payload = payload
@@ -2006,6 +2179,7 @@ def poll_pixel_gen_job(
     )
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
+    _validate_job_payload(payload, expected_job_id=api_job_id)
     return payload
 
 
@@ -2265,6 +2439,7 @@ def poll_hd_gen_job(
     )
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
+    _validate_job_payload(payload, expected_job_id=api_job_id)
     return payload
 
 
@@ -2989,10 +3164,11 @@ def design_one_click_upgrade_prompts(
 
     for attempt in range(1, PROMPT_ONLY_MAX_ATTEMPTS + 1):
         try:
+            prompt_url = _normalize_base_url(api_base, ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT)
             response = requests.request(
                 method="POST",
-                url=_normalize_base_url(api_base, ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT),
-                headers=_base_headers(api_key),
+                url=prompt_url,
+                headers=_request_headers_for_url(prompt_url, _base_headers(api_key)),
                 data=request_data,
                 files=request_files,
                 timeout=timeout,
@@ -3002,6 +3178,12 @@ def design_one_click_upgrade_prompts(
             last_error = exc
         else:
             content_type = response.headers.get("content-type", "")
+            if response.status_code == 426:
+                try:
+                    upgrade_payload = response.json()
+                except (requests.RequestException, ValueError):
+                    upgrade_payload = {}
+                _raise_for_skill_upgrade(response, upgrade_payload)
             if (
                 response.status_code >= 400
                 and response.status_code != 429
@@ -3811,6 +3993,7 @@ def poll_job(
     )
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
+    _validate_job_payload(payload, expected_job_id=api_job_id)
     return payload
 
 
@@ -3911,6 +4094,8 @@ def wait_animate_job(
                 timeout=timeout,
                 verify=verify,
             )
+        except (SkillUpgradeRequiredError, SkillCompatibilityError):
+            raise
         except (requests.RequestException, RuntimeError, ValueError) as exc:
             print(f"[WARN] animate poll request failed: {exc}", file=sys.stderr)
             time.sleep(max(poll_interval, 0.1))
@@ -3951,9 +4136,16 @@ def _save_run_outputs(
         and str(final_payload.get("status") or "").strip().lower() in SUCCESS_ANIMATE_STATUSES
         and not no_download
     )
-    if require_animate_media and not urls:
-        raise RuntimeError(
-            "animate job succeeded but the job response contained no downloadable final media"
+    succeeded = str(final_payload.get("status") or "").strip().lower() in {
+        "success",
+        "completed",
+    }
+    if succeeded and normalized_workflow_id and not no_download and not urls:
+        raise _compatibility_error(
+            "successful job response contained no downloadable declared final media",
+            job_id=str(
+                final_payload.get("api_job_id") or final_payload.get("job_id") or ""
+            ).strip(),
         )
     if not no_download and urls:
         print(f"[INFO] downloading_outputs count={len(urls)} to={output_dir}")
@@ -4878,7 +5070,11 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(animate_submit_parser)
     animate_submit_parser.add_argument("--image-file", required=True)
     animate_submit_parser.add_argument("--prompt", default="")
-    animate_submit_parser.add_argument("--is-pixel", action="store_true")
+    animate_submit_parser.add_argument(
+        "--is-pixel",
+        action="store_true",
+        help="Force pixel mode; PNG inputs up to 256x256 select it automatically",
+    )
     animate_submit_parser.add_argument("--output-frames", type=int, default=8)
     animate_submit_parser.add_argument("--output-format", default="webp", choices=["webp", "gif", "spritesheet"])
     animate_submit_parser.add_argument("--animation-type", default="other")
@@ -7002,12 +7198,16 @@ def main() -> int:
             return 0
 
         if args.command == "animate-submit":
+            is_pixel = resolve_animate_is_pixel(
+                args.image_file,
+                requested_is_pixel=args.is_pixel,
+            )
             payload = submit_animate(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_data_url=image_file_to_data_url(args.image_file),
                 prompt=args.prompt,
-                is_pixel=args.is_pixel,
+                is_pixel=is_pixel,
                 output_frames=args.output_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
@@ -7020,7 +7220,7 @@ def main() -> int:
                 started_at=started_at,
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 args=args,
-                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
+                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": is_pixel},
                 response_payload=payload,
                 downloads=[],
                 effective_output_dir=str(effective_output_dir),
@@ -7030,12 +7230,16 @@ def main() -> int:
 
         if args.command == "animate-run":
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt or Path(args.image_file).stem)}")
+            is_pixel = resolve_animate_is_pixel(
+                args.image_file,
+                requested_is_pixel=args.is_pixel,
+            )
             submit_payload = submit_animate(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_data_url=image_file_to_data_url(args.image_file),
                 prompt=args.prompt,
-                is_pixel=args.is_pixel,
+                is_pixel=is_pixel,
                 output_frames=args.output_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
@@ -7063,7 +7267,7 @@ def main() -> int:
                     started_at=started_at,
                     finished_at=datetime.now().isoformat(timespec="seconds"),
                     args=args,
-                    request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
+                    request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": is_pixel},
                     response_payload={"submit": submit_payload},
                     downloads=[],
                     effective_output_dir=str(effective_output_dir),
@@ -7088,7 +7292,7 @@ def main() -> int:
                 started_at=started_at,
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 args=args,
-                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": args.is_pixel},
+                request_payload={"image_file": args.image_file, "prompt": args.prompt, "is_pixel": is_pixel},
                 response_payload={"submit": submit_payload, "final": final_payload},
                 downloads=downloads,
                 effective_output_dir=str(output_dir),

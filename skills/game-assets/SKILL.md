@@ -107,13 +107,14 @@ Avoid unnecessary chains. Every generative step can change identity, scale, pale
 ## Route and execute
 
 1. For a new installation or missing authentication, read [meowart_api.md](meowart_api.md) and help the user configure the key locally. Never ask them to paste it into chat.
-2. Read [capability-routing.md](references/capability-routing.md).
-3. Read the selected capability module; read multiple modules only for an intentional production chain.
-4. Inspect `python3 meowart_api.py <command> --help` for current product options.
-5. Run one primary `*-run` command with a new explicit `--output-dir`.
-6. Apply a downstream edit or post-process only when required by the asset contract.
-7. Open the saved media, inspect `final_outputs.json`, and validate every promised property before handoff.
-8. For isometric, hex, dual-grid, or side-scrolling work, start `scripts/map-preview-server.py` with downloaded public references or declared final outputs. Select `hd-isometric` or `hd-hex-isometric` for HD tiles, and declare tetraploid assets as `"footprint": "2x2"` in a JSON library; direct `--image` entries default to `1×1`. For side-scrolling, pass the directory containing the three final layers or a user-owned prefab manifest. Open its temporary loopback URL with the user's browser when browser control is available. Do not make the user browse deep directories, select files, copy paths, or navigate manually.
+2. If the runner reports `skill_upgrade_required` or an incompatible API response, update the complete Skill from the official repository, verify `meowart_api.py --version`, and recover any paid task with its original job ID. Never resubmit only because an old runner could not download the result.
+3. Read [capability-routing.md](references/capability-routing.md).
+4. Read the selected capability module; read multiple modules only for an intentional production chain.
+5. Inspect `python3 meowart_api.py <command> --help` for current product options.
+6. Run one primary `*-run` command with a new explicit `--output-dir`.
+7. Apply a downstream edit or post-process only when required by the asset contract.
+8. Open the saved media, inspect `final_outputs.json`, and validate every promised property before handoff.
+9. For isometric, hex, dual-grid, or side-scrolling work, start `scripts/map-preview-server.py` with downloaded public references or declared final outputs. Select `hd-isometric` or `hd-hex-isometric` for HD tiles, and declare tetraploid assets as `"footprint": "2x2"` in a JSON library; direct `--image` entries default to `1×1`. For side-scrolling, pass the directory containing the three final layers or a user-owned prefab manifest. Open its temporary loopback URL with the user's browser when browser control is available. Do not make the user browse deep directories, select files, copy paths, or navigate manually.
 
 For account-specific capabilities, run `custom-workflow-list` with the user's locally configured API key, then use `custom-workflow-run --workflow-id <id> --template-id <id> --params-json <file> --project-id <id> --thread-id <id>`. The params file is one JSON object; an `image_upload` value is a local file path. These commands use the authenticated catalog as the only discovery source. The runner downloads only the exact `final_outputs[]` projection and writes a sanitized `final_outputs.json`; it never traverses or persists other job fields or URLs.
 

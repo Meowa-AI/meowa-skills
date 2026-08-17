@@ -20,6 +20,20 @@ python3 meowart_api.py --help
 
 Use the bundled runner as shipped. Do not fetch or execute a remote replacement runner, a dynamic instruction document, or a provider proxy.
 
+## Version compatibility
+
+The service accepts only the current published runner. Check the installed version with:
+
+```bash
+python3 skills/game-assets/meowart_api.py --version
+```
+
+If the runner reports `skill_upgrade_required` or an incompatible API response, update from the
+official `Meowa-AI/meowa-skills` repository and copy the complete `skills/game-assets` directory
+into the Codex skills directory. Do not replace only one file. If a paid job already has an ID,
+update first and recover it with the matching `*-poll` command; never resubmit it merely because
+the old runner could not download the result.
+
 ## Authentication
 
 For a new installation, follow the [CLI setup and authentication guide](../meowart_api.md). Create a Meowa account key from the official account page, then store it locally as `MEOWART_API_KEY` in the environment or a Git-ignored `.env`. The runner never accepts credentials on the command line.
@@ -64,6 +78,10 @@ The runner does not save submission responses, job responses, provider responses
 Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Low-level recovery commands exist for compatibility, but do not present them as the normal workflow and do not write raw job payloads to disk.
 
 When a run times out after submission, report the job identifier and the timeout. Do not resubmit automatically because that may create a duplicate billable job.
+
+When a successful job has no declared downloadable final media, treat the response as a Skill/API
+contract mismatch. Do not write or hand off an empty `final_outputs.json`; update the Skill and poll
+the original job again.
 
 ## Validation checklist
 

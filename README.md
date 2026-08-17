@@ -28,6 +28,17 @@ cp -R skills/game-assets/. "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/"
 python3 -m pip install requests Pillow
 ```
 
+To update an existing copied installation, update the repository and copy the complete Skill
+directory again:
+
+```bash
+git pull --ff-only
+cp -R skills/game-assets/. "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/"
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/meowart_api.py" --version
+```
+
+Do not update only `SKILL.md`; the runner and references are one versioned unit.
+
 Create a key from [Meowa API Keys](https://meowa.ai/#/api-keys), then configure it locally:
 
 ```bash
@@ -40,6 +51,7 @@ Alternatively, place `MEOWART_API_KEY="ma_live_xxxxxxxxxxxxxxxxxxxx"` in a local
 
 ```bash
 python3 skills/game-assets/meowart_api.py --help
+python3 skills/game-assets/meowart_api.py --version
 python3 skills/game-assets/meowart_api.py pixel-gen-template-info
 ```
 
