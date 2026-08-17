@@ -9,7 +9,23 @@
 ```bash
 python3 -m pip install requests Pillow
 python3 skills/game-assets/meowart_api.py --help
+python3 skills/game-assets/meowart_api.py --version
 ```
+
+## 更新 Skill
+
+服务端要求 runner 与当前发布版本一致。出现 `skill_upgrade_required`、API 响应不兼容，
+或成功任务没有可下载的最终文件时，先更新完整 Skill，不要重新提交已经扣费的任务：
+
+```bash
+git -C <meowa-skills-repo> pull --ff-only
+cp -R <meowa-skills-repo>/skills/game-assets/. \
+  "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/"
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/meowart_api.py" --version
+```
+
+更新后使用原 `job_id` 执行对应的 `*-poll` 命令恢复下载。必须复制整个
+`skills/game-assets` 目录，不能只替换 `SKILL.md` 或 `meowart_api.py`。
 
 ## 创建 Meowa API key
 
