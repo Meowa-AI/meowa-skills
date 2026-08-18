@@ -17,8 +17,8 @@ Follow this preparation sequence before every `animate-run` or `keyframes-run`:
 3. **Describe the motion simply.** Use a short, direct action description rather than a complicated story. Good inputs include `The character slashes to the right, with flames on the sword`, `The character makes a small jump in place`, and `The character runs forward`. State the principal action, direction, and one important effect; give the animation model room to resolve the motion.
 4. **Use the default prompt enhancement.** `animate-run` and `keyframes-run` enable prompt enhancement by default. The backend reads the source image and the user's motion description, translates non-English input into English, and rewrites it into language that the animation model can understand more reliably. Keep the user's input focused on intent; do not manually add a long technical prompt unless the enhanced result has been reviewed and needs a specific correction.
 5. **Route by source size.** `animate-run` reads the source dimensions and automatically uses pixel mode for a PNG whose width and height are both no greater than 256 pixels. When either dimension exceeds 256 pixels, it uses general animation mode. Pixel mode applies pixel-specific motion and edge handling. General mode supports larger pixel artwork, chibi characters, and small HD or 2D characters, but it does not apply pixel-specific optimization, so large pixel-art edges may be less sharp. General-mode inputs must still satisfy its minimum dimensions; pad a narrow source when necessary instead of stretching its content.
-6. **Reserve transparent motion space.** The source image dimensions become the animation canvas, and canvas preparation is one of the strongest constraints on final quality. The model cannot reliably move a subject or effect into space that does not exist. Reserve transparent canvas along the full motion path: an attack needs room in the attack direction for the body, weapon, and effects; a jump needs room above; a backward jump, retreat, or dodge needs room behind. If direction is not fixed, reserve room on both sides. Prompt enhancement cannot compensate for missing canvas space.
-7. **Keep pixel characters compact, then pad.** Keep the pixel character content at 128×128 or smaller whenever practical, then expand the transparent canvas without resampling the character. The padded canvas may be larger than 128×128, but must remain within the selected animation mode's limits. Preserve the subject's anchor while padding, and verify that the subject, weapon, and effects will not touch a required edge during the motion.
+6. **Reserve transparent motion space.** The source image dimensions become the animation canvas, and canvas preparation is one of the strongest constraints on final quality. When image or multimodal inspection is available, inspect the source first: identify the visible character bounds, current anchor, facing direction, weapon reach, and likely motion path. A jump needs some room above the head; an attack needs some room in front of the character for the body, weapon, and effects; a backward jump, retreat, or dodge needs room behind. If attack direction is not stated, infer it from the prompt and the character's facing direction when the image makes that clear; otherwise ask or reserve modest space on both sides. The model cannot reliably move into space that does not exist, but excessive empty canvas also makes the subject unnecessarily small relative to the frame. Add enough space for the intended action without maximizing every side. Prompt enhancement cannot compensate for missing canvas space.
+7. **Keep pixel characters compact, then pad.** Keep the pixel character content at 128×128 or smaller whenever practical, then expand the transparent canvas without resampling the character. Set top, down, left, and right padding independently for the actual motion path. For a 64px pixel character, prefer a final padded canvas no larger than 128×128. A pixel-animation canvas above 256px on either axis is invalid and will fail, so calculate the final width as `source width + left + right` and final height as `source height + top + down` before submitting. Preserve the subject's anchor, and verify that the subject, weapon, and effects will not touch a required edge during the motion.
 8. **Review the prepared source before generation.** Check the visible content bounds, transparent margins, action direction, first pose, scale, and anchor. For keyframe animation, ensure every keyframe uses the same canvas dimensions, anchor, and padding. Insufficient motion space and unsuitable poses are among the most common causes of failed or low-quality animation.
 
 ## Capability-specific guidance
@@ -77,11 +77,20 @@ python3 skills/game-assets/meowart_api.py animate-run \
   --output-frames 8 \
   --output-format webp \
   --animation-type idle \
+  --color-count 32 \
+  --padding-top 16 \
+  --padding-down 8 \
+  --padding-left 12 \
+  --padding-right 20 \
   --remove-bg-method advanced \
   --output-dir <output-dir>
 ```
 
 Output formats are WebP, GIF, or spritesheet. Stable animation types are `idle`, `walk`, `run`, `jump`, `attack`, `hit`, `defeated`, and `other`.
+
+For pixel animation, `--color-count` accepts 2–64. The four padding options accept independent non-negative pixel counts and add transparent canvas without resizing the source. The runner validates the resulting pixel canvas before submission, preventing a paid request when either axis would exceed 256px. A 64px character can technically use a canvas above 128px, but 128×128 or smaller is recommended for more consistent animation.
+
+Choose directional padding from the actual action rather than applying the same value everywhere. For example, a compact jump usually needs top padding but little extra horizontal space, while a right-facing sword attack usually needs right padding and only modest padding elsewhere. Visually inspect the prepared source again before submission: the required motion path should have clear transparent space, while the character should still occupy a useful portion of the canvas.
 
 Use 8 frames for most common actions. Use 12 or 16 frames when an action genuinely needs more phases or a slower transition. A 16-frame run has twice the temporal budget of an 8-frame run, so the model may invent an extra motion beat instead of simply improving the same action. When using 16 frames, slow the intended action explicitly with wording such as `jumps gently`, `attacks slowly`, or `moves gradually` to reduce unwanted extra motion. Prefer keyframes when exact intermediate poses matter more than free motion. Frame counts must be even: pixel animation supports 2–16 frames and HD animation supports 2–24 frames. Validate the requested count before running.
 
@@ -100,6 +109,11 @@ python3 skills/game-assets/meowart_api.py keyframes-run \
   --total-frames 8 \
   --output-format webp \
   --animation-type attack \
+  --color-count 32 \
+  --padding-top 8 \
+  --padding-down 8 \
+  --padding-left 4 \
+  --padding-right 24 \
   --remove-bg-method advanced \
   --output-dir <output-dir>
 ```

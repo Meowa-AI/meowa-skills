@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.17.2"
+MEOWART_API_CLI_VERSION = "2026.08.18.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -1723,6 +1723,78 @@ def resolve_animate_is_pixel(image_path: str, *, requested_is_pixel: bool = Fals
     return image_format == "PNG" and width <= 256 and height <= 256
 
 
+def build_animate_source_controls(
+    image_path: str,
+    *,
+    color_count: int | None,
+    padding_top: int,
+    padding_down: int,
+    padding_left: int,
+    padding_right: int,
+    requested_is_pixel: bool = False,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if Image is None:
+        raise RuntimeError("Pillow is required for animation controls; run: python3 -m pip install Pillow")
+
+    path = Path(image_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"image not found: {path}")
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            image_format = str(image.format or "").upper()
+    except Exception as exc:
+        raise ValueError(f"animation source must be a valid image: {path}") from exc
+
+    padding_values = (padding_top, padding_down, padding_left, padding_right)
+    if any(value < 0 for value in padding_values):
+        raise ValueError("animation padding values must be non-negative")
+    if color_count is not None and not 2 <= color_count <= 64:
+        raise ValueError("color_count must be between 2 and 64")
+
+    is_pixel = requested_is_pixel or (image_format == "PNG" and width <= 256 and height <= 256)
+    if color_count is not None and not is_pixel:
+        raise ValueError("color_count is available only for pixel animation inputs up to 256x256")
+
+    padded_width = width + padding_left + padding_right
+    padded_height = height + padding_top + padding_down
+    if is_pixel and (padded_width > 256 or padded_height > 256):
+        raise ValueError(
+            f"padded pixel animation canvas would be {padded_width}x{padded_height}; "
+            "pixel animation cannot exceed 256x256"
+        )
+    if is_pixel and max(width, height) <= 64 and max(padded_width, padded_height) > 128:
+        print(
+            f"[WARN] a 64px pixel character is usually best kept within a 128x128 padded canvas; "
+            f"requested canvas is {padded_width}x{padded_height}",
+            file=sys.stderr,
+        )
+
+    pixel_config = {"colors": color_count} if color_count is not None else None
+    source_padding = None
+    if any(padding_values):
+        source_padding = {
+            "enabled": True,
+            "top": padding_top,
+            "down": padding_down,
+            "left": padding_left,
+            "right": padding_right,
+        }
+    return pixel_config, source_padding
+
+
+def keyframe_zero_path(specs: list[str]) -> str:
+    for raw_spec in specs:
+        index_text, separator, path_text = str(raw_spec or "").partition("=")
+        try:
+            index = int(index_text.strip()) if separator else -1
+        except ValueError:
+            continue
+        if index == 0 and path_text.strip():
+            return path_text.strip()
+    raise ValueError("keyframe 0 is required")
+
+
 def get_credits_balance(
     *,
     api_base: str,
@@ -3003,6 +3075,8 @@ def submit_animate(
     output_format: str = "webp",
     animation_type: str = "other",
     remove_bg_method: str = "advanced",
+    pixel_config: dict[str, Any] | None = None,
+    source_padding: dict[str, Any] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3018,6 +3092,10 @@ def submit_animate(
         "remove_bg_method": remove_bg_method,
         "matte_color": "#808080",
     }
+    if pixel_config is not None:
+        payload["pixel_config"] = pixel_config
+    if source_padding is not None:
+        payload["source_padding"] = source_padding
 
     response, body = _request_json(
         method="POST",
@@ -3072,6 +3150,8 @@ def submit_keyframes(
     output_format: str = "webp",
     animation_type: str = "other",
     remove_bg_method: str = "advanced",
+    pixel_config: dict[str, Any] | None = None,
+    source_padding: dict[str, Any] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3084,6 +3164,10 @@ def submit_keyframes(
         "animation_type": animation_type,
         "remove_bg_method": remove_bg_method,
     }
+    if pixel_config is not None:
+        payload["pixel_config"] = pixel_config
+    if source_padding is not None:
+        payload["source_padding"] = source_padding
     response, body = _request_json(
         method="POST",
         url=_normalize_base_url(api_base, "/api/animate/keyframes"),
@@ -4635,6 +4719,18 @@ def parse_args() -> argparse.Namespace:
     def add_shared_runtime_args(command_parser: argparse.ArgumentParser) -> None:
         return None
 
+    def add_animation_source_control_args(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--color-count",
+            type=int,
+            default=None,
+            help="Pixel palette size, from 2 to 64 colors",
+        )
+        command_parser.add_argument("--padding-top", type=int, default=0, help="Transparent pixels above the source")
+        command_parser.add_argument("--padding-down", type=int, default=0, help="Transparent pixels below the source")
+        command_parser.add_argument("--padding-left", type=int, default=0, help="Transparent pixels left of the source")
+        command_parser.add_argument("--padding-right", type=int, default=0, help="Transparent pixels right of the source")
+
     def add_map_preset_filter_args(command_parser: argparse.ArgumentParser) -> None:
         command_parser.add_argument(
             "--type",
@@ -5484,6 +5580,7 @@ def parse_args() -> argparse.Namespace:
         default="advanced",
         choices=["none", "standard", "advanced"],
     )
+    add_animation_source_control_args(animate_submit_parser)
 
     animate_run_parser = subparsers.add_parser("animate-run", help="Create a short sprite animation")
     for action in animate_submit_parser._actions[1:]:
@@ -5515,6 +5612,7 @@ def parse_args() -> argparse.Namespace:
         default="advanced",
         choices=["none", "standard", "advanced"],
     )
+    add_animation_source_control_args(keyframes_run_parser)
     add_shared_runtime_args(keyframes_run_parser)
 
     animate_poll_parser = subparsers.add_parser("animate-poll", help="Poll one animate job")
@@ -7693,6 +7791,15 @@ def main() -> int:
                 args.image_file,
                 requested_is_pixel=args.is_pixel,
             )
+            pixel_config, source_padding = build_animate_source_controls(
+                args.image_file,
+                color_count=args.color_count,
+                padding_top=args.padding_top,
+                padding_down=args.padding_down,
+                padding_left=args.padding_left,
+                padding_right=args.padding_right,
+                requested_is_pixel=is_pixel,
+            )
             payload = submit_animate(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -7703,6 +7810,8 @@ def main() -> int:
                 output_format=args.output_format,
                 animation_type=args.animation_type,
                 remove_bg_method=args.remove_bg_method,
+                pixel_config=pixel_config,
+                source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -7725,6 +7834,15 @@ def main() -> int:
                 args.image_file,
                 requested_is_pixel=args.is_pixel,
             )
+            pixel_config, source_padding = build_animate_source_controls(
+                args.image_file,
+                color_count=args.color_count,
+                padding_top=args.padding_top,
+                padding_down=args.padding_down,
+                padding_left=args.padding_left,
+                padding_right=args.padding_right,
+                requested_is_pixel=is_pixel,
+            )
             submit_payload = submit_animate(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -7735,6 +7853,8 @@ def main() -> int:
                 output_format=args.output_format,
                 animation_type=args.animation_type,
                 remove_bg_method=args.remove_bg_method,
+                pixel_config=pixel_config,
+                source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -7795,6 +7915,17 @@ def main() -> int:
         if args.command == "keyframes-run":
             slug_seed = args.prompt or "keyframes"
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            source_path = keyframe_zero_path(list(args.keyframe or []))
+            is_pixel = resolve_animate_is_pixel(source_path)
+            pixel_config, source_padding = build_animate_source_controls(
+                source_path,
+                color_count=args.color_count,
+                padding_top=args.padding_top,
+                padding_down=args.padding_down,
+                padding_left=args.padding_left,
+                padding_right=args.padding_right,
+                requested_is_pixel=is_pixel,
+            )
             submit_payload = submit_keyframes(
                 api_base=args.api_base,
                 api_key=args.api_key,
@@ -7804,6 +7935,8 @@ def main() -> int:
                 output_format=args.output_format,
                 animation_type=args.animation_type,
                 remove_bg_method=args.remove_bg_method,
+                pixel_config=pixel_config,
+                source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,
             )
