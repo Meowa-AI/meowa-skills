@@ -1,4 +1,4 @@
 interface:
-  display_name: "Meowa Game Assets"
-  short_description: "Create production-ready game art and audio"
-  default_prompt: "Use $game-assets to choose the right Meowa capability, generate the requested game asset, validate the final media, and return only final deliverables."
+  display_name: "Meowa Game Design & Assets"
+  short_description: "Plan games and create production-ready assets"
+  default_prompt: "Use $game-assets to develop the requested game design or create and validate its production-ready assets."

@@ -11,7 +11,7 @@ import os
 import re
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.13.1"
+MEOWART_API_CLI_VERSION = "2026.08.17.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -160,6 +160,7 @@ ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT = "/api/workflows/one_click_upgrade/prompts"
 CUSTOM_SIZE_PIXEL_GEN_ENDPOINT = "/api/workflows/one_click_pixelate/run"
 PROMPT_ONLY_MAX_ATTEMPTS = 3
 PROMPT_ONLY_RETRY_DELAY_SECONDS = 5
+GAME_DESIGN_MAX_DOCUMENT_BYTES = 300_000
 
 
 class SkillUpgradeRequiredError(RuntimeError):
@@ -168,6 +169,10 @@ class SkillUpgradeRequiredError(RuntimeError):
 
 class SkillCompatibilityError(RuntimeError):
     """The service response no longer matches this runner's public contract."""
+
+
+class GameDesignerCreditsExhaustedError(RuntimeError):
+    """The next Game Designer planning round cannot be funded."""
 
 
 def _configure_stdio() -> None:
@@ -1946,6 +1951,382 @@ def _save_custom_workflow_outputs(
     _save_json(manifest_path, manifest)
     downloads.insert(0, {"type": "manifest", "path": str(manifest_path)})
     return output_dir, downloads
+
+
+def _game_design_api_request(
+    *,
+    method: str,
+    api_base: str,
+    api_key: str,
+    endpoint: str,
+    timeout: int,
+    verify: bool,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    response, payload = _request_json(
+        method=method,
+        url=_normalize_base_url(api_base, endpoint),
+        headers={**_base_headers(api_key), "Accept": "application/json"},
+        timeout=timeout,
+        verify=verify,
+        params=params,
+        json_body=json_body,
+    )
+    if response.status_code >= 400:
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if (
+            response.status_code == 402
+            and isinstance(detail, dict)
+            and detail.get("error") == "game_designer_credits_exhausted"
+        ):
+            raise GameDesignerCreditsExhaustedError(
+                f"{str(detail.get('message') or 'Credits are insufficient. Recharge to continue?').strip()} "
+                f"required_credits={max(0, int(detail.get('requiredCredits') or 0))} "
+                f"available_credits={max(0, int(detail.get('availableCredits') or 0))} "
+                f"recharge_url={str(detail.get('rechargeUrl') or '').strip()}"
+            )
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def _create_game_design_project(
+    *,
+    api_base: str,
+    api_key: str,
+    title: str,
+    timeout: int,
+    verify: bool,
+) -> str:
+    payload = _game_design_api_request(
+        method="POST",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint="/api/projects",
+        timeout=timeout,
+        verify=verify,
+        json_body={"title": title, "projectTitleSource": "manual"},
+    )
+    project_id = str(payload.get("id") or "").strip()
+    if not project_id:
+        raise SkillCompatibilityError("project create response is missing id")
+    return project_id
+
+
+def _create_game_design_thread(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    timeout: int,
+    verify: bool,
+) -> str:
+    payload = _game_design_api_request(
+        method="POST",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint=f"/api/projects/{quote(project_id, safe='')}/threads",
+        timeout=timeout,
+        verify=verify,
+        json_body={"title": "Game Designer", "kind": "agent"},
+    )
+    thread_id = str(payload.get("id") or "").strip()
+    if not thread_id:
+        raise SkillCompatibilityError("agent thread create response is missing id")
+    return thread_id
+
+
+def submit_game_design_message(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    project_id: str,
+    thread_id: str,
+    locale: str,
+    timeout: int,
+    verify: bool,
+) -> dict[str, Any]:
+    cleaned_prompt = str(prompt or "").strip()
+    if not cleaned_prompt:
+        raise ValueError("prompt is required")
+    if len(cleaned_prompt) > 20_000:
+        raise ValueError("prompt exceeds the 20,000 character Skill limit")
+    client_id = f"skill_game_design_{int(time.time() * 1000)}_{hashlib.sha256(cleaned_prompt.encode('utf-8')).hexdigest()[:10]}"
+    payload = _game_design_api_request(
+        method="POST",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint=(
+            f"/api/projects/{quote(project_id, safe='')}/threads/"
+            f"{quote(thread_id, safe='')}/agent/messages"
+        ),
+        timeout=timeout,
+        verify=verify,
+        json_body={
+            "clientId": client_id,
+            "kind": "user_message",
+            "text": cleaned_prompt,
+            "settings": {
+                "agentProfile": "game_designer",
+                "qualityMode": "standard",
+                "budgetCapCredits": 200,
+                "autoExecuteTools": True,
+                "confirmPaidTools": False,
+                "responseLocale": locale,
+            },
+        },
+    )
+    job = payload.get("job")
+    if not isinstance(job, dict) or not str(job.get("jobId") or "").strip():
+        raise SkillCompatibilityError("Game Designer submit response is missing job.jobId")
+    return payload
+
+
+def _public_game_design_event(event: Any) -> dict[str, Any] | None:
+    if not isinstance(event, dict):
+        return None
+    kind = str(event.get("kind") or "").strip()
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    if kind == "assistant_message":
+        text = str(payload.get("text") or "").strip()
+        return {"kind": kind, "text": text} if text else None
+    if kind == "finish":
+        summary = str(payload.get("summary") or "").strip()
+        result = {
+            "kind": kind,
+            "summary": summary,
+            "finish_status": str(payload.get("finishStatus") or "").strip(),
+        }
+        if payload.get("rechargeRequired") is True:
+            result["recharge_required"] = True
+            recharge_url = str(payload.get("rechargeUrl") or "").strip()
+            if recharge_url:
+                result["recharge_url"] = recharge_url
+        return result
+    if kind == "model_call":
+        result = {"kind": kind}
+        for public_key, api_key in (
+            ("estimated_credits", "estimatedCredits"),
+            ("calculated_credits", "calculatedCredits"),
+            ("charged_credits", "chargedCredits"),
+            ("remaining_credits", "remainingCredits"),
+            ("input_tokens", "inputTokens"),
+            ("cached_input_tokens", "cachedInputTokens"),
+            ("output_tokens", "outputTokens"),
+        ):
+            value = payload.get(api_key)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                result[public_key] = value
+        result["credits_exhausted"] = payload.get("creditsExhausted") is True
+        return result
+    if kind == "ask_user":
+        options = []
+        for option in payload.get("options") or []:
+            if not isinstance(option, dict):
+                continue
+            options.append(
+                {
+                    "id": str(option.get("id") or "").strip(),
+                    "label": str(option.get("label") or "").strip(),
+                    "description": str(option.get("description") or "").strip(),
+                }
+            )
+        return {
+            "kind": kind,
+            "prompt": str(payload.get("prompt") or "").strip(),
+            "options": options,
+        }
+    return None
+
+
+def poll_game_design_until_done(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    thread_id: str,
+    api_job_id: str,
+    timeout: int,
+    max_wait: int,
+    poll_interval: float,
+    verify: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    deadline = time.monotonic() + max(1, int(max_wait))
+    after_seq = 0
+    public_events: list[dict[str, Any]] = []
+    latest_job: dict[str, Any] = {}
+    while True:
+        payload = _game_design_api_request(
+            method="GET",
+            api_base=api_base,
+            api_key=api_key,
+            endpoint=(
+                f"/api/projects/{quote(project_id, safe='')}/threads/"
+                f"{quote(thread_id, safe='')}/agent/events"
+            ),
+            timeout=timeout,
+            verify=verify,
+            params={"jobId": api_job_id, "after_seq": after_seq, "limit": 500},
+        )
+        job = payload.get("job")
+        if not isinstance(job, dict):
+            raise SkillCompatibilityError("Game Designer poll response is missing job")
+        latest_job = job
+        for event in payload.get("events") or []:
+            public_event = _public_game_design_event(event)
+            if public_event is not None:
+                public_events.append(public_event)
+                if public_event.get("kind") == "model_call":
+                    print(
+                        "[INFO] game-design billing "
+                        f"calculated={public_event.get('calculated_credits', 0)} "
+                        f"charged={public_event.get('charged_credits', 0)} "
+                        f"remaining={public_event.get('remaining_credits', 0)}"
+                    )
+                elif (
+                    public_event.get("kind") == "finish"
+                    and public_event.get("recharge_required") is True
+                ):
+                    print(
+                        "[INFO] game-design "
+                        f"{public_event.get('summary', 'Credits are insufficient. Recharge to continue?')} "
+                        f"recharge_url={public_event.get('recharge_url', '')}"
+                    )
+        try:
+            after_seq = max(after_seq, int(payload.get("nextAfterSeq") or after_seq))
+        except (TypeError, ValueError):
+            pass
+        status = str(job.get("status") or "").strip().lower()
+        _print_status("[INFO] game-design", job)
+        if status in TERMINAL_JOB_STATUSES:
+            return latest_job, public_events
+        if status not in ACTIVE_JOB_STATUSES:
+            raise SkillCompatibilityError(f"Game Designer returned unknown job status {status!r}")
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"Game Designer job did not finish within {max_wait}s; recover with "
+                f"game-design-poll --project-id {project_id} --thread-id {thread_id} "
+                f"--api-job-id {api_job_id}"
+            )
+        time.sleep(max(0.2, float(poll_interval)))
+
+
+def _safe_game_design_document_path(value: Any) -> PurePosixPath:
+    raw = str(value or "").strip().replace("\\", "/")
+    path = PurePosixPath(raw)
+    if not raw or path.is_absolute() or ".." in path.parts or path.suffix.lower() != ".md":
+        raise SkillCompatibilityError("Game Designer returned an unsafe document path")
+    return path
+
+
+def save_game_design_outputs(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    thread_id: str,
+    api_job_id: str,
+    job: dict[str, Any],
+    public_events: list[dict[str, Any]],
+    output_root: str,
+    timeout: int,
+    verify: bool,
+) -> tuple[Path, dict[str, Any]]:
+    output_dir = _predict_saved_dir(output_root, api_job_id)
+    documents_dir = output_dir / "design_docs"
+    tree = _game_design_api_request(
+        method="GET",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint=f"/api/projects/{quote(project_id, safe='')}/design-docs/tree",
+        timeout=timeout,
+        verify=verify,
+    )
+    saved_documents: list[dict[str, Any]] = []
+    for item in tree.get("files") or []:
+        if not isinstance(item, dict):
+            continue
+        document_path = _safe_game_design_document_path(item.get("path"))
+        document = _game_design_api_request(
+            method="GET",
+            api_base=api_base,
+            api_key=api_key,
+            endpoint=f"/api/projects/{quote(project_id, safe='')}/design-docs/file",
+            timeout=timeout,
+            verify=verify,
+            params={"path": str(document_path)},
+        )
+        content = str(document.get("content") or "")
+        if len(content.encode("utf-8")) > GAME_DESIGN_MAX_DOCUMENT_BYTES:
+            raise SkillCompatibilityError(f"Game Designer document is too large: {document_path}")
+        local_path = documents_dir.joinpath(*document_path.parts)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_text(content, encoding="utf-8")
+        saved_documents.append(
+            {
+                "path": str(document_path),
+                "revision": max(0, int(document.get("revision") or 0)),
+                "local_path": str(local_path),
+            }
+        )
+
+    last_message = next(
+        (
+            event.get("summary") or event.get("text") or event.get("prompt")
+            for event in reversed(public_events)
+            if event.get("summary") or event.get("text") or event.get("prompt")
+        ),
+        "",
+    )
+    ask_user = next(
+        (event for event in reversed(public_events) if event.get("kind") == "ask_user"),
+        None,
+    )
+    billing = job.get("modelTokenBilling")
+    safe_billing = None
+    if isinstance(billing, dict):
+        safe_billing = {}
+        pricing_version = str(billing.get("pricingVersion") or "").strip()
+        if pricing_version:
+            safe_billing["pricing_version"] = pricing_version
+        for public_key, api_key in (
+            ("estimated_credits", "estimatedCredits"),
+            ("calculated_credits", "calculatedCredits"),
+            ("charged_credits", "chargedCredits"),
+            ("remaining_credits", "remainingCredits"),
+            ("input_tokens", "inputTokens"),
+            ("cached_input_tokens", "cachedInputTokens"),
+            ("uncached_input_tokens", "uncachedInputTokens"),
+            ("output_tokens", "outputTokens"),
+            ("reasoning_output_tokens", "reasoningOutputTokens"),
+            ("total_tokens", "totalTokens"),
+        ):
+            value = billing.get(api_key)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                safe_billing[public_key] = value
+        safe_billing["credits_exhausted"] = billing.get("creditsExhausted") is True
+    manifest: dict[str, Any] = {
+        "format_version": 1,
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "api_job_id": api_job_id,
+        "status": str(job.get("status") or "").strip(),
+        "stage": str(job.get("stage") or "").strip(),
+        "assistant_message": str(last_message or "").strip(),
+        "model_token_billing": safe_billing,
+        "documents": saved_documents,
+    }
+    if ask_user is not None:
+        manifest["ask_user"] = {
+            "prompt": str(ask_user.get("prompt") or "").strip(),
+            "options": list(ask_user.get("options") or []),
+        }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _save_json(output_dir / "game_design_outputs.json", manifest)
+    return output_dir, manifest
 
 
 def poll_job_until_done(
@@ -4299,6 +4680,26 @@ def parse_args() -> argparse.Namespace:
             thread_id=None,
         )
 
+    game_design_run = subparsers.add_parser(
+        "game-design-run",
+        help="Run the Game Designer planning agent and save its Markdown documents",
+    )
+    game_design_run.add_argument("--prompt", required=True, help="Game design question or planning brief")
+    game_design_run.add_argument("--project-title", default="Game Design", help="Title used when creating a new project")
+    game_design_run.add_argument("--project-id", default="", help="Existing project id; omit to create one")
+    game_design_run.add_argument("--thread-id", default="", help="Existing Game Designer thread id; omit to create one")
+    game_design_run.add_argument("--locale", default="zh-CN", choices=["zh-CN", "en"])
+    add_shared_path_args(game_design_run)
+
+    game_design_poll = subparsers.add_parser(
+        "game-design-poll",
+        help="Recover an existing Game Designer job and save its Markdown documents",
+    )
+    game_design_poll.add_argument("--project-id", required=True)
+    game_design_poll.add_argument("--thread-id", required=True)
+    game_design_poll.add_argument("--api-job-id", required=True)
+    add_shared_path_args(game_design_poll)
+
     map_preset_search = subparsers.add_parser("map-reference-search", aliases=["map-preset-search"], help="Browse or search reusable pixel and HD map references")
     add_map_preset_filter_args(map_preset_search)
     map_preset_search.add_argument(
@@ -5246,6 +5647,96 @@ def main() -> int:
         }
         needs_api_key = args.command not in no_auth_commands
         args.api_key = _resolve_auth_token() if needs_api_key else ""
+
+        if args.command == "game-design-run":
+            project_id = str(args.project_id or "").strip()
+            thread_id = str(args.thread_id or "").strip()
+            if thread_id and not project_id:
+                raise ValueError("--thread-id requires --project-id")
+            if not project_id:
+                project_id = _create_game_design_project(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    title=str(args.project_title or "Game Design").strip() or "Game Design",
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                print(f"[INFO] created project_id={project_id}")
+            if not thread_id:
+                thread_id = _create_game_design_thread(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    project_id=project_id,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                print(f"[INFO] created thread_id={thread_id}")
+            submitted = submit_game_design_message(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                project_id=project_id,
+                thread_id=thread_id,
+                locale=args.locale,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            api_job_id = str(submitted["job"]["jobId"]).strip()
+            print(f"[INFO] submitted api_job_id={api_job_id}")
+            job, public_events = poll_game_design_until_done(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=project_id,
+                thread_id=thread_id,
+                api_job_id=api_job_id,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, manifest = save_game_design_outputs(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=project_id,
+                thread_id=thread_id,
+                api_job_id=api_job_id,
+                job=job,
+                public_events=public_events,
+                output_root=str(effective_output_dir),
+                timeout=args.timeout,
+                verify=verify,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_public_json(manifest))
+            return 0 if str(job.get("status") or "").strip().lower() == "success" else 1
+
+        if args.command == "game-design-poll":
+            job, public_events = poll_game_design_until_done(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                api_job_id=args.api_job_id,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, manifest = save_game_design_outputs(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                api_job_id=args.api_job_id,
+                job=job,
+                public_events=public_events,
+                output_root=str(effective_output_dir),
+                timeout=args.timeout,
+                verify=verify,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_public_json(manifest))
+            return 0 if str(job.get("status") or "").strip().lower() == "success" else 1
 
         if args.command == "custom-workflow-list":
             payload = list_custom_workflows(

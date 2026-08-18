@@ -1,11 +1,11 @@
 ---
 name: game-assets
-description: Create, edit, upgrade, animate, and prepare production-ready game assets with Meowa, including pixel and HD sprites, consistent item or character variants, multi-view characters, UI sheets, image and frame edits, seamless textures, terrain tilesets, isometric and side-scrolling maps, short video, sound effects, and game music. Use when a task requires choosing the right game-art workflow, planning a pixel or HD asset pipeline, running the bundled Meowa CLI, or validating final media for a game project.
+description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view characters, UI sheets, image and frame edits, textures, terrain tilesets, maps, video, sound effects, music, bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets
 
-Create game-ready visual and audio assets. Establish the final asset contract first, choose the smallest suitable capability, and combine modules only when the downstream command accepts the upstream output.
+Plan a game or create game-ready visual and audio assets. For game concepts, systems, balance, market research, or structured design documents, use the Game Designer module. For assets, establish the final asset contract first, choose the smallest suitable capability, and combine modules only when the downstream command accepts the upstream output.
 
 ## Establish the asset contract
 
@@ -78,6 +78,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 |---|---|---|
 | [CLI setup and authentication](meowart_api.md) | Install the runner, configure a Meowa account key locally, and verify the first authenticated request | Read for a new installation or missing authentication |
 | [Capability routing](references/capability-routing.md) | Select the correct capability and public command | Read first for every task |
+| [Game Designer](references/game-design.md) | Research and develop a game concept into persistent Markdown design documents | Use for planning, critique, mechanics, balance, content, or game-design research |
 | [Pixel and HD assets](references/pixel-and-hd-assets.md) | Create base assets and directional characters; perform background removal or pixel conversion | Feed finalized still assets into editing or animation |
 | [UI and image editing](references/ui-and-image-editing.md) | Generate UI sheets, create consistent upgrade variants, extract an aggregate UI sheet, and edit still images or animated frames | Refine or branch an existing visual asset without changing its media role |
 | [Maps, tiles, and textures](references/maps-tiles-and-textures.md) | Create repeatable materials, terrain atlases, isometric or hex tiles, and side-scrolling layers | Build environment assets from materials through map-ready outputs |
@@ -117,6 +118,8 @@ Avoid unnecessary chains. Every generative step can change identity, scale, pale
 9. For isometric, hex, dual-grid, or side-scrolling work, start `scripts/map-preview-server.py` with downloaded public references or declared final outputs. Select `hd-isometric` or `hd-hex-isometric` for HD tiles, and declare tetraploid assets as `"footprint": "2x2"` in a JSON library; direct `--image` entries default to `1×1`. For side-scrolling, pass the directory containing the three final layers or a user-owned prefab manifest. Open its temporary loopback URL with the user's browser when browser control is available. Do not make the user browse deep directories, select files, copy paths, or navigate manually.
 
 For account-specific capabilities, run `custom-workflow-list` with the user's locally configured API key, then use `custom-workflow-run --workflow-id <id> --template-id <id> --params-json <file> --project-id <id> --thread-id <id>`. The params file is one JSON object; an `image_upload` value is a local file path. These commands use the authenticated catalog as the only discovery source. The runner downloads only the exact `final_outputs[]` projection and writes a sanitized `final_outputs.json`; it never traverses or persists other job fields or URLs.
+
+For game planning, follow [Game Designer](references/game-design.md). Its realtime token charge is separate from any paid asset tools the planner invokes.
 
 ## Keep the public boundary clean
 

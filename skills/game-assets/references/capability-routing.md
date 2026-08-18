@@ -4,6 +4,7 @@ Use this module to select one primary public command. Prefer the most specialize
 
 | User intent | Primary command | Read next |
 |---|---|---|
+| Game concept, gameplay loop, mechanics, systems, economy, balance, progression, content plan, market research, critique, or design document | `game-design-run` | `game-design.md` |
 | Pixel character, prop, icon, item, sprite batch, or preset-driven pixel asset | `pixel-gen-run` | `pixel-and-hd-assets.md` |
 | Large pixel scene, illustration, portrait, building, or other large preset-driven composition | `large-pixel-gen-run` | `pixel-and-hd-assets.md` |
 | Pixel asset pack, low-cost high-volume sprites, prototype asset sheet, general 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
