@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
-from datetime import datetime
+from datetime import date, datetime
 import hashlib
 import json
 import mimetypes
@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.18.1"
+MEOWART_API_CLI_VERSION = "2026.08.19.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -30,6 +30,10 @@ GAME_ASSETS_SKILL_VERSION_HEADER = "X-Meowa-Skill-Version"
 GAME_ASSETS_SKILL_LATEST_VERSION_HEADER = "X-Meowa-Skill-Latest-Version"
 GAME_ASSETS_UPGRADE_ERROR_CODE = "skill_upgrade_required"
 GAME_ASSETS_UPDATE_URL = "https://github.com/Meowa-AI/meowa-skills"
+_GAME_ASSETS_RELEASE_VERSION_PATTERN = re.compile(
+    r"^([1-9]\d{3})\.(\d{2})\.(\d{2})\.(0|[1-9]\d*)$"
+)
+_SERVER_SKILL_VERSION_OVERRIDES: dict[str, str] = {}
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
 _DEV_AUTH_PREFIX = "x-dev-key:"
@@ -209,22 +213,48 @@ def _parse_json_response(response: requests.Response) -> dict[str, Any]:
     return payload
 
 
-def _skill_version_headers() -> dict[str, str]:
+def _parse_release_version(value: str) -> tuple[int, int, int, int] | None:
+    match = _GAME_ASSETS_RELEASE_VERSION_PATTERN.fullmatch(str(value or "").strip())
+    if match is None:
+        return None
+    year, month, day, revision = (int(part) for part in match.groups())
+    try:
+        date(year, month, day)
+    except ValueError:
+        return None
+    return year, month, day, revision
+
+
+def _skill_version_origin(url: str) -> str:
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme.lower() != "https" or (parsed.hostname or "").lower() != AUTH_HEADER_HOST:
+        return ""
+    return f"https://{AUTH_HEADER_HOST}:{parsed.port or 443}"
+
+
+def _skill_version_headers(compatible_version: str = "") -> dict[str, str]:
+    advertised_version = str(compatible_version or "").strip() or MEOWART_API_CLI_VERSION
     return {
         "User-Agent": f"MeowaGameAssets/{MEOWART_API_CLI_VERSION}",
         GAME_ASSETS_SKILL_NAME_HEADER: GAME_ASSETS_SKILL_NAME,
-        GAME_ASSETS_SKILL_VERSION_HEADER: MEOWART_API_CLI_VERSION,
+        GAME_ASSETS_SKILL_VERSION_HEADER: advertised_version,
     }
 
 
 def _request_headers_for_url(
     url: str,
     headers: dict[str, str] | None = None,
+    *,
+    skill_version_override: str = "",
 ) -> dict[str, str]:
     merged = dict(headers or {})
-    parsed = urlparse(str(url or ""))
-    if parsed.scheme.lower() == "https" and (parsed.hostname or "").lower() == AUTH_HEADER_HOST:
-        merged.update(_skill_version_headers())
+    origin = _skill_version_origin(url)
+    if origin:
+        compatible_version = (
+            str(skill_version_override or "").strip()
+            or _SERVER_SKILL_VERSION_OVERRIDES.get(origin, "")
+        )
+        merged.update(_skill_version_headers(compatible_version))
     return merged
 
 
@@ -237,6 +267,71 @@ def _upgrade_detail(payload: Any) -> dict[str, Any] | None:
     if str(payload.get("error_code") or payload.get("code") or "").strip() == GAME_ASSETS_UPGRADE_ERROR_CODE:
         return payload
     return None
+
+
+def _backward_compatible_server_version(response: Any, *, url: str) -> str:
+    if int(getattr(response, "status_code", 0) or 0) != 426 or not _skill_version_origin(url):
+        return ""
+    try:
+        payload = response.json()
+    except (requests.RequestException, ValueError, AttributeError):
+        return ""
+    detail = _upgrade_detail(payload)
+    if detail is None:
+        return ""
+    skill_name = str(detail.get("skill") or "").strip()
+    if skill_name and skill_name != GAME_ASSETS_SKILL_NAME:
+        return ""
+    response_headers = getattr(response, "headers", {}) or {}
+    required_version = str(
+        detail.get("required_version")
+        or response_headers.get(GAME_ASSETS_SKILL_LATEST_VERSION_HEADER)
+        or ""
+    ).strip()
+    installed_release = _parse_release_version(MEOWART_API_CLI_VERSION)
+    required_release = _parse_release_version(required_version)
+    if (
+        installed_release is None
+        or required_release is None
+        or required_release > installed_release
+    ):
+        return ""
+    return required_version
+
+
+def _request_with_skill_version_compatibility(
+    *,
+    url: str,
+    headers: dict[str, str] | None,
+    send: Any,
+) -> Any:
+    origin = _skill_version_origin(url)
+    sent_version = (
+        _SERVER_SKILL_VERSION_OVERRIDES.get(origin, MEOWART_API_CLI_VERSION)
+        if origin
+        else ""
+    )
+    response = send(
+        _request_headers_for_url(
+            url,
+            headers,
+            skill_version_override=sent_version,
+        )
+    )
+    compatible_version = _backward_compatible_server_version(response, url=url)
+    if not compatible_version or compatible_version == sent_version:
+        return response
+
+    response = send(
+        _request_headers_for_url(
+            url,
+            headers,
+            skill_version_override=compatible_version,
+        )
+    )
+    if int(getattr(response, "status_code", 0) or 0) != 426:
+        _SERVER_SKILL_VERSION_OVERRIDES[origin] = compatible_version
+    return response
 
 
 def _upgrade_required_message(
@@ -323,16 +418,20 @@ def _request_json(
     files: dict[str, tuple[str, bytes, str]] | list[tuple[str, tuple[str, bytes, str]]] | None = None,
     json_body: dict[str, Any] | None = None,
 ) -> tuple[requests.Response, dict[str, Any]]:
-    response = requests.request(
-        method=method,
+    response = _request_with_skill_version_compatibility(
         url=url,
-        headers=_request_headers_for_url(url, headers),
-        params=params,
-        data=data,
-        files=files,
-        json=json_body,
-        timeout=timeout,
-        verify=verify,
+        headers=headers,
+        send=lambda request_headers: requests.request(
+            method=method,
+            url=url,
+            headers=request_headers,
+            params=params,
+            data=data,
+            files=files,
+            json=json_body,
+            timeout=timeout,
+            verify=verify,
+        ),
     )
     try:
         payload = _parse_json_response(response)
@@ -1186,12 +1285,15 @@ def _download_file(
 ) -> str:
     if urlparse(url).scheme.lower() != "https":
         raise ValueError("refusing non-HTTPS download")
-    request_headers = _request_headers_for_url(url, headers)
-    response = requests.get(
-        url,
-        timeout=timeout,
-        verify=verify,
-        headers=request_headers or None,
+    response = _request_with_skill_version_compatibility(
+        url=url,
+        headers=headers,
+        send=lambda request_headers: requests.get(
+            url,
+            timeout=timeout,
+            verify=verify,
+            headers=request_headers or None,
+        ),
     )
     if int(getattr(response, "status_code", 200) or 200) == 426:
         try:
@@ -3630,14 +3732,18 @@ def design_one_click_upgrade_prompts(
     for attempt in range(1, PROMPT_ONLY_MAX_ATTEMPTS + 1):
         try:
             prompt_url = _normalize_base_url(api_base, ONE_CLICK_UPGRADE_PROMPTS_ENDPOINT)
-            response = requests.request(
-                method="POST",
+            response = _request_with_skill_version_compatibility(
                 url=prompt_url,
-                headers=_request_headers_for_url(prompt_url, _base_headers(api_key)),
-                data=request_data,
-                files=request_files,
-                timeout=timeout,
-                verify=verify,
+                headers=_base_headers(api_key),
+                send=lambda request_headers: requests.request(
+                    method="POST",
+                    url=prompt_url,
+                    headers=request_headers,
+                    data=request_data,
+                    files=request_files,
+                    timeout=timeout,
+                    verify=verify,
+                ),
             )
         except requests.RequestException as exc:
             last_error = exc
