@@ -12,7 +12,7 @@ Use this module to create gameplay sound effects, coherent effect packs, variati
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
 | Create sound effects | `sound-run` | Produce one effect, a coherent pack, or variants | Pack and variant modes are mutually exclusive |
-| Draft or render music | `music-run` | Produce music direction or a playable track | Audio is rendered only when `--generate-audio` is selected |
+| Draft or render music | `music-run` | Produce a demo or production track | Select the web product's `demo` or `pro` output mode |
 
 Finalize gameplay timing, action, and loop intent before generating audio. Visual references may guide music mood, but they do not replace an explicit description of instrumentation, energy, and loop behavior.
 
@@ -59,11 +59,11 @@ Render a track:
 ```bash
 python3 skills/game-assets/meowart_api.py music-run \
   --prompt "Tense clockwork boss theme with driving strings, metallic percussion, and a clear loop point" \
-  --generate-audio \
+  --output-mode pro \
   --output-dir <output-dir>
 ```
 
-Use `--preview` only when the user explicitly wants a shorter review render. Repeat `--reference-image` when visual references should influence mood or instrumentation.
+Use `--output-mode demo` only when the user explicitly wants the web product's preview mode. Repeat `--reference-image` when visual references should influence mood or instrumentation.
 
 ## Validate
 

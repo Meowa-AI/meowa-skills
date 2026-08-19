@@ -43,7 +43,7 @@ Use this module only after the source still asset is visually stable. Choose sea
 
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
-| Make an image seamless | `self-loop-run` | Produce a horizontally, vertically, or four-way repeating image | Inspect the repeated seam; mode names are not interchangeable |
+| Make an image seamless | `self-loop-run` | Produce a horizontally, vertically, or four-way repeating image | Inspect the repeated seam |
 | Create sprite animation | `animate-run` | Produce WebP, GIF, or a sprite sheet | Requires stable silhouette, anchor, and transparency |
 | Control frame animation with key poses | `keyframes-run` | Produce frame animation constrained by two or more poses | Every keyframe must share dimensions, anchor, and padding |
 | Inspect recommended video prompts | `video-prompt-list` | Review built-in action and direction prompts before generation | Select the same motion mode intended for generation |
@@ -56,14 +56,14 @@ Use `animation-edit-run` from the UI and image-editing module when the source is
 ```bash
 python3 skills/game-assets/meowart_api.py self-loop-run \
   --image-file <background.png> \
-  --mode full \
-  --direction horizontal \
+  --variant four-way \
+  --generation-speed normal \
   --resolution 1K \
   --output-dir <output-dir>
 ```
 
-- Use `basic` for single-direction seam completion, `full` for four-way continuity, and `texture` for four-way continuity with texture-specific fixed processing.
-- Use `horizontal` for side-scrolling backgrounds and `vertical` for vertical motion.
+- Use `horizontal` for side-scrolling backgrounds, `vertical` for vertical motion, and `four-way` for continuity on both axes.
+- Generation speed mirrors the web control: `normal` or `fast`.
 - Inspect the seam by repeating the output at least twice in the loop direction.
 
 ## Sprite animation
@@ -77,6 +77,8 @@ python3 skills/game-assets/meowart_api.py animate-run \
   --output-frames 8 \
   --output-format webp \
   --animation-type idle \
+  --animation-model pixel-engine-v1.1 \
+  --optimize-prompt \
   --color-count 32 \
   --padding-top 16 \
   --padding-down 8 \
@@ -87,6 +89,8 @@ python3 skills/game-assets/meowart_api.py animate-run \
 ```
 
 Output formats are WebP, GIF, or spritesheet. Stable animation types are `idle`, `walk`, `run`, `jump`, `attack`, `hit`, `defeated`, and `other`.
+
+The public model choices are `pixel-engine-v1.1` and `frame-engine-v1.1`. If omitted, the runner mirrors the web source-size default: pixel engine for a PNG at most 256×256, otherwise frame engine. Prompt optimization is enabled by default; use `--no-optimize-prompt` only when the supplied prompt is already final.
 
 For pixel animation, `--color-count` accepts 2–64. The four padding options accept independent non-negative pixel counts and add transparent canvas without resizing the source. The runner validates the resulting pixel canvas before submission, preventing a paid request when either axis would exceed 256px. A 64px character can technically use a canvas above 128px, but 128×128 or smaller is recommended for more consistent animation.
 
@@ -105,6 +109,7 @@ python3 skills/game-assets/meowart_api.py keyframes-run \
   --keyframe 0=<attack-start.png> \
   --keyframe 4=<attack-impact.png> \
   --keyframe 7=<attack-recovery.png> \
+  --keyframe-strength 4=0.85 \
   --prompt "The character performs one clear rightward sword attack and returns to the starting stance" \
   --total-frames 8 \
   --output-format webp \
@@ -119,6 +124,8 @@ python3 skills/game-assets/meowart_api.py keyframes-run \
 ```
 
 Frame indices begin at `0` and must be smaller than `--total-frames`. Supply at least two unique keyframes, including frame `0`. Use an even total frame count. Keep the prompt simple and describe the transition shared by the supplied poses.
+
+Repeat `--keyframe-strength INDEX=STRENGTH` for any keyframe that needs a non-default strength from 0 to 1. Keyframe runs expose the same animation model and prompt-optimization controls as ordinary animation.
 
 ## Short video
 

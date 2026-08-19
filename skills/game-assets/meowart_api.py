@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.19.1"
+MEOWART_API_CLI_VERSION = "2026.08.19.4"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -55,6 +55,14 @@ MEOWART_ENDPOINT_HINT = (
 GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
 NANO_BANANA_MODEL = "gemini-3.1-flash-image"
 IMAGE_2_MODEL = "gpt-image-2"
+NANO_BANANA_MODELS = (
+    "gemini-3.1-flash-lite-image",
+    "gemini-3.1-flash-image",
+    "gemini-3-pro-image",
+)
+GENERATION_MODEL_CHOICES = ("nano-banana", "image-2")
+GENERATION_SPEED_CHOICES = ("normal", "fast")
+IMAGE2_QUALITY_CHOICES = ("standard", "detailed", "ultimate")
 VIDEO_MOTION_MODE_TO_MODEL = {
     "controlled": "doubao-seedance-1-5-pro-251215",
     "complex": "doubao-seedance-2-0-mini-260615",
@@ -64,6 +72,14 @@ TEXTURE_REFERENCE_CATALOG_MAX_BYTES = 2 * 1024 * 1024
 STANDARD_TEXTURE_SIZE = 64
 PIXEL_GENERAL_WORKFLOW_ID = "pixel_gen_general"
 PIXEL_UNIVERSAL_TEMPLATE_NAME = "xlarge_4_3"
+PIXEL_UNIVERSAL_ASPECT_CONFIG = {
+    "4:3": ("xlarge_4_3", "1:1"),
+    "3:4": ("xlarge_3_4", "1:1"),
+    "1:2": ("xlarge_1_2", "1:1"),
+    "2:1": ("xlarge_2_1", "1:1"),
+    "2:3": ("xlarge_2_3", "4:3"),
+    "3:2": ("xlarge_3_2", "3:4"),
+}
 MAP_REFERENCE_TYPE_TO_WORKFLOW = {
     "pixel-isometric": "pixel_isometric_gen",
     "pixel-hex-isometric": "pixel_hex_isometric_gen",
@@ -1806,9 +1822,13 @@ def image_file_to_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
-def resolve_animate_is_pixel(image_path: str, *, requested_is_pixel: bool = False) -> bool:
-    if requested_is_pixel:
-        return True
+def resolve_animate_is_pixel(
+    image_path: str,
+    *,
+    requested_is_pixel: bool | None = None,
+) -> bool:
+    if requested_is_pixel is not None:
+        return requested_is_pixel
     if Image is None:
         raise RuntimeError("Pillow is required for animation routing; run: python3 -m pip install Pillow")
 
@@ -1833,7 +1853,7 @@ def build_animate_source_controls(
     padding_down: int,
     padding_left: int,
     padding_right: int,
-    requested_is_pixel: bool = False,
+    requested_is_pixel: bool | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if Image is None:
         raise RuntimeError("Pillow is required for animation controls; run: python3 -m pip install Pillow")
@@ -1854,7 +1874,11 @@ def build_animate_source_controls(
     if color_count is not None and not 2 <= color_count <= 64:
         raise ValueError("color_count must be between 2 and 64")
 
-    is_pixel = requested_is_pixel or (image_format == "PNG" and width <= 256 and height <= 256)
+    is_pixel = (
+        requested_is_pixel
+        if requested_is_pixel is not None
+        else image_format == "PNG" and width <= 256 and height <= 256
+    )
     if color_count is not None and not is_pixel:
         raise ValueError("color_count is available only for pixel animation inputs up to 256x256")
 
@@ -2926,6 +2950,8 @@ def submit_hd_gen(
     aspect_ratio: str = "1:1",
     quality_mode: str = "standard",
     remove_bg_method: str = "standard",
+    generation_model: str = "image-2",
+    generation_speed: str = "normal",
     reference_file: str = "",
     reference_files: list[str] | None = None,
     project_id: str | None = None,
@@ -2942,6 +2968,8 @@ def submit_hd_gen(
         "aspect_ratio": aspect_ratio,
         "quality_mode": quality_mode,
         "remove_bg_method": remove_bg_method,
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "generation_speed": generation_speed,
     }
     if project_id is not None:
         data["project_id"] = project_id
@@ -3041,6 +3069,8 @@ def run_hd_gen(
     aspect_ratio: str = "1:1",
     quality_mode: str = "standard",
     remove_bg_method: str = "standard",
+    generation_model: str = "image-2",
+    generation_speed: str = "normal",
     reference_file: str = "",
     reference_files: list[str] | None = None,
     project_id: str | None = None,
@@ -3061,6 +3091,8 @@ def run_hd_gen(
         aspect_ratio=aspect_ratio,
         quality_mode=quality_mode,
         remove_bg_method=remove_bg_method,
+        generation_model=generation_model,
+        generation_speed=generation_speed,
         reference_file=reference_file,
         reference_files=reference_files,
         project_id=project_id,
@@ -3174,8 +3206,10 @@ def submit_animate(
     prompt: str = "",
     is_pixel: bool = False,
     output_frames: int = 8,
-    output_format: str = "webp",
+    output_format: str = "spritesheet",
     animation_type: str = "other",
+    animation_model: str = "pixel-engine-v1.1",
+    optimize_prompt: bool = True,
     remove_bg_method: str = "advanced",
     pixel_config: dict[str, Any] | None = None,
     source_padding: dict[str, Any] | None = None,
@@ -3187,7 +3221,8 @@ def submit_animate(
         "image": image_data_url,
         "prompt": prompt,
         "is_pixel": is_pixel,
-        "optimize_prompt": True,
+        "model": animation_model,
+        "optimize_prompt": optimize_prompt,
         "output_frames": output_frames,
         "output_format": output_format,
         "animation_type": animation_type,
@@ -3212,11 +3247,30 @@ def submit_animate(
     return body
 
 
-def _parse_keyframe_file_specs(specs: list[str], *, total_frames: int) -> list[dict[str, Any]]:
+def _parse_keyframe_file_specs(
+    specs: list[str],
+    *,
+    total_frames: int,
+    strength_specs: list[str] | None = None,
+) -> list[dict[str, Any]]:
     if len(specs) < 2:
         raise ValueError("keyframe animation requires at least two --keyframe values")
     if total_frames < 2 or total_frames % 2 != 0:
         raise ValueError("total_frames must be an even integer of at least 2")
+
+    strengths: dict[int, float] = {}
+    for raw_strength in strength_specs or []:
+        index_text, separator, strength_text = str(raw_strength or "").partition("=")
+        if not separator:
+            raise ValueError("each --keyframe-strength must use INDEX=STRENGTH")
+        try:
+            strength_index = int(index_text.strip())
+            strength = float(strength_text.strip())
+        except ValueError as exc:
+            raise ValueError("keyframe strength index and value must be numeric") from exc
+        if not 0 <= strength <= 1:
+            raise ValueError("keyframe strength must be between 0 and 1")
+        strengths[strength_index] = strength
 
     frames: list[dict[str, Any]] = []
     seen_indexes: set[int] = set()
@@ -3236,7 +3290,13 @@ def _parse_keyframe_file_specs(specs: list[str], *, total_frames: int) -> list[d
         if not path.is_file():
             raise FileNotFoundError(f"keyframe image not found: {path}")
         seen_indexes.add(index)
-        frames.append({"index": index, "image": image_file_to_data_url(str(path)), "strength": 1.0})
+        frames.append(
+            {
+                "index": index,
+                "image": image_file_to_data_url(str(path)),
+                "strength": strengths.get(index, 1.0),
+            }
+        )
     if 0 not in seen_indexes:
         raise ValueError("keyframe 0 is required")
     return sorted(frames, key=lambda frame: int(frame["index"]))
@@ -3247,10 +3307,14 @@ def submit_keyframes(
     api_base: str,
     api_key: str,
     keyframe_specs: list[str],
+    keyframe_strength_specs: list[str] | None = None,
     prompt: str,
+    is_pixel: bool = True,
     total_frames: int = 8,
-    output_format: str = "webp",
+    output_format: str = "spritesheet",
     animation_type: str = "other",
+    animation_model: str = "pixel-engine-v1.1",
+    optimize_prompt: bool = True,
     remove_bg_method: str = "advanced",
     pixel_config: dict[str, Any] | None = None,
     source_padding: dict[str, Any] | None = None,
@@ -3259,8 +3323,14 @@ def submit_keyframes(
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "prompt": str(prompt or "").strip(),
-        "optimize_prompt": True,
-        "frames": _parse_keyframe_file_specs(keyframe_specs, total_frames=total_frames),
+        "model": animation_model,
+        "is_pixel": is_pixel,
+        "optimize_prompt": optimize_prompt,
+        "frames": _parse_keyframe_file_specs(
+            keyframe_specs,
+            total_frames=total_frames,
+            strength_specs=keyframe_strength_specs,
+        ),
         "total_frames": total_frames,
         "output_format": output_format,
         "animation_type": animation_type,
@@ -3434,6 +3504,7 @@ def submit_pixel_gen_self_loop(
     resolution: str = "1K",
     mode: str = "basic",
     direction: str = "horizontal",
+    generation_speed: str = "normal",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3445,6 +3516,7 @@ def submit_pixel_gen_self_loop(
         "resolution": resolution,
         "mode": mode,
         "direction": direction,
+        "generation_speed": generation_speed,
     }
     files = {"file": (path.name, path.read_bytes(), _mime_for_path(path))}
     url = _normalize_base_url(api_base, "/api/workflows/pixel_gen_self_loop/run")
@@ -3471,6 +3543,7 @@ def run_pixel_gen_self_loop(
     resolution: str = "1K",
     mode: str = "basic",
     direction: str = "horizontal",
+    generation_speed: str = "normal",
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3484,6 +3557,7 @@ def run_pixel_gen_self_loop(
         resolution=resolution,
         mode=mode,
         direction=direction,
+        generation_speed=generation_speed,
         timeout=timeout,
         verify=verify,
     )
@@ -3595,6 +3669,8 @@ def submit_general_image(
     resolution: str = "1K",
     aspect_ratio: str = "1:1",
     quality: str = "standard",
+    model: str = NANO_BANANA_MODEL,
+    generation_speed: str = "normal",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3612,10 +3688,25 @@ def submit_general_image(
         reference_images=reference_images,
     )
     is_nano_banana = normalized_capability == "nano-banana"
+    normalized_model = str(model or NANO_BANANA_MODEL).strip()
+    if is_nano_banana and normalized_model not in NANO_BANANA_MODELS:
+        raise ValueError(f"model must be one of: {', '.join(NANO_BANANA_MODELS)}")
+    if is_nano_banana:
+        if normalized_model == "gemini-3.1-flash-lite-image" and resolution != "1K":
+            raise ValueError("gemini-3.1-flash-lite-image supports only 1K")
+        if resolution == "512" and normalized_model != "gemini-3.1-flash-image":
+            raise ValueError("512 resolution is available only for gemini-3.1-flash-image")
+        if normalized_model == "gemini-3-pro-image" and aspect_ratio in {"1:4", "4:1", "1:8", "8:1"}:
+            raise ValueError("gemini-3-pro-image does not support extreme 1:4, 4:1, 1:8, or 8:1 ratios")
+    if not is_nano_banana:
+        normalized_model = IMAGE_2_MODEL
+    if generation_speed not in GENERATION_SPEED_CHOICES:
+        raise ValueError("generation_speed must be one of: normal, fast")
     payload = {
         "generationProvider": "nanobanana" if is_nano_banana else "image2",
-        "model": NANO_BANANA_MODEL if is_nano_banana else IMAGE_2_MODEL,
+        "model": normalized_model,
         "image2Quality": "medium" if is_nano_banana else quality_map[normalized_quality],
+        "generationSpeed": generation_speed,
         "resolution": resolution,
         "aspectRatio": aspect_ratio,
         "requestBody": request_body,
@@ -3644,6 +3735,8 @@ def run_general_image(
     resolution: str = "1K",
     aspect_ratio: str = "1:1",
     quality: str = "standard",
+    model: str = NANO_BANANA_MODEL,
+    generation_speed: str = "normal",
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3658,6 +3751,8 @@ def run_general_image(
         resolution=resolution,
         aspect_ratio=aspect_ratio,
         quality=quality,
+        model=model,
+        generation_speed=generation_speed,
         timeout=timeout,
         verify=verify,
     )
@@ -3846,6 +3941,104 @@ def run_curated_workflow(
     return submit_payload, final_payload
 
 
+def upload_project_input_asset(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    image_path: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> str:
+    response, payload = _request_json(
+        method="POST",
+        url=_normalize_base_url(
+            api_base,
+            f"/api/projects/{quote(project_id, safe='')}/input-assets",
+        ),
+        headers=_base_headers(api_key),
+        data={"asset_kind": "image_reference", "source_kind": "chat_upload"},
+        files=[("file", _upload_part(image_path, label="character reference"))],
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    asset_id = str(payload.get("assetId") or payload.get("asset_id") or "").strip()
+    if not asset_id:
+        raise SkillCompatibilityError("project input upload response missing assetId")
+    return asset_id
+
+
+def submit_spine_agent(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    project_id: str,
+    thread_id: str,
+    source_message_id: str,
+    client_operation_id: str = "",
+    character_reference: str = "",
+    generation_model: str = "nano-banana",
+    export_resolution: str = "2K",
+    quality: str = "detailed",
+    weapon: str = "auto",
+    hair: str = "auto",
+    outfit: str = "auto",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    input_assets: list[dict[str, Any]] = []
+    if character_reference:
+        asset_id = upload_project_input_asset(
+            api_base=api_base,
+            api_key=api_key,
+            project_id=project_id,
+            image_path=character_reference,
+            timeout=timeout,
+            verify=verify,
+        )
+        input_assets.append(
+            {"role": "character_reference", "asset_id": asset_id, "ordinal": 0}
+        )
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        operation_seed = f"{project_id}:{thread_id}:{source_message_id}:{prompt}:{character_reference}"
+        operation_id = f"spine:{hashlib.sha256(operation_seed.encode('utf-8')).hexdigest()[:32]}"
+    payload = {
+        "requirement": prompt,
+        "template_name": "character-template-slim",
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "resolution": "2K",
+        "export_resolution": export_resolution,
+        "image2_quality": {
+            "standard": "low",
+            "detailed": "medium",
+            "ultimate": "high",
+        }[quality],
+        "weapon_mode": weapon,
+        "hair_type": hair,
+        "outfit_type": outfit,
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "source_message_id": source_message_id,
+        "client_operation_id": operation_id,
+        "input_assets": input_assets,
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/spine-agent/jobs"),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
 def submit_sound_effect_generator(
     *,
     api_base: str,
@@ -3857,6 +4050,8 @@ def submit_sound_effect_generator(
     variants: bool = False,
     count: int = 4,
     language: str = "en",
+    temperature: float = 0.3,
+    normalize: bool = True,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3876,6 +4071,8 @@ def submit_sound_effect_generator(
         "variants": "true" if variants else "false",
         "count": str(normalized_count),
         "language": language,
+        "temperature": str(float(temperature)),
+        "normalize": "true" if normalize else "false",
     }
 
     url = _normalize_base_url(api_base, "/api/workflows/elevenlabs_generator/run")
@@ -3903,6 +4100,8 @@ def run_sound_effect_generator(
     variants: bool = False,
     count: int = 4,
     language: str = "en",
+    temperature: float = 0.3,
+    normalize: bool = True,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3918,6 +4117,8 @@ def run_sound_effect_generator(
         variants=variants,
         count=count,
         language=language,
+        temperature=temperature,
+        normalize=normalize,
         timeout=timeout,
         verify=verify,
     )
@@ -4171,6 +4372,8 @@ def submit_character_multi_view_generator(
     reference_image: str,
     mode: str = "pixel",
     canvas_resolution: str = "1K",
+    generation_speed: str = "normal",
+    orientation: str = "纵版",
     direction_mode: str = "mirror",
     aspect_ratio: str = "",
     remove_bg_method: str = "standard",
@@ -4195,6 +4398,8 @@ def submit_character_multi_view_generator(
     data: dict[str, str] = {
         "pixel": "true" if normalized_mode == "pixel" else "false",
         "canvas_resolution": normalized_canvas_resolution,
+        "generation_speed": generation_speed,
+        "orientation": orientation,
         "direction_mode": direction_mode,
         "aspect_ratio": aspect_ratio,
         "remove_bg_method": remove_bg_method,
@@ -4230,6 +4435,8 @@ def run_character_multi_view_generator(
     reference_image: str,
     mode: str = "pixel",
     canvas_resolution: str = "1K",
+    generation_speed: str = "normal",
+    orientation: str = "纵版",
     direction_mode: str = "mirror",
     aspect_ratio: str = "",
     remove_bg_method: str = "standard",
@@ -4248,6 +4455,8 @@ def run_character_multi_view_generator(
         reference_image=reference_image,
         mode=mode,
         canvas_resolution=canvas_resolution,
+        generation_speed=generation_speed,
+        orientation=orientation,
         direction_mode=direction_mode,
         aspect_ratio=aspect_ratio,
         remove_bg_method=remove_bg_method,
@@ -4312,6 +4521,11 @@ def submit_ui_generator(
     quality: str = "detailed",
     remove_bg_method: str = "standard",
     generation_mode: str = "generate",
+    generation_model: str = "image-2",
+    generation_speed: str = "normal",
+    background_color: str = "#cccccc",
+    remove_background: bool = True,
+    split_components: bool = True,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -4323,14 +4537,22 @@ def submit_ui_generator(
     normalized_remove_bg_method = str(remove_bg_method or "standard").strip().lower()
     if normalized_remove_bg_method not in {"none", "standard", "advanced"}:
         raise ValueError("remove_bg_method must be one of: none, standard, advanced")
+    if generation_model not in GENERATION_MODEL_CHOICES:
+        raise ValueError("generation_model must be one of: nano-banana, image-2")
+    if generation_speed not in GENERATION_SPEED_CHOICES:
+        raise ValueError("generation_speed must be one of: normal, fast")
+    effective_remove_bg_method = normalized_remove_bg_method if remove_background else "none"
     data: dict[str, str] = {
         "prompt": prompt,
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
         "image2_quality": quality_map[normalized_quality],
-        "remove_background": "false" if normalized_remove_bg_method == "none" else "true",
-        "remove_bg_method": normalized_remove_bg_method,
-        "split_components": "true",
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "generation_speed": generation_speed,
+        "background_color": background_color,
+        "remove_background": "true" if remove_background else "false",
+        "remove_bg_method": effective_remove_bg_method,
+        "split_components": "true" if split_components else "false",
         "generation_mode": normalized_generation_mode,
     }
 
@@ -4365,6 +4587,11 @@ def run_ui_generator(
     quality: str = "detailed",
     remove_bg_method: str = "standard",
     generation_mode: str = "generate",
+    generation_model: str = "image-2",
+    generation_speed: str = "normal",
+    background_color: str = "#cccccc",
+    remove_background: bool = True,
+    split_components: bool = True,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -4380,6 +4607,11 @@ def run_ui_generator(
         quality=quality,
         remove_bg_method=remove_bg_method,
         generation_mode=generation_mode,
+        generation_model=generation_model,
+        generation_speed=generation_speed,
+        background_color=background_color,
+        remove_background=remove_background,
+        split_components=split_components,
         timeout=timeout,
         verify=verify,
     )
@@ -4411,6 +4643,11 @@ def submit_map_workflow(
     template: str = "",
     style_name: str = "",
     style_description: str = "",
+    generation_speed: str = "normal",
+    similar_tiles: bool = True,
+    tile_only: bool = False,
+    generation_model: str = "nano-banana",
+    quality: str = "standard",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -4422,7 +4659,17 @@ def submit_map_workflow(
     data: dict[str, str] = {
         "prompt": prompt,
         "mode": mode,
+        "generation_speed": generation_speed,
+        "similar_tiles": "true" if similar_tiles else "false",
+        "tile_only": "true" if tile_only and mode == "standard" else "false",
     }
+    if workflow_id == "hd_hex_isometric_gen":
+        data["generation_provider"] = "nanobanana" if generation_model == "nano-banana" else "image2"
+        data["image2_quality"] = {
+            "standard": "low",
+            "detailed": "medium",
+            "ultimate": "high",
+        }[quality]
     if template:
         data["template"] = template
     if remove_bg_method:
@@ -4469,6 +4716,11 @@ def run_map_workflow(
     template: str = "",
     style_name: str = "",
     style_description: str = "",
+    generation_speed: str = "normal",
+    similar_tiles: bool = True,
+    tile_only: bool = False,
+    generation_model: str = "nano-banana",
+    quality: str = "standard",
     project_id: str | None = None,
     thread_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
@@ -4487,6 +4739,11 @@ def run_map_workflow(
         template=template,
         style_name=style_name,
         style_description=style_description,
+        generation_speed=generation_speed,
+        similar_tiles=similar_tiles,
+        tile_only=tile_only,
+        generation_model=generation_model,
+        quality=quality,
         project_id=project_id,
         thread_id=thread_id,
         timeout=timeout,
@@ -4777,7 +5034,7 @@ def _local_run_summary(
     }
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create production-ready game assets with Meowa.")
     parser.add_argument("--version", action="version", version=f"meowart_api.py {MEOWART_API_CLI_VERSION}")
     parser.add_argument(
@@ -4865,10 +5122,33 @@ def parse_args() -> argparse.Namespace:
         modes: tuple[str, ...],
         include_remove_bg: bool = False,
         include_template: bool = False,
+        include_hd_provider: bool = False,
+        similar_tiles_default: bool = True,
     ) -> None:
         command_parser.add_argument("--prompt", required=True, help="Map tile requirement")
         command_parser.add_argument("--reference-image", action="append", default=[], help="Reference image; can be repeated")
         command_parser.add_argument("--mode", default="standard", choices=modes)
+        command_parser.add_argument(
+            "--generation-speed",
+            default="normal",
+            choices=GENERATION_SPEED_CHOICES,
+        )
+        command_parser.set_defaults(similar_tiles=similar_tiles_default)
+        command_parser.add_argument("--similar-tiles", action="store_true", dest="similar_tiles")
+        command_parser.add_argument("--no-similar-tiles", action="store_false", dest="similar_tiles")
+        command_parser.add_argument("--tile-only", action="store_true")
+        if include_hd_provider:
+            command_parser.add_argument(
+                "--generation-model",
+                default="nano-banana",
+                choices=GENERATION_MODEL_CHOICES,
+            )
+            command_parser.add_argument(
+                "--quality",
+                default="standard",
+                choices=IMAGE2_QUALITY_CHOICES,
+                help="Image2 quality: Standard, Detailed, or Ultimate",
+            )
         if include_remove_bg:
             command_parser.add_argument(
                 "--remove-bg-method",
@@ -4961,8 +5241,19 @@ def parse_args() -> argparse.Namespace:
     nano_banana_run.add_argument(
         "--resolution",
         default="1K",
-        choices=["1K", "2K", "4K"],
+        choices=["512", "1K", "2K", "4K"],
         help="Canvas tier; recommended shared default is 1K",
+    )
+    nano_banana_run.add_argument(
+        "--model",
+        default=NANO_BANANA_MODEL,
+        choices=NANO_BANANA_MODELS,
+        help="Nano Banana model exposed by the web product",
+    )
+    nano_banana_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
     )
     nano_banana_run.add_argument(
         "--aspect-ratio",
@@ -4998,7 +5289,7 @@ def parse_args() -> argparse.Namespace:
     image_2_run.add_argument(
         "--quality",
         default="standard",
-        choices=["standard", "detailed", "ultimate"],
+        choices=IMAGE2_QUALITY_CHOICES,
         help=(
             "Output quality; default to Standard for inexpensive prompt testing, then "
             "rerun with Detailed after the prompt is approved"
@@ -5010,13 +5301,37 @@ def parse_args() -> argparse.Namespace:
     image_edit_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 8 times")
     image_edit_run.add_argument("--prompt", required=True, help="Describe the requested edit")
     image_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
-    image_edit_run.add_argument("--strict", action="store_true", help="Preserve exact pixel structure")
-    image_edit_run.add_argument("--resolution", default="1K", choices=["1K", "2K"])
-    image_edit_run.add_argument(
-        "--aspect-ratio",
-        default="auto",
-        choices=["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
+    image_edit_pixel_options = image_edit_run.add_mutually_exclusive_group()
+    image_edit_pixel_options.add_argument("--strict", action="store_true", help="Preserve exact pixel structure")
+    image_edit_pixel_options.add_argument(
+        "--regional-pixelation",
+        action="store_true",
+        help="Pixelate separately detected asset regions in multi-asset images",
     )
+    image_edit_run.add_argument(
+        "--generation-model",
+        default="nano-banana",
+        choices=GENERATION_MODEL_CHOICES,
+        help="Generation model (default: Nano Banana, matching the web editor)",
+    )
+    image_edit_run.add_argument(
+        "--resolution",
+        default="1K",
+        choices=["1K", "2K"],
+        help="Output resolution (default: 1K, matching the web editor)",
+    )
+    image_edit_run.add_argument(
+        "--quality",
+        default="standard",
+        choices=IMAGE2_QUALITY_CHOICES,
+        help="Image2 quality: Standard, Detailed, or Ultimate",
+    )
+    image_edit_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
+    )
+    image_edit_run.set_defaults(aspect_ratio="auto")
     image_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
 
     animation_edit_run = subparsers.add_parser("animation-edit-run", help="Edit an animated GIF or WebP")
@@ -5026,6 +5341,11 @@ def parse_args() -> argparse.Namespace:
     animation_edit_run.add_argument("--prompt", required=True, help="Describe the requested animation edit")
     animation_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
     animation_edit_run.add_argument("--remove-bg-method", default="advanced", choices=["none", "standard", "advanced"])
+    animation_edit_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
+    )
 
     one_click_prompts = subparsers.add_parser(
         "one-click-upgrade-prompts",
@@ -5049,6 +5369,23 @@ def parse_args() -> argparse.Namespace:
         help="One concise prompt per output; repeat from one to eight times",
     )
     one_click_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    one_click_run.add_argument(
+        "--generation-model",
+        default="",
+        choices=GENERATION_MODEL_CHOICES,
+        help="Defaults to Nano Banana in pixel mode and Image2 in HD mode",
+    )
+    one_click_run.add_argument(
+        "--quality",
+        default="standard",
+        choices=IMAGE2_QUALITY_CHOICES,
+        help="Image2 quality: Standard, Detailed, or Ultimate",
+    )
+    one_click_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
+    )
     one_click_run.add_argument("--resolution", default="", choices=["1K", "2K"])
     one_click_run.add_argument("--remove-bg-method", default="none", choices=["none", "standard", "advanced"])
 
@@ -5114,6 +5451,7 @@ def parse_args() -> argparse.Namespace:
     side_map_run.add_argument("--background", required=True)
     side_map_run.add_argument("--foreground", required=True)
     side_map_run.add_argument("--remove-bg-method", default="standard", choices=["standard", "advanced"])
+    side_map_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     side_map_run.add_argument("--loop-midground", action="store_true", help="Make the midground loop horizontally")
     side_map_run.add_argument("--loop-background", action="store_true", help="Make the background loop horizontally")
     side_map_run.add_argument("--loop-foreground", action="store_true", help="Make the foreground loop horizontally")
@@ -5129,6 +5467,7 @@ def parse_args() -> argparse.Namespace:
         choices=["2d_hd", "2d_cartoon", "2d_ink", "clay", "low_poly_3d", "steampunk", "anime_hd"],
     )
     hd_side_map_run.add_argument("--custom-art-style", default="")
+    hd_side_map_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     hd_side_map_run.add_argument("--loop-midground", action="store_true", help="Make the midground loop horizontally")
     hd_side_map_run.add_argument("--loop-background", action="store_true", help="Make the background loop horizontally")
     hd_side_map_run.add_argument("--loop-foreground", action="store_true", help="Make the foreground loop horizontally")
@@ -5143,6 +5482,9 @@ def parse_args() -> argparse.Namespace:
     pixel_submit.add_argument("--job-name", default="")
     pixel_submit.add_argument("--resolution", default="", help=argparse.SUPPRESS)
     pixel_submit.add_argument("--aspect-ratio", default="1:1")
+    pixel_submit.add_argument("--direction", default="", help="Preset direction exposed by the selected web preset")
+    pixel_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
+    pixel_submit.add_argument("--remove-bg-method", default="advanced", choices=["none", "standard", "advanced"])
     pixel_submit.add_argument("--reference-file", default="", help="Optional user reference image sent as reference_file")
     pixel_submit.add_argument("--reference-files", action="append", default=[], help="Optional user reference image; can be repeated")
 
@@ -5183,6 +5525,11 @@ def parse_args() -> argparse.Namespace:
         choices=["none", "standard"],
         help="Keep the composed background or remove a simple background",
     )
+    large_pixel_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
+    )
 
     pixel_universal_run = subparsers.add_parser(
         "pixel-universal-gen-run",
@@ -5195,6 +5542,16 @@ def parse_args() -> argparse.Namespace:
         dest="requirement",
         required=True,
         help="Describe the requested pixel-art result",
+    )
+    pixel_universal_run.add_argument(
+        "--aspect-ratio",
+        default="4:3",
+        choices=["4:3", "3:4", "2:1", "1:2", "2:3", "3:2"],
+    )
+    pixel_universal_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
     )
     pixel_universal_run.add_argument(
         "--view",
@@ -5211,7 +5568,7 @@ def parse_args() -> argparse.Namespace:
     pixel_universal_run.add_argument(
         "--remove-bg-method",
         default="none",
-        choices=["none", "standard"],
+        choices=["none", "standard", "advanced"],
         help="Keep the composed background or remove a simple background",
     )
 
@@ -5246,8 +5603,23 @@ def parse_args() -> argparse.Namespace:
     custom_size_pixel_run.add_argument(
         "--generation-model",
         default="nano-banana",
-        choices=["nano-banana", "image-2"],
+        choices=GENERATION_MODEL_CHOICES,
         help="Generation model; Nano Banana is recommended and used by default",
+    )
+    custom_size_pixel_run.add_argument(
+        "--content-mode",
+        default="portrait",
+        choices=["portrait", "illustration", "asset_pack", "other"],
+    )
+    custom_size_pixel_run.add_argument(
+        "--remove-bg-method",
+        default="none",
+        choices=["none", "standard", "advanced"],
+    )
+    custom_size_pixel_run.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
     )
     custom_size_pixel_run.set_defaults(fill_canvas=True)
     custom_size_pixel_run.add_argument(
@@ -5305,6 +5677,13 @@ def parse_args() -> argparse.Namespace:
         help="Output quality: Standard, Detailed, or Ultimate",
     )
     hd_submit.add_argument(
+        "--generation-model",
+        default="image-2",
+        choices=GENERATION_MODEL_CHOICES,
+    )
+    hd_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
+    hd_submit.add_argument("--direction", default="", help="Preset direction exposed by the selected web preset")
+    hd_submit.add_argument(
         "--remove-bg-method",
         default="standard",
         choices=["none", "standard", "advanced"],
@@ -5353,17 +5732,43 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Existing character reference image",
     )
-    character_multi_view_submit.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    character_multi_view_submit.add_argument("--mode", default="hd", choices=["pixel", "hd"])
     character_multi_view_submit.add_argument("--canvas-resolution", default="1K", choices=["1K", "2K"])
-    character_multi_view_submit.add_argument("--direction-mode", default="mirror", choices=["mirror", "ninegrid"])
-    character_multi_view_submit.add_argument("--aspect-ratio", default="", choices=["", "1:1", "3:4", "9:16"])
+    character_multi_view_submit.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
+    )
+    character_multi_view_submit.add_argument(
+        "--orientation",
+        default="纵版",
+        choices=["横版", "纵版"],
+    )
+    character_multi_view_submit.add_argument(
+        "--direction-mode",
+        default="mirror",
+        choices=["mirror", "ninegrid"],
+        help=argparse.SUPPRESS,
+    )
+    character_multi_view_submit.add_argument(
+        "--aspect-ratio",
+        default="",
+        choices=["", "1:1", "3:4", "9:16"],
+        help=argparse.SUPPRESS,
+    )
     character_multi_view_submit.add_argument(
         "--remove-bg-method",
         default="standard",
         choices=["none", "standard", "advanced"],
+        help=argparse.SUPPRESS,
     )
     character_multi_view_submit.add_argument("--extra-constraint", default="")
-    character_multi_view_submit.add_argument("--output-size", type=int, default=None, help="Optional final square sprite size")
+    character_multi_view_submit.add_argument(
+        "--output-size",
+        type=int,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     character_multi_view_submit.set_defaults(project_id=None, thread_id=None)
 
     character_multi_view_run = subparsers.add_parser(
@@ -5414,8 +5819,28 @@ def parse_args() -> argparse.Namespace:
     self_loop_submit.add_argument("--image-file", required=True)
     self_loop_submit.add_argument("--job-name", default="")
     self_loop_submit.add_argument("--resolution", default="1K")
-    self_loop_submit.add_argument("--mode", choices=["basic", "full", "texture"], default="basic")
-    self_loop_submit.add_argument("--direction", choices=["horizontal", "vertical"], default="horizontal")
+    self_loop_submit.add_argument(
+        "--variant",
+        choices=["horizontal", "vertical", "four-way"],
+        default="horizontal",
+    )
+    self_loop_submit.add_argument(
+        "--mode",
+        choices=["basic", "full", "texture"],
+        default="",
+        help=argparse.SUPPRESS,
+    )
+    self_loop_submit.add_argument(
+        "--direction",
+        choices=["horizontal", "vertical"],
+        default="",
+        help=argparse.SUPPRESS,
+    )
+    self_loop_submit.add_argument(
+        "--generation-speed",
+        default="normal",
+        choices=GENERATION_SPEED_CHOICES,
+    )
 
     self_loop_run = subparsers.add_parser("self-loop-run", help="Create a seamless loop from an image")
     for action in self_loop_submit._actions[1:]:
@@ -5433,6 +5858,10 @@ def parse_args() -> argparse.Namespace:
         sound_kind.add_argument("--variants", action="store_true", help="Generate variants of the same sound")
         command_parser.add_argument("--count", type=int, default=4, help="Number of pack items or variants")
         command_parser.add_argument("--language", default="en", help="Name language; prompt generation stays English")
+        command_parser.add_argument("--temperature", type=float, default=0.3)
+        command_parser.set_defaults(normalize=True)
+        command_parser.add_argument("--normalize", action="store_true", dest="normalize")
+        command_parser.add_argument("--no-normalize", action="store_false", dest="normalize")
 
     sound_submit = subparsers.add_parser("sound-submit", aliases=["sfx-submit", "sound-effect-submit"], help="Submit a sound-effect job")
     add_shared_path_args(sound_submit)
@@ -5515,16 +5944,31 @@ def parse_args() -> argparse.Namespace:
         help="Output quality: Standard, Detailed, or Ultimate",
     )
     ui_submit.add_argument(
+        "--generation-model",
+        default="image-2",
+        choices=GENERATION_MODEL_CHOICES,
+    )
+    ui_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
+    ui_submit.add_argument(
+        "--background-color",
+        default="#cccccc",
+        choices=["#000000", "#ffffff", "#cccccc", "#808080", "#333333"],
+    )
+    ui_submit.add_argument(
         "--remove-bg-method",
         default="standard",
         choices=["none", "standard", "advanced"],
         help="Background removal: none, standard, or advanced",
     )
     ui_submit.add_argument("--mode", dest="generation_mode", default="generate", choices=["generate", "extract"])
+    ui_submit.set_defaults(remove_background=True, split_components=True)
+    ui_submit.add_argument("--remove-background", action="store_true", dest="remove_background")
+    ui_submit.add_argument("--no-remove-background", action="store_false", dest="remove_background")
+    ui_submit.add_argument("--split-components", action="store_true", dest="split_components")
+    ui_submit.add_argument("--no-split-components", action="store_false", dest="split_components")
     ui_submit.set_defaults(
         template="hd_retro_rpg",
         generation_provider="image2",
-        split_components=True,
         project_id=None,
         thread_id=None,
     )
@@ -5549,6 +5993,7 @@ def parse_args() -> argparse.Namespace:
         isometric_submit,
         modes=("standard", "edit", "tetraploid", "road", "wall"),
         include_remove_bg=True,
+        similar_tiles_default=False,
     )
 
     isometric_run = subparsers.add_parser(
@@ -5579,6 +6024,7 @@ def parse_args() -> argparse.Namespace:
         hex_isometric_submit,
         modes=("standard", "edit", "tetraploid", "heptaploid"),
         include_remove_bg=True,
+        similar_tiles_default=True,
     )
 
     hex_isometric_run = subparsers.add_parser(
@@ -5605,6 +6051,7 @@ def parse_args() -> argparse.Namespace:
         hd_isometric_submit,
         modes=("standard", "tetraploid"),
         include_template=True,
+        similar_tiles_default=True,
     )
 
     hd_isometric_run = subparsers.add_parser("hd-isometric-gen-run", help="Create HD isometric map tiles")
@@ -5623,6 +6070,8 @@ def parse_args() -> argparse.Namespace:
         hd_hex_isometric_submit,
         modes=("standard", "tetraploid"),
         include_template=True,
+        include_hd_provider=True,
+        similar_tiles_default=True,
     )
 
     hd_hex_isometric_run = subparsers.add_parser("hd-hex-isometric-gen-run", help="Create HD hex-isometric map tiles")
@@ -5638,8 +6087,7 @@ def parse_args() -> argparse.Namespace:
     music_submit = subparsers.add_parser("music-submit", help="Submit a music_generator job")
     add_shared_path_args(music_submit)
     music_submit.add_argument("--prompt", default="", help="Music requirement text; optional when reference images are provided")
-    music_submit.add_argument("--generate-audio", dest="audio_generate", action="store_true", help="Render a playable track")
-    music_submit.add_argument("--preview", dest="demo", action="store_true", help="Render a shorter preview")
+    music_submit.add_argument("--output-mode", default="pro", choices=["demo", "pro"])
     music_submit.add_argument("--reference-image", action="append", default=[], help="Optional reference image; can be repeated")
 
     music_run = subparsers.add_parser("music-run", help="Draft or render game music")
@@ -5651,6 +6099,55 @@ def parse_args() -> argparse.Namespace:
     music_poll = subparsers.add_parser("music-poll", help="Poll one music/workflow job")
     add_shared_path_args(music_poll)
     music_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
+    style_run = subparsers.add_parser("style-gen-run", help="Generate the public style preset asset")
+    add_shared_path_args(style_run)
+    style_run.add_argument("--prompt", required=True)
+    style_run.add_argument("--template", default="meowu-island", choices=["meowu-island"])
+    style_run.add_argument(
+        "--generation-model",
+        default="gpt-image-2-official",
+        choices=["nanobanana", "gpt-image-2", "gpt-image-2-official"],
+    )
+    style_run.add_argument("--variant", default="121", choices=["121", "112", "221"])
+    style_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
+
+    pindou_run = subparsers.add_parser("pindou-run", help="Convert or generate a Pindou bead-art asset")
+    add_shared_path_args(pindou_run)
+    pindou_run.add_argument("--source-image", default="")
+    pindou_run.add_argument("--reference-image", action="append", default=[])
+    pindou_run.add_argument("--mode", default="hd", choices=["pixel", "hd"])
+    pindou_run.add_argument("--prompt", default="")
+    pindou_run.add_argument("--size-mode", default="52", choices=["source", "52", "78", "104", "custom"])
+    pindou_run.add_argument("--custom-size", type=int, default=None)
+    pindou_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
+
+    spine_run = subparsers.add_parser("spine-run", help="Generate a reskinned Spine character package")
+    add_shared_path_args(spine_run)
+    spine_run.add_argument("--prompt", required=True)
+    spine_run.add_argument("--character-reference", default="")
+    spine_run.add_argument("--project-id", required=True)
+    spine_run.add_argument("--thread-id", required=True)
+    spine_run.add_argument("--source-message-id", required=True)
+    spine_run.add_argument("--client-operation-id", default="")
+    spine_run.add_argument(
+        "--generation-model",
+        default="nano-banana",
+        choices=GENERATION_MODEL_CHOICES,
+    )
+    spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
+    spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
+    spine_run.add_argument("--weapon", default="auto", choices=["auto", "yes", "no"])
+    spine_run.add_argument(
+        "--hair",
+        default="auto",
+        choices=["auto", "short_hair", "long_hair", "twin_tail", "single_ponytail"],
+    )
+    spine_run.add_argument(
+        "--outfit",
+        default="auto",
+        choices=["auto", "pants", "short_skirt", "long_skirt"],
+    )
 
     subparsers.add_parser("credits-balance", help="Get current credits balance")
 
@@ -5673,14 +6170,18 @@ def parse_args() -> argparse.Namespace:
     add_shared_path_args(animate_submit_parser)
     animate_submit_parser.add_argument("--image-file", required=True)
     animate_submit_parser.add_argument("--prompt", default="")
-    animate_submit_parser.add_argument(
-        "--is-pixel",
-        action="store_true",
-        help="Force pixel mode; PNG inputs up to 256x256 select it automatically",
-    )
-    animate_submit_parser.add_argument("--output-frames", type=int, default=8)
-    animate_submit_parser.add_argument("--output-format", default="webp", choices=["webp", "gif", "spritesheet"])
+    animate_submit_parser.add_argument("--output-frames", type=int, default=8, choices=[4, 6, 8, 10, 12, 16])
+    animate_submit_parser.add_argument("--output-format", default="spritesheet", choices=["webp", "gif", "spritesheet"])
     animate_submit_parser.add_argument("--animation-type", default="other")
+    animate_submit_parser.add_argument(
+        "--animation-model",
+        default="",
+        choices=["pixel-engine-v1.1", "frame-engine-v1.1"],
+        help="Animation model; defaults from the source dimensions like the web UI",
+    )
+    animate_submit_parser.set_defaults(optimize_prompt=True)
+    animate_submit_parser.add_argument("--optimize-prompt", action="store_true", dest="optimize_prompt")
+    animate_submit_parser.add_argument("--no-optimize-prompt", action="store_false", dest="optimize_prompt")
     animate_submit_parser.add_argument(
         "--remove-bg-method",
         default="advanced",
@@ -5705,9 +6206,24 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Keyframe in INDEX=PATH form; repeat at least twice and include index 0",
     )
+    keyframes_run_parser.add_argument(
+        "--keyframe-strength",
+        action="append",
+        default=[],
+        help="Optional per-keyframe strength in INDEX=STRENGTH form, from 0 to 1",
+    )
     keyframes_run_parser.add_argument("--prompt", required=True)
-    keyframes_run_parser.add_argument("--total-frames", type=int, default=8)
-    keyframes_run_parser.add_argument("--output-format", default="webp", choices=["webp", "gif", "spritesheet"])
+    keyframes_run_parser.add_argument(
+        "--animation-model",
+        default="",
+        choices=["pixel-engine-v1.1", "frame-engine-v1.1"],
+        help="Animation model; defaults from keyframe 0 dimensions like the web UI",
+    )
+    keyframes_run_parser.set_defaults(optimize_prompt=True)
+    keyframes_run_parser.add_argument("--optimize-prompt", action="store_true", dest="optimize_prompt")
+    keyframes_run_parser.add_argument("--no-optimize-prompt", action="store_false", dest="optimize_prompt")
+    keyframes_run_parser.add_argument("--total-frames", type=int, default=8, choices=[6, 8, 10, 12, 16, 20])
+    keyframes_run_parser.add_argument("--output-format", default="spritesheet", choices=["webp", "gif", "spritesheet"])
     keyframes_run_parser.add_argument(
         "--animation-type",
         default="other",
@@ -5763,6 +6279,9 @@ def parse_args() -> argparse.Namespace:
         "hd-isometric-gen-run",
         "hd-hex-isometric-gen-run",
         "music-run",
+        "style-gen-run",
+        "pindou-run",
+        "spine-run",
         "credits-balance",
         "custom-workflow-list",
         "custom-workflow-run",
@@ -5775,7 +6294,11 @@ def parse_args() -> argparse.Namespace:
     for action in subparsers._choices_actions:
         action.metavar = action.dest
 
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
 
 
 def _parse_json_arg(raw: str, *, name: str) -> dict[str, Any]:
@@ -6215,6 +6738,8 @@ def main() -> int:
                 resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
                 quality=getattr(args, "quality", "standard"),
+                model=getattr(args, "model", NANO_BANANA_MODEL),
+                generation_speed=getattr(args, "generation_speed", "normal"),
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -6245,6 +6770,8 @@ def main() -> int:
             "isometric-tileset-run",
             "side-scrolling-map-run",
             "hd-side-scrolling-map-run",
+            "style-gen-run",
+            "pindou-run",
         }
         if args.command in curated_commands:
             endpoint = ""
@@ -6259,6 +6786,10 @@ def main() -> int:
                     raise ValueError("image editing requires 1 to 8 reference images")
                 if args.strict and args.mode != "pixel":
                     raise ValueError("--strict is available only in pixel mode")
+                if args.regional_pixelation and args.mode != "pixel":
+                    raise ValueError("--regional-pixelation is available only in pixel mode")
+                if args.mode == "hd" and args.remove_bg_method == "advanced":
+                    raise ValueError("HD image editing supports only none or standard background removal")
                 endpoint = "/api/workflows/image_edit/run"
                 workflow_id = "image_edit"
                 slug_seed = args.prompt
@@ -6266,9 +6797,24 @@ def main() -> int:
                     "prompt": args.prompt,
                     "mode": args.mode,
                     "strict": "true" if args.strict else "false",
-                    "remove_bg_method": args.remove_bg_method if args.mode == "pixel" else "none",
+                    "pixelation_method": "fine" if args.regional_pixelation else "whole",
+                    "generation_provider": (
+                        "nanobanana" if args.generation_model == "nano-banana" else "image2"
+                    ),
+                    "model_name": (
+                        NANO_BANANA_MODEL
+                        if args.generation_model == "nano-banana"
+                        else IMAGE_2_MODEL
+                    ),
+                    "remove_bg_method": args.remove_bg_method,
                     "resolution": args.resolution,
                     "aspect_ratio": args.aspect_ratio,
+                    "image2_quality": {
+                        "standard": "low",
+                        "detailed": "medium",
+                        "ultimate": "high",
+                    }[args.quality],
+                    "generation_speed": args.generation_speed,
                 }
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
 
@@ -6278,8 +6824,15 @@ def main() -> int:
                     raise ValueError("custom-size pixel generation accepts at most 8 reference images")
                 if args.width < 1 or args.height < 1:
                     raise ValueError("custom-size pixel generation width and height must be positive")
-                if args.strong_pixelation and not references:
+                strong_pixelation = bool(getattr(args, "strong_pixelation", False))
+                generation_model = getattr(args, "generation_model", "nano-banana")
+                if strong_pixelation and not references:
                     raise ValueError("--strong-pixelation requires at least one --reference-image")
+                generation_speed = (
+                    getattr(args, "generation_speed", "normal")
+                    if generation_model == "nano-banana"
+                    else "normal"
+                )
                 endpoint = CUSTOM_SIZE_PIXEL_GEN_ENDPOINT
                 workflow_id = "one_click_pixelate"
                 slug_seed = args.prompt
@@ -6287,14 +6840,14 @@ def main() -> int:
                     "prompt": args.prompt,
                     "width": str(args.width),
                     "height": str(args.height),
-                    "content_mode": "other",
-                    "fill_canvas": "true" if args.fill_canvas else "false",
-                    "strong_mode": "true" if args.strong_pixelation else "false",
-                    "remove_bg_method": "none",
+                    "content_mode": getattr(args, "content_mode", "portrait"),
+                    "fill_canvas": "true" if getattr(args, "fill_canvas", True) else "false",
+                    "strong_mode": "true" if strong_pixelation else "false",
+                    "remove_bg_method": args.remove_bg_method,
                     "generation_provider": (
-                        "nanobanana" if args.generation_model == "nano-banana" else "image2"
+                        "nanobanana" if generation_model == "nano-banana" else "image2"
                     ),
-                    "generation_speed": "normal",
+                    "generation_speed": generation_speed,
                 }
                 files.extend(
                     ("reference_images", _upload_part(path, label="reference image"))
@@ -6315,6 +6868,7 @@ def main() -> int:
                     "prompt": args.prompt,
                     "mode": args.mode,
                     "remove_bg_method": args.remove_bg_method,
+                    "generation_speed": args.generation_speed,
                 }
                 files.append(("source_animation", _upload_part(args.animation_file, label="animation file")))
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
@@ -6330,14 +6884,31 @@ def main() -> int:
                 endpoint = ONE_CLICK_UPGRADE_ENDPOINT
                 workflow_id = "one_click_upgrade"
                 slug_seed = prompts[0]
+                generation_model = getattr(args, "generation_model", "") or (
+                    "nano-banana" if args.mode == "pixel" else "image-2"
+                )
+                resolution = getattr(args, "resolution", "") or ("1K" if args.mode == "pixel" else "2K")
                 data = {
                     "prompt_list": json.dumps(prompts, ensure_ascii=False),
                     "count": str(len(prompts)),
                     "mode": args.mode,
                     "remove_bg_method": args.remove_bg_method,
+                    "generation_provider": (
+                        "nanobanana" if generation_model == "nano-banana" else "image2"
+                    ),
+                    "model_name": (
+                        NANO_BANANA_MODEL
+                        if generation_model == "nano-banana"
+                        else IMAGE_2_MODEL
+                    ),
+                    "image2_quality": {
+                        "standard": "low",
+                        "detailed": "medium",
+                        "ultimate": "high",
+                    }[getattr(args, "quality", "standard")],
+                    "generation_speed": getattr(args, "generation_speed", "normal"),
+                    "resolution": resolution,
                 }
-                if args.resolution:
-                    data["resolution"] = args.resolution
                 files.append(("reference_image", _upload_part(args.reference_image, label="reference image")))
 
             elif args.command == "video-run":
@@ -6410,6 +6981,7 @@ def main() -> int:
                     "loop_midground": "true" if args.loop_midground else "false",
                     "loop_background": "true" if args.loop_background else "false",
                     "loop_foreground": "true" if args.loop_foreground else "false",
+                    "generation_speed": getattr(args, "generation_speed", "normal"),
                 }
 
             elif args.command == "hd-side-scrolling-map-run":
@@ -6428,7 +7000,51 @@ def main() -> int:
                     "loop_midground": "true" if args.loop_midground else "false",
                     "loop_background": "true" if args.loop_background else "false",
                     "loop_foreground": "true" if args.loop_foreground else "false",
+                    "generation_speed": getattr(args, "generation_speed", "normal"),
                 }
+
+            elif args.command == "style-gen-run":
+                endpoint = "/api/workflows/style_gen/run"
+                workflow_id = "style_gen"
+                slug_seed = args.prompt
+                data = {
+                    "template": args.template,
+                    "model": args.generation_model,
+                    "requirement": args.prompt,
+                    "background_variant": args.variant,
+                    "reference_variant": args.variant,
+                    "generation_speed": args.generation_speed,
+                }
+
+            elif args.command == "pindou-run":
+                references = list(args.reference_image or [])
+                if args.mode == "pixel" and not args.source_image:
+                    raise ValueError("pixel Pindou mode requires --source-image")
+                if args.mode == "hd" and not args.prompt.strip() and not args.source_image and not references:
+                    raise ValueError("HD Pindou mode requires --prompt, --source-image, or --reference-image")
+                if args.mode == "pixel" and args.size_mode != "source":
+                    raise ValueError("pixel Pindou mode uses the source size; pass --size-mode source")
+                if args.mode == "hd" and args.size_mode == "source":
+                    raise ValueError("HD Pindou mode requires 52, 78, 104, or custom size")
+                if args.size_mode == "custom" and not (48 <= int(args.custom_size or 0) <= 128):
+                    raise ValueError("custom Pindou size must be between 48 and 128")
+                endpoint = "/api/workflows/pixel_gen_freesize/run"
+                workflow_id = "pixel_gen_freesize"
+                slug_seed = args.prompt or (Path(args.source_image).stem if args.source_image else "pindou")
+                data = {
+                    "mode": args.mode,
+                    "prompt": args.prompt,
+                    "size_mode": args.size_mode,
+                    "generation_speed": args.generation_speed,
+                }
+                if args.custom_size is not None:
+                    data["custom_size"] = str(args.custom_size)
+                if args.source_image:
+                    files.append(("source_image", _upload_part(args.source_image, label="Pindou source image")))
+                files.extend(
+                    ("reference_files", _upload_part(path, label="Pindou reference image"))
+                    for path in references
+                )
 
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             submit_payload, final_payload = run_curated_workflow(
@@ -6491,6 +7107,11 @@ def main() -> int:
 
             if args.command == "large-pixel-gen-run":
                 template_name = args.template_name
+                template_config["generation_speed"] = getattr(
+                    args,
+                    "generation_speed",
+                    "normal",
+                )
                 validate_pixel_general_template(
                     api_base=args.api_base,
                     api_key=args.api_key,
@@ -6499,9 +7120,17 @@ def main() -> int:
                     verify=verify,
                 )
             else:
-                template_name = PIXEL_UNIVERSAL_TEMPLATE_NAME
+                universal_aspect_ratio = getattr(args, "aspect_ratio", "4:3")
+                template_name, request_aspect_ratio = PIXEL_UNIVERSAL_ASPECT_CONFIG[universal_aspect_ratio]
                 if args.view == "top-down":
+                    if universal_aspect_ratio != "4:3":
+                        raise ValueError("--view top-down is available only with --aspect-ratio 4:3")
                     template_config["direction"] = "top-down"
+                template_config["generation_speed"] = getattr(
+                    args,
+                    "generation_speed",
+                    "normal",
+                )
 
             predicted_output_dir = _predict_saved_dir(effective_output_dir, args.requirement)
             print(f"[INFO] planned_output_dir={predicted_output_dir}")
@@ -6511,6 +7140,7 @@ def main() -> int:
                 template_name=template_name,
                 requirement=args.requirement,
                 template_config=template_config,
+                aspect_ratio=(request_aspect_ratio if args.command == "pixel-universal-gen-run" else "1:1"),
                 reference_file=references[0] if references else "",
                 reference_files=references[1:],
                 timeout=args.timeout,
@@ -6534,12 +7164,21 @@ def main() -> int:
             return 0
 
         if args.command == "pixel-gen-submit":
+            template_config = _parse_json_arg(args.template_config, name="template_config")
+            template_config.update(
+                {
+                    "generation_speed": args.generation_speed,
+                    "remove_bg_method": args.remove_bg_method,
+                }
+            )
+            if args.direction:
+                template_config["direction"] = args.direction
             payload = submit_pixel_gen(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 template_name=args.template_name,
                 requirement=args.requirement,
-                template_config=_parse_json_arg(args.template_config, name="template_config"),
+                template_config=template_config,
                 job_name=args.job_name,
                 aspect_ratio=args.aspect_ratio,
                 reference_file=args.reference_file,
@@ -6555,7 +7194,7 @@ def main() -> int:
                 request_payload={
                     "template_name": args.template_name,
                     "requirement": args.requirement,
-                    "template_config": _parse_json_arg(args.template_config, name="template_config"),
+                    "template_config": template_config,
                     "job_name": args.job_name,
                     "aspect_ratio": args.aspect_ratio,
                     "reference_file": args.reference_file,
@@ -6570,6 +7209,14 @@ def main() -> int:
 
         if args.command == "pixel-gen-run":
             template_config = _parse_json_arg(args.template_config, name="template_config")
+            template_config.update(
+                {
+                    "generation_speed": args.generation_speed,
+                    "remove_bg_method": args.remove_bg_method,
+                }
+            )
+            if args.direction:
+                template_config["direction"] = args.direction
             request_payload = {
                 "template_name": args.template_name,
                 "requirement": args.requirement,
@@ -6743,6 +7390,8 @@ def main() -> int:
 
         if args.command == "hd-gen-submit":
             template_config = _parse_json_arg(args.template_config, name="template_config")
+            if args.direction:
+                template_config["direction"] = args.direction
             request_payload = {
                 "template_name": args.template_name,
                 "requirement": args.requirement,
@@ -6752,6 +7401,8 @@ def main() -> int:
                 "aspect_ratio": args.aspect_ratio,
                 "quality_mode": args.quality_mode,
                 "remove_bg_method": args.remove_bg_method,
+                "generation_model": args.generation_model,
+                "generation_speed": args.generation_speed,
                 "reference_file": args.reference_file,
                 "reference_files": list(args.reference_files or []),
                 "project_id": args.project_id,
@@ -6768,6 +7419,8 @@ def main() -> int:
                 aspect_ratio=args.aspect_ratio,
                 quality_mode=args.quality_mode,
                 remove_bg_method=args.remove_bg_method,
+                generation_model=args.generation_model,
+                generation_speed=args.generation_speed,
                 reference_file=args.reference_file,
                 reference_files=list(args.reference_files or []),
                 project_id=args.project_id,
@@ -6790,6 +7443,8 @@ def main() -> int:
 
         if args.command == "hd-gen-run":
             template_config = _parse_json_arg(args.template_config, name="template_config")
+            if args.direction:
+                template_config["direction"] = args.direction
             slug_seed = args.job_name or args.requirement
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             request_payload = {
@@ -6801,6 +7456,8 @@ def main() -> int:
                 "aspect_ratio": args.aspect_ratio,
                 "quality_mode": args.quality_mode,
                 "remove_bg_method": args.remove_bg_method,
+                "generation_model": args.generation_model,
+                "generation_speed": args.generation_speed,
                 "reference_file": args.reference_file,
                 "reference_files": list(args.reference_files or []),
                 "project_id": args.project_id,
@@ -6817,6 +7474,8 @@ def main() -> int:
                 aspect_ratio=args.aspect_ratio,
                 quality_mode=args.quality_mode,
                 remove_bg_method=args.remove_bg_method,
+                generation_model=args.generation_model,
+                generation_speed=args.generation_speed,
                 reference_file=args.reference_file,
                 reference_files=list(args.reference_files or []),
                 project_id=args.project_id,
@@ -7088,14 +7747,22 @@ def main() -> int:
             return 0
 
         if args.command == "self-loop-submit":
+            self_loop_variant = getattr(args, "variant", "horizontal")
+            self_loop_mode = getattr(args, "mode", "") or (
+                "full" if self_loop_variant == "four-way" else "basic"
+            )
+            self_loop_direction = getattr(args, "direction", "") or (
+                "vertical" if self_loop_variant == "vertical" else "horizontal"
+            )
             payload = submit_pixel_gen_self_loop(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_file=args.image_file,
                 job_name=args.job_name,
                 resolution=args.resolution,
-                mode=args.mode,
-                direction=args.direction,
+                mode=self_loop_mode,
+                direction=self_loop_direction,
+                generation_speed=getattr(args, "generation_speed", "normal"),
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -7106,8 +7773,10 @@ def main() -> int:
                 args=args,
                 request_payload={
                     "image_file": args.image_file,
-                    "mode": args.mode,
-                    "direction": args.direction,
+                    "variant": self_loop_variant,
+                    "mode": self_loop_mode,
+                    "direction": self_loop_direction,
+                    "generation_speed": getattr(args, "generation_speed", "normal"),
                 },
                 response_payload=payload,
                 downloads=[],
@@ -7117,6 +7786,13 @@ def main() -> int:
             return 0
 
         if args.command == "self-loop-run":
+            self_loop_variant = getattr(args, "variant", "horizontal")
+            self_loop_mode = getattr(args, "mode", "") or (
+                "full" if self_loop_variant == "four-way" else "basic"
+            )
+            self_loop_direction = getattr(args, "direction", "") or (
+                "vertical" if self_loop_variant == "vertical" else "horizontal"
+            )
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.job_name or Path(args.image_file).stem)}")
             submit_payload, final_payload = run_pixel_gen_self_loop(
                 api_base=args.api_base,
@@ -7124,8 +7800,9 @@ def main() -> int:
                 image_file=args.image_file,
                 job_name=args.job_name,
                 resolution=args.resolution,
-                mode=args.mode,
-                direction=args.direction,
+                mode=self_loop_mode,
+                direction=self_loop_direction,
+                generation_speed=getattr(args, "generation_speed", "normal"),
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -7169,6 +7846,8 @@ def main() -> int:
                 "variants": args.variants,
                 "count": args.count,
                 "language": args.language,
+                "temperature": args.temperature,
+                "normalize": args.normalize,
             }
             payload = submit_sound_effect_generator(
                 api_base=args.api_base,
@@ -7180,6 +7859,8 @@ def main() -> int:
                 variants=args.variants,
                 count=args.count,
                 language=args.language,
+                temperature=args.temperature,
+                normalize=args.normalize,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -7207,6 +7888,8 @@ def main() -> int:
                 "variants": args.variants,
                 "count": args.count,
                 "language": args.language,
+                "temperature": args.temperature,
+                "normalize": args.normalize,
             }
             submit_payload, final_payload = run_sound_effect_generator(
                 api_base=args.api_base,
@@ -7218,6 +7901,8 @@ def main() -> int:
                 variants=args.variants,
                 count=args.count,
                 language=args.language,
+                temperature=args.temperature,
+                normalize=args.normalize,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -7309,6 +7994,8 @@ def main() -> int:
                 "reference_image": args.reference_image,
                 "mode": args.mode,
                 "canvas_resolution": args.canvas_resolution,
+                "generation_speed": getattr(args, "generation_speed", "normal"),
+                "orientation": getattr(args, "orientation", "纵版"),
                 "direction_mode": args.direction_mode,
                 "aspect_ratio": args.aspect_ratio,
                 "remove_bg_method": args.remove_bg_method,
@@ -7323,6 +8010,8 @@ def main() -> int:
                 reference_image=args.reference_image,
                 mode=args.mode,
                 canvas_resolution=args.canvas_resolution,
+                generation_speed=getattr(args, "generation_speed", "normal"),
+                orientation=getattr(args, "orientation", "纵版"),
                 direction_mode=args.direction_mode,
                 aspect_ratio=args.aspect_ratio,
                 remove_bg_method=args.remove_bg_method,
@@ -7353,6 +8042,8 @@ def main() -> int:
                 "reference_image": args.reference_image,
                 "mode": args.mode,
                 "canvas_resolution": args.canvas_resolution,
+                "generation_speed": getattr(args, "generation_speed", "normal"),
+                "orientation": getattr(args, "orientation", "纵版"),
                 "direction_mode": args.direction_mode,
                 "aspect_ratio": args.aspect_ratio,
                 "remove_bg_method": args.remove_bg_method,
@@ -7367,6 +8058,8 @@ def main() -> int:
                 reference_image=args.reference_image,
                 mode=args.mode,
                 canvas_resolution=args.canvas_resolution,
+                generation_speed=getattr(args, "generation_speed", "normal"),
+                orientation=getattr(args, "orientation", "纵版"),
                 direction_mode=args.direction_mode,
                 aspect_ratio=args.aspect_ratio,
                 remove_bg_method=args.remove_bg_method,
@@ -7578,6 +8271,11 @@ def main() -> int:
                 "quality": args.quality,
                 "remove_bg_method": args.remove_bg_method,
                 "generation_mode": args.generation_mode,
+                "generation_model": args.generation_model,
+                "generation_speed": args.generation_speed,
+                "background_color": args.background_color,
+                "remove_background": args.remove_background,
+                "split_components": args.split_components,
             }
             payload = submit_ui_generator(
                 api_base=args.api_base,
@@ -7589,6 +8287,11 @@ def main() -> int:
                 quality=args.quality,
                 remove_bg_method=args.remove_bg_method,
                 generation_mode=args.generation_mode,
+                generation_model=args.generation_model,
+                generation_speed=args.generation_speed,
+                background_color=args.background_color,
+                remove_background=args.remove_background,
+                split_components=args.split_components,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -7617,6 +8320,11 @@ def main() -> int:
                 "quality": args.quality,
                 "remove_bg_method": args.remove_bg_method,
                 "generation_mode": args.generation_mode,
+                "generation_model": args.generation_model,
+                "generation_speed": args.generation_speed,
+                "background_color": args.background_color,
+                "remove_background": args.remove_background,
+                "split_components": args.split_components,
             }
             submit_payload, final_payload = run_ui_generator(
                 api_base=args.api_base,
@@ -7628,6 +8336,11 @@ def main() -> int:
                 quality=args.quality,
                 remove_bg_method=args.remove_bg_method,
                 generation_mode=args.generation_mode,
+                generation_model=args.generation_model,
+                generation_speed=args.generation_speed,
+                background_color=args.background_color,
+                remove_background=args.remove_background,
+                split_components=args.split_components,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -7663,6 +8376,9 @@ def main() -> int:
             reference_images = list(getattr(args, "reference_image", []) or [])
             project_id = getattr(args, "project_id", None)
             thread_id = getattr(args, "thread_id", None)
+            generation_speed = getattr(args, "generation_speed", "normal")
+            similar_tiles = getattr(args, "similar_tiles", workflow_id != "pixel_isometric_gen")
+            tile_only = bool(getattr(args, "tile_only", False))
             request_payload = {
                 "workflow_id": workflow_id,
                 "prompt": args.prompt,
@@ -7672,6 +8388,11 @@ def main() -> int:
                 "template": getattr(args, "template", ""),
                 "style_name": getattr(args, "style_name", ""),
                 "style_description": getattr(args, "style_description", ""),
+                "generation_speed": generation_speed,
+                "similar_tiles": similar_tiles,
+                "tile_only": tile_only,
+                "generation_model": getattr(args, "generation_model", "nano-banana"),
+                "quality": getattr(args, "quality", "standard"),
                 "project_id": project_id,
                 "thread_id": thread_id,
             }
@@ -7687,6 +8408,11 @@ def main() -> int:
                     template=getattr(args, "template", ""),
                     style_name=getattr(args, "style_name", ""),
                     style_description=getattr(args, "style_description", ""),
+                    generation_speed=generation_speed,
+                    similar_tiles=similar_tiles,
+                    tile_only=tile_only,
+                    generation_model=getattr(args, "generation_model", "nano-banana"),
+                    quality=getattr(args, "quality", "standard"),
                     project_id=project_id,
                     thread_id=thread_id,
                     timeout=args.timeout,
@@ -7719,6 +8445,11 @@ def main() -> int:
                 template=getattr(args, "template", ""),
                 style_name=getattr(args, "style_name", ""),
                 style_description=getattr(args, "style_description", ""),
+                generation_speed=generation_speed,
+                similar_tiles=similar_tiles,
+                tile_only=tile_only,
+                generation_model=getattr(args, "generation_model", "nano-banana"),
+                quality=getattr(args, "quality", "standard"),
                 project_id=project_id,
                 thread_id=thread_id,
                 timeout=args.timeout,
@@ -7760,18 +8491,20 @@ def main() -> int:
             return 0
 
         if args.command == "music-submit":
+            audio_generate = True
+            demo = args.output_mode == "demo"
             request_payload = {
                 "prompt": args.prompt,
-                "audio_generate": args.audio_generate,
-                "demo": args.demo,
+                "audio_generate": audio_generate,
+                "demo": demo,
                 "reference_images": list(args.reference_image or []),
             }
             payload = submit_music_generator(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                audio_generate=args.audio_generate,
-                demo=args.demo,
+                audio_generate=audio_generate,
+                demo=demo,
                 reference_images=list(args.reference_image or []),
                 timeout=args.timeout,
                 verify=verify,
@@ -7790,20 +8523,22 @@ def main() -> int:
             return 0
 
         if args.command == "music-run":
+            audio_generate = True
+            demo = args.output_mode == "demo"
             slug_seed = args.prompt or (Path(args.reference_image[0]).stem if args.reference_image else "music")
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             request_payload = {
                 "prompt": args.prompt,
-                "audio_generate": args.audio_generate,
-                "demo": args.demo,
+                "audio_generate": audio_generate,
+                "demo": demo,
                 "reference_images": list(args.reference_image or []),
             }
             submit_payload, final_payload = run_music_generator(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                audio_generate=args.audio_generate,
-                demo=args.demo,
+                audio_generate=audio_generate,
+                demo=demo,
                 reference_images=list(args.reference_image or []),
                 timeout=args.timeout,
                 max_wait=args.max_wait,
@@ -7892,10 +8627,87 @@ def main() -> int:
             print(_format_public_json(_credits_balance_for_display(payload)))
             return 0
 
+        if args.command == "spine-run":
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
+            request_payload = {
+                "prompt": args.prompt,
+                "character_reference": args.character_reference,
+                "project_id": args.project_id,
+                "thread_id": args.thread_id,
+                "source_message_id": args.source_message_id,
+                "client_operation_id": args.client_operation_id,
+                "generation_model": args.generation_model,
+                "export_resolution": args.export_resolution,
+                "quality": args.quality,
+                "weapon": args.weapon,
+                "hair": args.hair,
+                "outfit": args.outfit,
+            }
+            submit_payload = submit_spine_agent(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                source_message_id=args.source_message_id,
+                client_operation_id=args.client_operation_id,
+                character_reference=args.character_reference,
+                generation_model=args.generation_model,
+                export_resolution=args.export_resolution,
+                quality=args.quality,
+                weapon=args.weapon,
+                hair=args.hair,
+                outfit=args.outfit,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            final_payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload=submit_payload,
+                label="spine",
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=args.prompt,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+                workflow_id="spine_agent",
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload={"submit": submit_payload, "final": final_payload},
+                downloads=downloads,
+                effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
         if args.command == "animate-submit":
+            selected_animation_model = getattr(args, "animation_model", "")
             is_pixel = resolve_animate_is_pixel(
                 args.image_file,
-                requested_is_pixel=args.is_pixel,
+                requested_is_pixel=(
+                    selected_animation_model == "pixel-engine-v1.1"
+                    if selected_animation_model
+                    else None
+                ),
+            )
+            animation_model = selected_animation_model or (
+                "pixel-engine-v1.1" if is_pixel else "frame-engine-v1.1"
             )
             pixel_config, source_padding = build_animate_source_controls(
                 args.image_file,
@@ -7915,6 +8727,8 @@ def main() -> int:
                 output_frames=args.output_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
+                animation_model=animation_model,
+                optimize_prompt=args.optimize_prompt,
                 remove_bg_method=args.remove_bg_method,
                 pixel_config=pixel_config,
                 source_padding=source_padding,
@@ -7936,9 +8750,17 @@ def main() -> int:
 
         if args.command == "animate-run":
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt or Path(args.image_file).stem)}")
+            selected_animation_model = getattr(args, "animation_model", "")
             is_pixel = resolve_animate_is_pixel(
                 args.image_file,
-                requested_is_pixel=args.is_pixel,
+                requested_is_pixel=(
+                    selected_animation_model == "pixel-engine-v1.1"
+                    if selected_animation_model
+                    else None
+                ),
+            )
+            animation_model = selected_animation_model or (
+                "pixel-engine-v1.1" if is_pixel else "frame-engine-v1.1"
             )
             pixel_config, source_padding = build_animate_source_controls(
                 args.image_file,
@@ -7958,6 +8780,8 @@ def main() -> int:
                 output_frames=args.output_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
+                animation_model=animation_model,
+                optimize_prompt=args.optimize_prompt,
                 remove_bg_method=args.remove_bg_method,
                 pixel_config=pixel_config,
                 source_padding=source_padding,
@@ -8022,7 +8846,18 @@ def main() -> int:
             slug_seed = args.prompt or "keyframes"
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
             source_path = keyframe_zero_path(list(args.keyframe or []))
-            is_pixel = resolve_animate_is_pixel(source_path)
+            selected_animation_model = getattr(args, "animation_model", "")
+            is_pixel = resolve_animate_is_pixel(
+                source_path,
+                requested_is_pixel=(
+                    selected_animation_model == "pixel-engine-v1.1"
+                    if selected_animation_model
+                    else None
+                ),
+            )
+            animation_model = selected_animation_model or (
+                "pixel-engine-v1.1" if is_pixel else "frame-engine-v1.1"
+            )
             pixel_config, source_padding = build_animate_source_controls(
                 source_path,
                 color_count=args.color_count,
@@ -8036,10 +8871,14 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 keyframe_specs=list(args.keyframe or []),
+                keyframe_strength_specs=list(args.keyframe_strength or []),
                 prompt=args.prompt,
+                is_pixel=is_pixel,
                 total_frames=args.total_frames,
                 output_format=args.output_format,
                 animation_type=args.animation_type,
+                animation_model=animation_model,
+                optimize_prompt=args.optimize_prompt,
                 remove_bg_method=args.remove_bg_method,
                 pixel_config=pixel_config,
                 source_padding=source_padding,

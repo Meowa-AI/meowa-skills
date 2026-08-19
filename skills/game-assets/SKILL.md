@@ -1,6 +1,6 @@
 ---
 name: game-assets
-description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view characters, UI sheets, image and frame edits, textures, terrain tilesets, maps, video, sound effects, music, bundled Meowa CLI execution, or final game-project deliverable validation.
+description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, style presets, textures, terrain tilesets, maps, video, sound effects, music, bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets
@@ -125,7 +125,7 @@ For game planning, follow [Game Designer](references/game-design.md). Its realti
 
 ## Keep the public boundary clean
 
-- Guide users to configure Meowa account authentication locally when needed, but never request the key itself or expose credentials, provider, model, endpoint, sampling, internal-stage, or raw-request controls.
+- Guide users to configure Meowa account authentication locally when needed, but never request the key itself or expose credentials, raw provider identifiers, arbitrary model names, endpoints, sampling, internal-stage, or raw-request controls. A command may expose a curated product-level `--generation-model` enum when its capability module documents the choices and default.
 - Never overwrite source assets or return input references, internal templates, masks, metadata, debug artifacts, or intermediate files.
 - Return only declared final deliverables.
 - Do not claim dimensions, transparency, seamlessness, directional consistency, component separation, or animation quality until the final files have been inspected.

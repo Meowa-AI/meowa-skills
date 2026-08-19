@@ -219,16 +219,14 @@ python3 skills/game-assets/meowart_api.py character-multi-view-run \
   --reference-image <character.png> \
   --mode pixel \
   --canvas-resolution 1K \
-  --direction-mode mirror \
-  --aspect-ratio 1:1 \
-  --remove-bg-method standard \
+  --orientation 纵版 \
+  --generation-speed normal \
+  --extra-constraint "角色行走动作，迈开双腿，一前一后" \
   --output-dir <output-dir>
 ```
 
-- Use `mirror` to generate five directions and mirror the compatible views into a complete eight-direction set.
-- Use `ninegrid` to generate the eight directions in one nine-grid layout. It is a generation layout, not a nine-view deliverable.
-- Pixel mode supports 1K or 2K. HD mode uses the service's fixed 2K canvas behavior even though the compatibility CLI still accepts `--canvas-resolution`.
-- Use `--output-size` only when the requested final sprite size is explicit.
+- The web-aligned default is HD mode. Pixel mode supports 1K or 2K; HD mode uses 2K.
+- Select the same `横版` or `纵版` orientation shown by the web editor. Pixel mode also exposes `normal` or `fast` generation speed.
 - Put pose, clothing, silhouette, or consistency requirements in `--extra-constraint`.
 
 ## Background removal

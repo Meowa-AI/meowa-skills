@@ -39,6 +39,9 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
 | Edit existing animation frames | `animation-edit-run` | Restyle or modify an animated GIF or WebP | Preserve the source frame timing and layout |
+| Apply the public style preset | `style-gen-run` | Produce one styled game asset | Uses the preset, model, variant, and speed exposed by the web product |
+| Create Pindou bead art | `pindou-run` | Convert a pixel source at source size or generate an HD sized design | HD mode requires a supported target size |
+| Reskin a Spine character | `spine-run` | Produce the public Spine-agent final package | Requires the project/thread message context used by the web workflow |
 
 Use this module after base-asset generation when the task is refinement rather than a new asset family. Send a finalized still asset to animation or video only after the edit is approved.
 
@@ -53,6 +56,9 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
   --resolution 2K \
   --aspect-ratio 4:3 \
   --quality detailed \
+  --generation-model image-2 \
+  --generation-speed normal \
+  --background-color '#cccccc' \
   --remove-bg-method standard \
   --output-dir <output-dir>
 ```
@@ -76,6 +82,7 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
 - Supported aspect ratios are 4:3, 3:4, 16:9, 9:16, and 1:1.
 - Treat `1K` and `2K` as service resolution tiers, not promises of one universal pixel dimension; inspect the saved image for its actual dimensions.
 - Use `standard` for quick drafts, `detailed` for normal production work, and `ultimate` for a final asset whose small text or dense ornament needs the highest fidelity.
+- Select `--generation-model nano-banana` or `--generation-model image-2`; use `--generation-speed` for the Nano Banana path. Background removal and component splitting are enabled by default and can be disabled with `--no-remove-background` and `--no-split-components`.
 - Use `standard` background removal for simple, high-contrast edges and `advanced` for transparency around detailed or visually complex edges.
 - Describe the whole UI system: genre, hierarchy, palette, materials, states, and required components.
 - Generation is not limited to interface graphics. Describe an ordinary asset batch or sprite sheet when that is the desired output.
@@ -126,8 +133,9 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
   --prompt "Replace the wooden shield with a round bronze shield while preserving the pose" \
   --mode pixel \
   --strict \
+  --generation-model nano-banana \
+  --generation-speed normal \
   --resolution 1K \
-  --aspect-ratio auto \
   --remove-bg-method standard \
   --output-dir <output-dir>
 ```
@@ -135,6 +143,9 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
 - Provide one to eight reference images.
 - Use pixel mode for pixel assets and HD mode for smooth artwork.
 - Use `--strict` only when pixel structure must remain exact.
+- Use `--regional-pixelation` for a multi-asset image whose detected regions need separate pixel-size handling. It is mutually exclusive with `--strict` and adds the same 2-credit product add-on shown on the web.
+- Omitted options follow the web editor's mode defaults: pixel editing uses Nano Banana at 1K, while HD editing uses Image2 at 2K. An explicit `--generation-model` or `--resolution` overrides that mode default.
+- `--quality standard|detailed|ultimate` applies to Image-2. `--generation-speed normal|fast` applies to Nano Banana.
 - Pixel mode supports `none`, `standard`, and `advanced` background removal. HD edits keep their normal background unless the dedicated background-removal command is used afterward.
 
 ## Edit animated frames
@@ -145,6 +156,7 @@ python3 skills/game-assets/meowart_api.py animation-edit-run \
   --reference-image <armor-reference.png> \
   --prompt "Apply the armor design consistently to every frame" \
   --mode pixel \
+  --generation-speed normal \
   --remove-bg-method advanced \
   --output-dir <output-dir>
 ```
