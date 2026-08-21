@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.19.4"
+MEOWART_API_CLI_VERSION = "2026.08.21.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2310,6 +2310,9 @@ def _public_game_design_event(event: Any) -> dict[str, Any] | None:
             ("estimated_credits", "estimatedCredits"),
             ("calculated_credits", "calculatedCredits"),
             ("charged_credits", "chargedCredits"),
+            ("gross_charged_credits", "grossChargedCredits"),
+            ("refunded_credits", "refundedCredits"),
+            ("net_charged_credits", "netChargedCredits"),
             ("remaining_credits", "remainingCredits"),
             ("input_tokens", "inputTokens"),
             ("cached_input_tokens", "cachedInputTokens"),
@@ -2505,6 +2508,8 @@ def save_game_design_outputs(
             value = billing.get(api_key)
             if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                 safe_billing[public_key] = value
+        if billing.get("serverFailureRefunded") is True:
+            safe_billing["server_failure_refunded"] = True
         safe_billing["credits_exhausted"] = billing.get("creditsExhausted") is True
     manifest: dict[str, Any] = {
         "format_version": 1,
@@ -3980,6 +3985,7 @@ def submit_spine_agent(
     source_message_id: str,
     client_operation_id: str = "",
     character_reference: str = "",
+    template_name: str = "character_template_slim",
     generation_model: str = "nano-banana",
     export_resolution: str = "2K",
     quality: str = "detailed",
@@ -4008,7 +4014,7 @@ def submit_spine_agent(
         operation_id = f"spine:{hashlib.sha256(operation_seed.encode('utf-8')).hexdigest()[:32]}"
     payload = {
         "requirement": prompt,
-        "template_name": "character-template-slim",
+        "template_name": template_name,
         "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
         "resolution": "2K",
         "export_resolution": export_resolution,
@@ -6126,6 +6132,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(spine_run)
     spine_run.add_argument("--prompt", required=True)
     spine_run.add_argument("--character-reference", default="")
+    spine_run.add_argument(
+        "--template-name",
+        default="character_template_slim",
+        choices=[
+            "character_template_slim",
+            "character_template_2head",
+            "character_template_2head_celestial_librarian",
+            "character_template_2head_clockwork_orchard_warden",
+        ],
+    )
     spine_run.add_argument("--project-id", required=True)
     spine_run.add_argument("--thread-id", required=True)
     spine_run.add_argument("--source-message-id", required=True)
@@ -8632,6 +8648,7 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "character_reference": args.character_reference,
+                "template_name": args.template_name,
                 "project_id": args.project_id,
                 "thread_id": args.thread_id,
                 "source_message_id": args.source_message_id,
@@ -8652,6 +8669,7 @@ def main() -> int:
                 source_message_id=args.source_message_id,
                 client_operation_id=args.client_operation_id,
                 character_reference=args.character_reference,
+                template_name=args.template_name,
                 generation_model=args.generation_model,
                 export_resolution=args.export_resolution,
                 quality=args.quality,
