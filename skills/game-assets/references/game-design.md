@@ -40,7 +40,8 @@ python3 meowart_api.py game-design-poll \
 - Usage is charged incrementally after each planning-model call: uncached input is 150 credits per million tokens, cached input is 15 per million, and output including reasoning is 900 per million. The cumulative per-job amount is rounded up to whole credits.
 - Before accepting a message and before each later planning round, the service checks the current balance against that round's estimated input, recent observed cache, and estimated output. A call proceeds only when the estimate is covered.
 - The runner prints cumulative calculated credits, charged credits, and remaining credits while polling. If the balance is empty or cannot cover the next estimated round, it reports the exact balance state and includes the recharge URL instead of starting another model call.
-- Completed model calls remain charged when a task later fails or is cancelled; calls that never start are not charged.
+- A server-side task failure fully refunds this run's planning-model token charges. The final billing summary reports gross charges, refunded credits, and net charges separately.
+- Completed model calls remain charged when the user cancels a task or when the run stops because the balance cannot cover another planning round; calls that never start are not charged.
 - Asset, image, audio, video, web-research, or other paid tools are priced separately under their existing capability rules. The Agent token charge does not include them.
 
 The output manifest reports only provider-neutral token counts and credit settlement. It does not store raw Agent events, provider responses, internal URLs, prompts, signed links, or debug metadata.
