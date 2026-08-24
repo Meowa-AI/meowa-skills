@@ -84,7 +84,7 @@ python3 skills/game-assets/meowart_api.py animate-run \
   --padding-down 8 \
   --padding-left 12 \
   --padding-right 20 \
-  --remove-bg-method advanced \
+  --remove-bg-method standard \
   --output-dir <output-dir>
 ```
 
@@ -99,6 +99,27 @@ Choose directional padding from the actual action rather than applying the same 
 Use 8 frames for most common actions. Use 12 or 16 frames when an action genuinely needs more phases or a slower transition. A 16-frame run has twice the temporal budget of an 8-frame run, so the model may invent an extra motion beat instead of simply improving the same action. When using 16 frames, slow the intended action explicitly with wording such as `jumps gently`, `attacks slowly`, or `moves gradually` to reduce unwanted extra motion. Prefer keyframes when exact intermediate poses matter more than free motion. Frame counts must be even: pixel animation supports 2–16 frames and HD animation supports 2–24 frames. Validate the requested count before running.
 
 Keep prompts motion-focused. Specify the action, intensity, camera behavior, loop requirement, and what must stay fixed. For pixel art, preserve the source silhouette, palette, and hard edges.
+
+## Frame animation (new)
+
+```bash
+python3 skills/game-assets/meowart_api.py meowa-animation-run \
+  --image-file <character.png> \
+  --prompt "Character performs one attack and returns to the starting pose" \
+  --style-mode pixel \
+  --output-frames 16 \
+  --quality-mode standard \
+  --remove-bg-method standard \
+  --animation-mode loop \
+  --optimize-prompt \
+  --padding 16 \
+  --padding-alignment center \
+  --output-dir <output-dir>
+```
+
+The defaults mirror the web UI: 16 frames (2 seconds), Pixel Style, Standard quality, standard background removal, loop motion, and prompt optimization enabled. Frame choices are 8, 16, 24, and 32. Pixel inputs must not exceed 256 pixels on the longest side; HD inputs do not use that dimension limit. Background removal choices are `none` and `standard`; advanced background removal remains visible but disabled in the web product while it is being improved. Standard and Detailed output quality are available; Ultimate remains visible in the product but is still in development.
+
+Use `--style-mode hd` for smooth high-definition output. Source padding stays independent from style and is applied before generation. The final downloaded WebP always loops; `--animation-mode` controls the motion design rather than the playback metadata.
 
 ## Keyframe-controlled animation
 

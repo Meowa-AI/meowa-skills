@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.22.1"
+MEOWART_API_CLI_VERSION = "2026.08.24.4"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -1518,6 +1518,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
+    "meowa_animation": frozenset({"video_path", "url"}),
     "one_click_pixelate": frozenset({"output_path"}),
     "one_click_upgrade": frozenset({"output_paths"}),
     "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
@@ -3247,6 +3248,83 @@ def submit_animate(
         url=url,
         headers=_base_headers(api_key),
         json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(json.dumps(body, ensure_ascii=False, indent=2))
+    return body
+
+
+def prepare_meowa_animation_prompt(
+    *,
+    api_base: str,
+    api_key: str,
+    image_file: str,
+    prompt: str,
+    style_mode: str,
+    duration_seconds: int,
+    quality_mode: str,
+    animation_mode: str,
+    remove_bg_method: str,
+    source_padding: dict[str, Any],
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    image_path = Path(image_file).expanduser().resolve()
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/workflows/meowa_animation/prompts"),
+        headers=_base_headers(api_key),
+        data={
+            "prompt": str(prompt or "").strip(),
+            "style_mode": style_mode,
+            "duration_seconds": str(duration_seconds),
+            "quality_mode": quality_mode,
+            "animation_mode": animation_mode,
+            "remove_bg_method": remove_bg_method,
+            "output_language": "en",
+            "source_padding": json.dumps(source_padding),
+        },
+        files={"source_image": _upload_part(image_path, label="animation source")},
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(json.dumps(body, ensure_ascii=False, indent=2))
+    return body
+
+
+def submit_meowa_animation(
+    *,
+    api_base: str,
+    api_key: str,
+    image_file: str,
+    action_timeline: str,
+    style_mode: str,
+    duration_seconds: int,
+    quality_mode: str,
+    animation_mode: str,
+    remove_bg_method: str,
+    source_padding: dict[str, Any],
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    image_path = Path(image_file).expanduser().resolve()
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/workflows/meowa_animation/run"),
+        headers=_base_headers(api_key),
+        data={
+            "action_timeline": str(action_timeline or "").strip(),
+            "style_mode": style_mode,
+            "duration_seconds": str(duration_seconds),
+            "quality_mode": quality_mode,
+            "animation_mode": animation_mode,
+            "remove_bg_method": remove_bg_method,
+            "source_padding": json.dumps(source_padding),
+        },
+        files={"source_image": _upload_part(image_path, label="animation source")},
         timeout=timeout,
         verify=verify,
     )
@@ -6213,6 +6291,63 @@ def build_parser() -> argparse.ArgumentParser:
             animate_run_parser._add_action(action)
     add_shared_runtime_args(animate_run_parser)
 
+    meowa_animation_run_parser = subparsers.add_parser(
+        "meowa-animation-run",
+        help="Create a frame animation with Meowa Animation",
+    )
+    add_shared_path_args(meowa_animation_run_parser)
+    meowa_animation_run_parser.add_argument("--image-file", required=True)
+    meowa_animation_run_parser.add_argument("--prompt", required=True)
+    meowa_animation_run_parser.add_argument(
+        "--style-mode",
+        default="pixel",
+        choices=["pixel", "hd"],
+    )
+    meowa_animation_run_parser.add_argument(
+        "--output-frames",
+        type=int,
+        default=16,
+        choices=[8, 16, 24, 32],
+    )
+    meowa_animation_run_parser.add_argument(
+        "--quality-mode",
+        default="standard",
+        choices=["standard", "medium", "advanced"],
+        help="Standard or Detailed; Ultimate is visible but still in development",
+    )
+    meowa_animation_run_parser.add_argument(
+        "--animation-mode",
+        default="loop",
+        choices=["loop", "non_loop"],
+    )
+    meowa_animation_run_parser.add_argument(
+        "--remove-bg-method",
+        default="standard",
+        choices=["none", "standard"],
+        help="Background removal: none or standard",
+    )
+    meowa_animation_run_parser.set_defaults(optimize_prompt=True)
+    meowa_animation_run_parser.add_argument(
+        "--optimize-prompt",
+        action="store_true",
+        dest="optimize_prompt",
+    )
+    meowa_animation_run_parser.add_argument(
+        "--no-optimize-prompt",
+        action="store_false",
+        dest="optimize_prompt",
+    )
+    meowa_animation_run_parser.add_argument("--padding", type=int, default=0)
+    meowa_animation_run_parser.add_argument(
+        "--padding-alignment",
+        default="center",
+        choices=[
+            "top-left", "top", "top-right", "left", "center", "right",
+            "bottom-left", "bottom", "bottom-right",
+        ],
+    )
+    add_shared_runtime_args(meowa_animation_run_parser)
+
     keyframes_run_parser = subparsers.add_parser(
         "keyframes-run",
         help="Create frame animation controlled by two or more keyframes",
@@ -6304,6 +6439,7 @@ def build_parser() -> argparse.ArgumentParser:
         "custom-workflow-list",
         "custom-workflow-run",
         "animate-run",
+        "meowa-animation-run",
         "keyframes-run",
     }
     subparsers._choices_actions[:] = [
@@ -8708,6 +8844,110 @@ def main() -> int:
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 args=args,
                 request_payload=request_payload,
+                response_payload={"submit": submit_payload, "final": final_payload},
+                downloads=downloads,
+                effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command == "meowa-animation-run":
+            image_path = Path(args.image_file).expanduser().resolve()
+            if not image_path.is_file():
+                raise FileNotFoundError(f"animation source not found: {image_path}")
+            if args.quality_mode == "advanced":
+                raise ValueError("Ultimate quality is still in development")
+            if args.padding < 0:
+                raise ValueError("padding must be non-negative")
+            if Image is None:
+                raise RuntimeError("Pillow is required for animation validation; run: python3 -m pip install Pillow")
+            with Image.open(image_path) as source:
+                source_width, source_height = source.size
+            if args.style_mode == "pixel" and max(source_width, source_height) > 256:
+                raise ValueError("pixel animation source cannot exceed 256 pixels on its longest side")
+
+            duration_seconds = args.output_frames // 8
+            source_padding = {
+                "enabled": True,
+                "pixels": args.padding,
+                "alignment": args.padding_alignment,
+            }
+            action_timeline = str(args.prompt or "").strip()
+            if args.optimize_prompt:
+                prepared = prepare_meowa_animation_prompt(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    image_file=str(image_path),
+                    prompt=action_timeline,
+                    style_mode=args.style_mode,
+                    duration_seconds=duration_seconds,
+                    quality_mode=args.quality_mode,
+                    animation_mode=args.animation_mode,
+                    remove_bg_method=args.remove_bg_method,
+                    source_padding=source_padding,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                action_timeline = str(prepared.get("action_timeline") or "").strip()
+                if not action_timeline:
+                    raise RuntimeError("prompt optimization returned no action timeline")
+
+            submit_payload = submit_meowa_animation(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                image_file=str(image_path),
+                action_timeline=action_timeline,
+                style_mode=args.style_mode,
+                duration_seconds=duration_seconds,
+                quality_mode=args.quality_mode,
+                animation_mode=args.animation_mode,
+                remove_bg_method=args.remove_bg_method,
+                source_padding=source_padding,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            api_job_id = str(
+                submit_payload.get("api_job_id") or submit_payload.get("job_id") or ""
+            ).strip()
+            if not api_job_id:
+                raise RuntimeError("Meowa Animation submit response missing api_job_id")
+            print(f"[INFO] submitted api_job_id={api_job_id}")
+            final_payload = wait_animate_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                api_job_id=api_job_id,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=args.prompt or image_path.stem,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+                workflow_id="meowa_animation",
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload={
+                    "image_file": str(image_path),
+                    "prompt": args.prompt,
+                    "style_mode": args.style_mode,
+                    "output_frames": args.output_frames,
+                    "quality_mode": args.quality_mode,
+                    "animation_mode": args.animation_mode,
+                    "remove_bg_method": args.remove_bg_method,
+                    "source_padding": source_padding,
+                },
                 response_payload={"submit": submit_payload, "final": final_payload},
                 downloads=downloads,
                 effective_output_dir=str(output_dir),
