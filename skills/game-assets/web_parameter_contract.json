@@ -137,7 +137,7 @@
       "command": "spine-run",
       "web_sources": ["types.ts:SpineGenerationSettings", "components/SettingsPanel.tsx", "services/spineAgentService.ts"],
       "parameters": {
-        "template_name": {"flag": "--template-name", "default": "character_template_slim", "choices": ["character_template_slim", "character_template_2head_celestial_librarian", "character_template_2head_clockwork_orchard_warden"], "request_field": "template_name"},
+        "template_name": {"flag": "--template-name", "default": "character_template_slim", "choices": ["character_template_slim", "character_template_2head_celestial_librarian", "character_template_2head_moon_jellyfish_cartographer", "character_template_2head_clockwork_orchard_warden", "character_template_2head_desert_glassblower_alchemist", "character_template_2head_deep_sea_choir_conductor", "character_template_2head_thundercloud_tea_merchant", "character_template_2head_moss_castle_gardener", "character_template_2head_aurora_train_conductor", "character_template_2head_comet_circus_tinkerer", "character_template_2head_volcanic_bell_founder"], "request_field": "template_name"},
         "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
         "export_resolution": {"flag": "--export-resolution", "default": "2K", "choices": ["1K", "2K", "4K"], "request_field": "export_resolution"},
         "quality": {"flag": "--quality", "default": "detailed", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},

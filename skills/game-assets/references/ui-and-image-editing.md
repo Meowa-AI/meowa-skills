@@ -45,7 +45,7 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 
 Use this module after base-asset generation when the task is refinement rather than a new asset family. Send a finalized still asset to animation or video only after the edit is approved.
 
-For Spine reskinning, choose the same template exposed by the web product. `--template-name character_template_slim` is the default four-head-tall template. The two-head-tall choices are `character_template_2head_celestial_librarian` and `character_template_2head_clockwork_orchard_warden`; the raw two-head base template is internal and is not a public choice. The command returns only the final Spine package.
+For Spine reskinning, choose the same template exposed by the web product. `--template-name character_template_slim` is the default four-head-tall template. The two-head-tall choices are `character_template_2head_celestial_librarian`, `character_template_2head_moon_jellyfish_cartographer`, `character_template_2head_clockwork_orchard_warden`, `character_template_2head_desert_glassblower_alchemist`, `character_template_2head_deep_sea_choir_conductor`, `character_template_2head_thundercloud_tea_merchant`, `character_template_2head_moss_castle_gardener`, `character_template_2head_aurora_train_conductor`, `character_template_2head_comet_circus_tinkerer`, and `character_template_2head_volcanic_bell_founder`; the raw two-head base template is internal and is not a public choice. The command returns only the final Spine package.
 
 ## Generate or extract game UI
 
