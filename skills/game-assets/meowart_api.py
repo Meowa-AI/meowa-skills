@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.24.5"
+MEOWART_API_CLI_VERSION = "2026.08.25.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -6223,11 +6223,6 @@ def build_parser() -> argparse.ArgumentParser:
             "character_template_2head_clockwork_orchard_warden",
             "character_template_2head_desert_glassblower_alchemist",
             "character_template_2head_deep_sea_choir_conductor",
-            "character_template_2head_thundercloud_tea_merchant",
-            "character_template_2head_moss_castle_gardener",
-            "character_template_2head_aurora_train_conductor",
-            "character_template_2head_comet_circus_tinkerer",
-            "character_template_2head_volcanic_bell_founder",
         ],
     )
     spine_run.add_argument("--project-id", required=True)
