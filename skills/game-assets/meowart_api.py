@@ -5580,7 +5580,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action in pixel_submit._actions[1:]:
         if action.dest not in {"help", "job_name"}:
             pixel_run._add_action(action)
-    pixel_run.set_defaults(job_name="")
+    pixel_run.set_defaults(job_name="", template_config="{}")
     add_shared_runtime_args(pixel_run)
 
     subparsers.add_parser(
@@ -5785,7 +5785,12 @@ def build_parser() -> argparse.ArgumentParser:
     for action in hd_submit._actions[1:]:
         if action.dest not in {"help", "job_name"}:
             hd_run._add_action(action)
-    hd_run.set_defaults(job_name="")
+    hd_run.set_defaults(
+        job_name="",
+        template_config="{}",
+        project_id=None,
+        thread_id=None,
+    )
     add_shared_runtime_args(hd_run)
 
     hd_poll = subparsers.add_parser("hd-gen-poll", help="Poll one HD-gen job")
@@ -5867,6 +5872,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action in character_multi_view_submit._actions[1:]:
         if action.dest not in {"help"}:
             character_multi_view_run._add_action(action)
+    character_multi_view_run.set_defaults(project_id=None, thread_id=None)
     add_shared_runtime_args(character_multi_view_run)
 
     character_multi_view_poll = subparsers.add_parser(
