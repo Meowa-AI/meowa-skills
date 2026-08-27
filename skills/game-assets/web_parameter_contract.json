@@ -35,6 +35,15 @@
         "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
       }
     },
+    "remove_background": {
+      "command": "remove-background-run",
+      "web_sources": ["types.ts:RemoveBackgroundOptions", "components/InfiniteCanvas.tsx", "components/Workspace.tsx"],
+      "parameters": {
+        "mode": {"flag": "--mode", "default": "hd", "choices": ["pixel", "hd"], "request_field": "method"},
+        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "advanced"], "request_field": "remove_bg_method"},
+        "source_background_color": {"flag": "--source-background-color", "default": "#ffffff", "request_field": "source_background_color"}
+      }
+    },
     "animation_edit": {
       "command": "animation-edit-run",
       "web_sources": ["types.ts:FramesEditOptions", "components/InfiniteCanvas.tsx", "services/framesEditService.ts"],

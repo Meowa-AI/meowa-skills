@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.25.1"
+MEOWART_API_CLI_VERSION = "2026.08.27.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3446,7 +3446,7 @@ def submit_remove_background(
     image_file: str,
     mode: str = "hd",
     quality: str = "standard",
-    prompt: str = "",
+    source_background_color: str = "#ffffff",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3459,12 +3459,13 @@ def submit_remove_background(
     normalized_quality = str(quality or "standard").strip().lower()
     if normalized_quality not in {"standard", "advanced"}:
         raise ValueError("quality must be one of: standard, advanced")
+    normalized_source_color = str(source_background_color or "#ffffff").strip().lower()
+    if not re.fullmatch(r"#[0-9a-f]{6}", normalized_source_color):
+        raise ValueError("source_background_color must be a six-digit HEX color")
     data = {
         "method": normalized_mode,
         "remove_bg_method": normalized_quality,
-        "enable_perfect_pixel": "false" if normalized_quality == "advanced" else "true",
-        "is_white_bg": "false" if prompt.strip() else "true",
-        "prompt": prompt,
+        "source_background_color": normalized_source_color,
     }
     files = {"file": (path.name, path.read_bytes(), _mime_for_path(path))}
     url = _normalize_base_url(api_base, "/api/image/remove-background")
@@ -3489,7 +3490,7 @@ def run_remove_background(
     image_file: str,
     mode: str = "hd",
     quality: str = "standard",
-    prompt: str = "",
+    source_background_color: str = "#ffffff",
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3501,7 +3502,7 @@ def run_remove_background(
         image_file=image_file,
         mode=mode,
         quality=quality,
-        prompt=prompt,
+        source_background_color=source_background_color,
         timeout=timeout,
         verify=verify,
     )
@@ -5880,8 +5881,17 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(remove_bg_submit)
     remove_bg_submit.add_argument("--image-file", required=True)
     remove_bg_submit.add_argument("--mode", default="hd", choices=["pixel", "hd"], help="Source artwork type")
-    remove_bg_submit.add_argument("--quality", default="standard", choices=["standard", "advanced"])
-    remove_bg_submit.add_argument("--prompt", default="", help="Optional subject description for complex backgrounds")
+    remove_bg_submit.add_argument(
+        "--quality",
+        default="standard",
+        choices=["standard", "advanced"],
+        help="Removal quality tier; Pixel advanced supports at most 32 frames",
+    )
+    remove_bg_submit.add_argument(
+        "--source-background-color",
+        default="#ffffff",
+        help="Solid source background color used by Pixel advanced; defaults to white",
+    )
 
     remove_bg_run = subparsers.add_parser("remove-background-run", help="Create a transparent-background asset")
     for action in remove_bg_submit._actions[1:]:
@@ -7778,7 +7788,7 @@ def main() -> int:
                 image_file=args.image_file,
                 mode=args.mode,
                 quality=args.quality,
-                prompt=args.prompt,
+                source_background_color=args.source_background_color,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -7791,7 +7801,7 @@ def main() -> int:
                     "image_file": args.image_file,
                     "mode": args.mode,
                     "quality": args.quality,
-                    "prompt": args.prompt,
+                    "source_background_color": args.source_background_color,
                 },
                 response_payload=payload,
                 downloads=[],
@@ -7801,14 +7811,14 @@ def main() -> int:
             return 0
 
         if args.command == "remove-background-run":
-            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt or Path(args.image_file).stem)}")
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, Path(args.image_file).stem)}")
             submit_payload, final_payload = run_remove_background(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_file=args.image_file,
                 mode=args.mode,
                 quality=args.quality,
-                prompt=args.prompt,
+                source_background_color=args.source_background_color,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -7816,7 +7826,7 @@ def main() -> int:
             )
             output_dir, downloads = _save_run_outputs(
                 output_root=str(effective_output_dir),
-                slug_seed=args.prompt or Path(args.image_file).stem,
+                slug_seed=Path(args.image_file).stem,
                 submit_payload=submit_payload,
                 final_payload=final_payload,
                 timeout=args.timeout,
@@ -7834,7 +7844,7 @@ def main() -> int:
                     "image_file": args.image_file,
                     "mode": args.mode,
                     "quality": args.quality,
-                    "prompt": args.prompt,
+                    "source_background_color": args.source_background_color,
                 },
                 response_payload={"submit": submit_payload, "final": final_payload},
                 downloads=downloads,

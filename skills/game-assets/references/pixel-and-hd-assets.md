@@ -236,13 +236,14 @@ python3 skills/game-assets/meowart_api.py remove-background-run \
   --image-file <asset.png> \
   --mode pixel \
   --quality advanced \
-  --prompt "Keep the armored character; remove the complex forest background" \
+  --source-background-color '#646464' \
   --output-dir <output-dir>
 ```
 
 - Choose `pixel` or `hd` to match the source artwork.
-- Choose `standard` for a clean, simple background and `advanced` for difficult edges or a complex background.
-- Add a subject prompt whenever an advanced-removal source is not white-backed or the background is complex.
+- Choose `standard` for routine removal. HD advanced is available for more difficult edges.
+- Pixel advanced requires a solid-color source background. Pass that exact color as a six-digit HEX value; it defaults to white.
+- Pixel advanced costs 10 credits for 1–16 frames and 20 credits for 17–32 frames. More than 32 frames is unsupported. Other combinations use a fixed tier price.
 - Do not name or select a background-removal provider.
 
 ## Pixel cleanup
