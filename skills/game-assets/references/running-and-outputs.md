@@ -75,13 +75,13 @@ The runner does not save submission responses, job responses, provider responses
 
 ## Polling and recovery
 
-Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Low-level recovery commands exist for compatibility, but do not present them as the normal workflow and do not write raw job payloads to disk.
+Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Recover with the matching `*-poll` command and the original job identifier. Recovery waits through transient connection failures, never submits a replacement job, and downloads every declared final output after success.
 
 When a run times out after submission, report the job identifier and the timeout. Do not resubmit automatically because that may create a duplicate billable job.
 
 When a successful job has no declared downloadable final media, treat the response as a Skill/API
-contract mismatch. Do not write or hand off an empty `final_outputs.json`; update the Skill and poll
-the original job again.
+contract mismatch. Do not write or hand off an empty `final_outputs.json`; report the job identifier
+and update the Skill before polling the original job again.
 
 ## Validation checklist
 

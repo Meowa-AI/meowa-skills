@@ -12,7 +12,7 @@ import re
 import sys
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
 import requests
@@ -22,7 +22,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.27.1"
+MEOWART_API_CLI_VERSION = "2026.08.27.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2361,18 +2361,29 @@ def poll_game_design_until_done(
     public_events: list[dict[str, Any]] = []
     latest_job: dict[str, Any] = {}
     while True:
-        payload = _game_design_api_request(
-            method="GET",
-            api_base=api_base,
-            api_key=api_key,
-            endpoint=(
-                f"/api/projects/{quote(project_id, safe='')}/threads/"
-                f"{quote(thread_id, safe='')}/agent/events"
-            ),
-            timeout=timeout,
-            verify=verify,
-            params={"jobId": api_job_id, "after_seq": after_seq, "limit": 500},
-        )
+        try:
+            payload = _game_design_api_request(
+                method="GET",
+                api_base=api_base,
+                api_key=api_key,
+                endpoint=(
+                    f"/api/projects/{quote(project_id, safe='')}/threads/"
+                    f"{quote(thread_id, safe='')}/agent/events"
+                ),
+                timeout=timeout,
+                verify=verify,
+                params={"jobId": api_job_id, "after_seq": after_seq, "limit": 500},
+            )
+        except (requests.RequestException, ValueError) as exc:
+            print(f"[WARN] game-design poll request failed: {exc}", file=sys.stderr)
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Game Designer job did not finish within {max_wait}s; recover with "
+                    f"game-design-poll --project-id {project_id} --thread-id {thread_id} "
+                    f"--api-job-id {api_job_id}"
+                ) from exc
+            time.sleep(max(0.2, float(poll_interval)))
+            continue
         job = payload.get("job")
         if not isinstance(job, dict):
             raise SkillCompatibilityError("Game Designer poll response is missing job")
@@ -2771,6 +2782,34 @@ def poll_pixel_gen_job(
     return payload
 
 
+def _wait_for_terminal_payload(
+    *,
+    poll_once: Callable[[], dict[str, Any]],
+    label: str,
+    terminal_statuses: set[str],
+    max_wait: int,
+    poll_interval: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(max_wait, 1)
+    while time.monotonic() <= deadline:
+        try:
+            payload = poll_once()
+        except (requests.RequestException, ValueError) as exc:
+            print(f"[WARN] {label} poll request failed: {exc}", file=sys.stderr)
+            time.sleep(max(poll_interval, 0.1))
+            continue
+
+        _print_status("[INFO]", payload)
+        status = str(payload.get("status") or "").strip().lower()
+        if status in terminal_statuses:
+            return payload
+        if status not in ACTIVE_JOB_STATUSES:
+            print(f"[WARN] unexpected intermediate status: {status}", file=sys.stderr)
+        time.sleep(max(poll_interval, 0.1))
+
+    raise TimeoutError(f"{label} polling timed out after {max_wait}s")
+
+
 def wait_pixel_gen_job(
     *,
     api_base: str,
@@ -2781,25 +2820,19 @@ def wait_pixel_gen_job(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
     verify: bool = True,
 ) -> dict[str, Any]:
-    deadline = time.time() + max(max_wait, 1)
-    final_payload: dict[str, Any] | None = None
-    while time.time() <= deadline:
-        payload = poll_pixel_gen_job(
+    return _wait_for_terminal_payload(
+        poll_once=lambda: poll_pixel_gen_job(
             api_base=api_base,
             api_key=api_key,
             api_job_id=api_job_id,
             timeout=timeout,
             verify=verify,
-        )
-        _print_status("[INFO]", payload)
-        status = str(payload.get("status") or "").strip().lower()
-        if status in TERMINAL_JOB_STATUSES:
-            final_payload = payload
-            break
-        time.sleep(max(poll_interval, 0.1))
-    if final_payload is None:
-        raise TimeoutError(f"pixel-gen polling timed out after {max_wait}s")
-    return final_payload
+        ),
+        label="pixel-gen",
+        terminal_statuses=TERMINAL_JOB_STATUSES,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+    )
 
 
 def run_pixel_gen(
@@ -3045,25 +3078,19 @@ def wait_hd_gen_job(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
     verify: bool = True,
 ) -> dict[str, Any]:
-    deadline = time.time() + max(max_wait, 1)
-    final_payload: dict[str, Any] | None = None
-    while time.time() <= deadline:
-        payload = poll_hd_gen_job(
+    return _wait_for_terminal_payload(
+        poll_once=lambda: poll_hd_gen_job(
             api_base=api_base,
             api_key=api_key,
             api_job_id=api_job_id,
             timeout=timeout,
             verify=verify,
-        )
-        _print_status("[INFO]", payload)
-        status = str(payload.get("status") or "").strip().lower()
-        if status in TERMINAL_JOB_STATUSES:
-            final_payload = payload
-            break
-        time.sleep(max(poll_interval, 0.1))
-    if final_payload is None:
-        raise TimeoutError(f"hd-gen polling timed out after {max_wait}s")
-    return final_payload
+        ),
+        label="hd-gen",
+        terminal_statuses=TERMINAL_JOB_STATUSES,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+    )
 
 
 def run_hd_gen(
@@ -3687,25 +3714,19 @@ def wait_submitted_workflow_job(
     api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
     if not api_job_id:
         raise RuntimeError(f"{label} submit response missing job_id")
-    deadline = time.time() + max(max_wait, 1)
-    final_payload: dict[str, Any] | None = None
-    while time.time() <= deadline:
-        payload = poll_job(
+    return _wait_for_terminal_payload(
+        poll_once=lambda: poll_job(
             api_base=api_base,
             api_key=api_key,
             api_job_id=api_job_id,
             timeout=timeout,
             verify=verify,
-        )
-        _print_status("[INFO]", payload)
-        status = str(payload.get("status") or "").strip().lower()
-        if status in TERMINAL_JOB_STATUSES:
-            final_payload = payload
-            break
-        time.sleep(max(poll_interval, 0.1))
-    if final_payload is None:
-        raise TimeoutError(f"{label} polling timed out after {max_wait}s")
-    return final_payload
+        ),
+        label=label,
+        terminal_statuses=TERMINAL_JOB_STATUSES,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+    )
 
 
 def _upload_part(path_value: str, *, label: str) -> tuple[str, bytes, str]:
@@ -4951,24 +4972,16 @@ def run_music_generator(
     api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
     if not api_job_id:
         raise RuntimeError("music submit response missing job_id")
-    deadline = time.time() + max(max_wait, 1)
-    final_payload: dict[str, Any] | None = None
-    while time.time() <= deadline:
-        payload = poll_job(
-            api_base=api_base,
-            api_key=api_key,
-            api_job_id=api_job_id,
-            timeout=timeout,
-            verify=verify,
-        )
-        _print_status("[INFO]", payload)
-        status = str(payload.get("status") or "").strip().lower()
-        if status in TERMINAL_JOB_STATUSES:
-            final_payload = payload
-            break
-        time.sleep(max(poll_interval, 0.1))
-    if final_payload is None:
-        raise TimeoutError(f"music polling timed out after {max_wait}s")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload={"job_id": api_job_id},
+        label="music",
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
     return submit_payload, final_payload
 
 
@@ -4999,32 +5012,19 @@ def wait_animate_job(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
     verify: bool = True,
 ) -> dict[str, Any]:
-    deadline = time.time() + max(max_wait, 1)
-    final_payload: dict[str, Any] | None = None
-    while time.time() <= deadline:
-        try:
-            payload = poll_animate_job(
+    return _wait_for_terminal_payload(
+        poll_once=lambda: poll_animate_job(
                 api_base=api_base,
                 api_key=api_key,
                 api_job_id=api_job_id,
                 timeout=timeout,
                 verify=verify,
-            )
-        except (SkillUpgradeRequiredError, SkillCompatibilityError):
-            raise
-        except (requests.RequestException, RuntimeError, ValueError) as exc:
-            print(f"[WARN] animate poll request failed: {exc}", file=sys.stderr)
-            time.sleep(max(poll_interval, 0.1))
-            continue
-        _print_status("[INFO]", payload)
-        status = str(payload.get("status") or "").strip().lower()
-        if status in TERMINAL_ANIMATE_STATUSES:
-            final_payload = payload
-            break
-        time.sleep(max(poll_interval, 0.1))
-    if final_payload is None:
-        raise TimeoutError(f"animate polling timed out after {max_wait}s")
-    return final_payload
+        ),
+        label="animate",
+        terminal_statuses=TERMINAL_ANIMATE_STATUSES,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+    )
 
 
 def _save_run_outputs(
@@ -5728,7 +5728,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="With a reference, use stronger redraw preprocessing before pixel generation",
     )
 
-    pixel_poll = subparsers.add_parser("pixel-gen-poll", help="Poll one pixel-gen job")
+    pixel_poll = subparsers.add_parser("pixel-gen-poll", help="Recover one pixel-gen job and download its final outputs")
     add_shared_path_args(pixel_poll)
     pixel_poll.add_argument("--api-job-id", required=True)
 
@@ -5793,7 +5793,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_shared_runtime_args(hd_run)
 
-    hd_poll = subparsers.add_parser("hd-gen-poll", help="Poll one HD-gen job")
+    hd_poll = subparsers.add_parser("hd-gen-poll", help="Recover one HD-gen job and download its final outputs")
     add_shared_path_args(hd_poll)
     hd_poll.add_argument("--api-job-id", required=True)
 
@@ -5878,7 +5878,7 @@ def build_parser() -> argparse.ArgumentParser:
     character_multi_view_poll = subparsers.add_parser(
         "character-multi-view-poll",
         aliases=["character-8-direction-poll", "character-eight-direction-poll"],
-        help="Poll one character_multi_view_generator workflow job",
+        help="Recover one character_multi_view_generator job and download its final outputs",
     )
     add_shared_path_args(character_multi_view_poll)
     character_multi_view_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
@@ -5975,7 +5975,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_sound_args(sound_run)
     add_shared_runtime_args(sound_run)
 
-    sound_poll = subparsers.add_parser("sound-poll", aliases=["sfx-poll", "sound-effect-poll"], help="Poll one sound-effect workflow job")
+    sound_poll = subparsers.add_parser("sound-poll", aliases=["sfx-poll", "sound-effect-poll"], help="Recover one sound-effect job and download its final outputs")
     add_shared_path_args(sound_poll)
     sound_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -5993,7 +5993,7 @@ def build_parser() -> argparse.ArgumentParser:
     texture_run.set_defaults(project_id=None, thread_id=None)
     add_shared_runtime_args(texture_run)
 
-    texture_poll = subparsers.add_parser("texture-gen-poll", help="Poll one texture_gen workflow job")
+    texture_poll = subparsers.add_parser("texture-gen-poll", help="Recover one texture job and download its final outputs")
     add_shared_path_args(texture_poll)
     texture_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -6023,7 +6023,7 @@ def build_parser() -> argparse.ArgumentParser:
     tileset_run.set_defaults(project_id=None, thread_id=None)
     add_shared_runtime_args(tileset_run)
 
-    tileset_poll = subparsers.add_parser("tileset-gen-poll", help="Poll one tileset_gen workflow job")
+    tileset_poll = subparsers.add_parser("tileset-gen-poll", help="Recover one tileset job and download its final outputs")
     add_shared_path_args(tileset_poll)
     tileset_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -6082,7 +6082,7 @@ def build_parser() -> argparse.ArgumentParser:
             ui_run._add_action(action)
     add_shared_runtime_args(ui_run)
 
-    ui_poll = subparsers.add_parser("ui-gen-poll", aliases=["general-ui-gen-poll"], help="Poll one general_ui_gen workflow job")
+    ui_poll = subparsers.add_parser("ui-gen-poll", aliases=["general-ui-gen-poll"], help="Recover one UI job and download its final outputs")
     add_shared_path_args(ui_poll)
     ui_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -6112,7 +6112,7 @@ def build_parser() -> argparse.ArgumentParser:
     isometric_poll = subparsers.add_parser(
         "isometric-gen-poll",
         aliases=["pixel-isometric-gen-poll"],
-        help="Poll one pixel_isometric_gen workflow job",
+        help="Recover one pixel isometric job and download its final outputs",
     )
     add_shared_path_args(isometric_poll)
     isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
@@ -6143,7 +6143,7 @@ def build_parser() -> argparse.ArgumentParser:
     hex_isometric_poll = subparsers.add_parser(
         "hex-isometric-gen-poll",
         aliases=["pixel-hex-isometric-gen-poll"],
-        help="Poll one pixel_hex_isometric_gen workflow job",
+        help="Recover one pixel hex-isometric job and download its final outputs",
     )
     add_shared_path_args(hex_isometric_poll)
     hex_isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
@@ -6163,7 +6163,7 @@ def build_parser() -> argparse.ArgumentParser:
             hd_isometric_run._add_action(action)
     add_shared_runtime_args(hd_isometric_run)
 
-    hd_isometric_poll = subparsers.add_parser("hd-isometric-gen-poll", help="Poll one hd_isometric_gen workflow job")
+    hd_isometric_poll = subparsers.add_parser("hd-isometric-gen-poll", help="Recover one HD isometric job and download its final outputs")
     add_shared_path_args(hd_isometric_poll)
     hd_isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -6183,7 +6183,7 @@ def build_parser() -> argparse.ArgumentParser:
             hd_hex_isometric_run._add_action(action)
     add_shared_runtime_args(hd_hex_isometric_run)
 
-    hd_hex_isometric_poll = subparsers.add_parser("hd-hex-isometric-gen-poll", help="Poll one hd_hex_isometric_gen workflow job")
+    hd_hex_isometric_poll = subparsers.add_parser("hd-hex-isometric-gen-poll", help="Recover one HD hex-isometric job and download its final outputs")
     add_shared_path_args(hd_hex_isometric_poll)
     hd_hex_isometric_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -6199,7 +6199,7 @@ def build_parser() -> argparse.ArgumentParser:
             music_run._add_action(action)
     add_shared_runtime_args(music_run)
 
-    music_poll = subparsers.add_parser("music-poll", help="Poll one music/workflow job")
+    music_poll = subparsers.add_parser("music-poll", help="Recover one music job and download its final outputs")
     add_shared_path_args(music_poll)
     music_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
@@ -6409,7 +6409,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_animation_source_control_args(keyframes_run_parser)
     add_shared_runtime_args(keyframes_run_parser)
 
-    animate_poll_parser = subparsers.add_parser("animate-poll", help="Poll one animate job")
+    animate_poll_parser = subparsers.add_parser("animate-poll", help="Recover one animate job and download its final outputs")
     add_shared_path_args(animate_poll_parser)
     animate_poll_parser.add_argument("--api-job-id", required=True)
 
@@ -7454,13 +7454,29 @@ def main() -> int:
             return 0
 
         if args.command == "pixel-gen-poll":
-            payload = poll_pixel_gen_job(
+            payload = wait_pixel_gen_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 api_job_id=args.api_job_id,
                 timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
                 verify=verify,
             )
+            downloads: list[dict[str, Any]] = []
+            effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
+            if str(payload.get("status") or "").strip().lower() == "success":
+                effective_poll_output_dir, downloads = _save_run_outputs(
+                    output_root=str(effective_output_dir),
+                    slug_seed=args.api_job_id,
+                    submit_payload={"api_job_id": args.api_job_id},
+                    final_payload=payload,
+                    timeout=args.timeout,
+                    verify=verify,
+                    api_key=args.api_key,
+                    no_download=args.no_download,
+                    workflow_id="pixel_gen",
+                )
             _write_meta(
                 run_dir=run_dir,
                 started_at=started_at,
@@ -7468,11 +7484,13 @@ def main() -> int:
                 args=args,
                 request_payload={"api_job_id": args.api_job_id},
                 response_payload=payload,
-                downloads=[],
-                effective_output_dir=str(effective_output_dir),
+                downloads=downloads,
+                effective_output_dir=str(effective_poll_output_dir),
             )
+            if downloads:
+                print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0
+            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
 
         if args.command == "pixel-gen-history":
             payload = pixel_gen_history(
@@ -7684,16 +7702,18 @@ def main() -> int:
             return 0
 
         if args.command == "hd-gen-poll":
-            payload = poll_hd_gen_job(
+            payload = wait_hd_gen_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 api_job_id=args.api_job_id,
                 timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
                 verify=verify,
             )
             downloads: list[dict[str, Any]] = []
             effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
-            if str(payload.get("status") or "").strip().lower() in TERMINAL_JOB_STATUSES:
+            if str(payload.get("status") or "").strip().lower() == "success":
                 effective_poll_output_dir, downloads = _save_run_outputs(
                     output_root=str(effective_output_dir),
                     slug_seed=args.api_job_id,
@@ -7718,7 +7738,7 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0
+            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
 
         if args.command == "hd-gen-history":
             payload = hd_gen_history(
@@ -8113,11 +8133,14 @@ def main() -> int:
             "texture-gen-poll",
             "tileset-gen-poll",
         } or args.command in MAP_WORKFLOW_POLL_COMMANDS or args.command in CHARACTER_MULTI_VIEW_POLL_COMMANDS or args.command in UI_GEN_POLL_COMMANDS:
-            payload = poll_job(
+            payload = wait_submitted_workflow_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
-                api_job_id=args.api_job_id,
+                submit_payload={"job_id": args.api_job_id},
+                label=args.command,
                 timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
                 verify=verify,
             )
             downloads: list[dict[str, Any]] = []
@@ -8135,7 +8158,7 @@ def main() -> int:
             elif args.command in UI_GEN_POLL_COMMANDS:
                 poll_workflow_id = "general_ui_gen"
             effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
-            if str(payload.get("status") or "").strip().lower() in TERMINAL_JOB_STATUSES:
+            if str(payload.get("status") or "").strip().lower() == "success":
                 effective_poll_output_dir, downloads = _save_run_outputs(
                     output_root=str(effective_output_dir),
                     slug_seed=args.api_job_id,
@@ -8160,7 +8183,7 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0
+            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
 
         if args.command in CHARACTER_MULTI_VIEW_SUBMIT_COMMANDS:
             request_payload = {
@@ -8744,16 +8767,19 @@ def main() -> int:
             return 0
 
         if args.command == "music-poll":
-            payload = poll_job(
+            payload = wait_submitted_workflow_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
-                api_job_id=args.api_job_id,
+                submit_payload={"job_id": args.api_job_id},
+                label="music",
                 timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
                 verify=verify,
             )
             downloads: list[dict[str, Any]] = []
             effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
-            if str(payload.get("status") or "").strip().lower() in TERMINAL_JOB_STATUSES:
+            if str(payload.get("status") or "").strip().lower() == "success":
                 effective_poll_output_dir, downloads = _save_run_outputs(
                     output_root=str(effective_output_dir),
                     slug_seed=args.api_job_id,
@@ -8778,7 +8804,7 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0
+            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
 
         if args.command == "credits-balance":
             payload = get_credits_balance(
@@ -9198,11 +9224,13 @@ def main() -> int:
             return 0
 
         if args.command == "animate-poll":
-            payload = poll_animate_job(
+            payload = wait_animate_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
                 api_job_id=args.api_job_id,
                 timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
                 verify=verify,
             )
             downloads: list[dict[str, Any]] = []
@@ -9232,7 +9260,7 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0
+            return 0 if str(payload.get("status") or "").strip().lower() in SUCCESS_ANIMATE_STATUSES else 1
 
         print(f"[ERROR] unknown command: {args.command}", file=sys.stderr)
         return 2
