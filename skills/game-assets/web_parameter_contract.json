@@ -155,6 +155,18 @@
         "outfit": {"flag": "--outfit", "default": "auto", "choices": ["auto", "pants", "short_skirt", "long_skirt"], "request_field": "outfit_type"}
       }
     },
+    "spine_part_edit": {
+      "command": "spine-edit-run",
+      "web_sources": ["components/spine-editor/SpineAtlasEditor.tsx", "components/InputArea.tsx", "components/SettingsPanel.tsx", "services/spineAgentService.ts"],
+      "parameters": {
+        "source_spine_package": {"flag": "--source-spine-package", "request_field": "spine_asset_id"},
+        "selected_parts": {"flag": "--selected-parts-json", "request_field": "selected_parts"},
+        "display_name": {"flag": "--display-name", "default": "Spine", "request_field": "display_name"},
+        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
+        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},
+        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"}
+      }
+    },
     "pindou": {
       "command": "pindou-run",
       "web_sources": ["types.ts:PixelGenFreesizeOptions", "components/InfiniteCanvas.tsx", "services/pixelGenFreesizeService.ts"],

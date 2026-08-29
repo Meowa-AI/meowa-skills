@@ -5,12 +5,15 @@ import argparse
 import base64
 from datetime import date, datetime
 import hashlib
+import io
 import json
 import mimetypes
 import os
 import re
+import stat
 import sys
 import time
+import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 from urllib.parse import quote, urlparse
@@ -22,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.27.2"
+MEOWART_API_CLI_VERSION = "2026.08.29.0"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -70,6 +73,11 @@ VIDEO_MOTION_MODE_TO_MODEL = {
 MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
 TEXTURE_REFERENCE_CATALOG_MAX_BYTES = 2 * 1024 * 1024
 STANDARD_TEXTURE_SIZE = 64
+SPINE_PACKAGE_MAX_BYTES = 25 * 1024 * 1024
+SPINE_PACKAGE_MAX_ENTRIES = 512
+SPINE_PACKAGE_MAX_UNCOMPRESSED_BYTES = 128 * 1024 * 1024
+SPINE_SKELETON_MAX_BYTES = 16 * 1024 * 1024
+SPINE_ATLAS_MAX_BYTES = 2 * 1024 * 1024
 PIXEL_GENERAL_WORKFLOW_ID = "pixel_gen_general"
 PIXEL_UNIVERSAL_TEMPLATE_NAME = "xlarge_4_3"
 PIXEL_UNIVERSAL_ASPECT_CONFIG = {
@@ -4148,6 +4156,296 @@ def submit_spine_agent(
     return body
 
 
+def upload_project_spine_package(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    package_path: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    response, payload = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/project-assets/spine"),
+        headers=_base_headers(api_key),
+        data={"project_id": project_id, "source_kind": "user_upload"},
+        files=[("file", _upload_part(package_path, label="Spine package"))],
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    asset_id = str(payload.get("assetId") or "").strip()
+    download_url = str(payload.get("downloadUrl") or "").strip()
+    if not asset_id or not download_url:
+        raise SkillCompatibilityError("Spine upload response is missing its private asset identity")
+    return {"asset_id": asset_id, "download_url": download_url}
+
+
+def _parse_spine_atlas_manifest(atlas_text: str) -> list[dict[str, Any]]:
+    regions: list[dict[str, Any]] = []
+    region_index = 0
+    for page_block in re.split(r"\n[ \t]*\n", atlas_text.replace("\r", "").strip()):
+        lines = [line.strip() for line in page_block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        page = lines[0]
+        cursor = 1
+        while cursor < len(lines) and ":" in lines[cursor]:
+            cursor += 1
+        while cursor < len(lines):
+            name = lines[cursor]
+            cursor += 1
+            fields: dict[str, str] = {}
+            while cursor < len(lines) and ":" in lines[cursor]:
+                key, value = lines[cursor].split(":", 1)
+                fields[key.strip().lower()] = value.strip()
+                cursor += 1
+            bounds = [int(value) for value in re.findall(r"-?\d+", fields.get("bounds", ""))]
+            if len(bounds) < 4:
+                xy = [int(value) for value in re.findall(r"-?\d+", fields.get("xy", ""))]
+                size = [int(value) for value in re.findall(r"-?\d+", fields.get("size", ""))]
+                if len(xy) < 2 or len(size) < 2:
+                    raise ValueError(f"Spine atlas region has no bounds: {name}")
+                bounds = [*xy[:2], *size[:2]]
+            regions.append({
+                "page": page,
+                "name": name,
+                "index": region_index,
+                "bounds": bounds[:4],
+            })
+            region_index += 1
+    if not regions:
+        raise ValueError("Spine package atlas contains no regions")
+    return regions
+
+
+def _validate_spine_runtime_zip(data: bytes) -> list[dict[str, Any]]:
+    if not data or len(data) > SPINE_PACKAGE_MAX_BYTES:
+        raise ValueError("Spine package must be 25MB or smaller")
+    try:
+        with zipfile.ZipFile(io.BytesIO(data), "r") as archive:
+            infos = [info for info in archive.infolist() if not info.is_dir()]
+            if len(infos) > SPINE_PACKAGE_MAX_ENTRIES:
+                raise ValueError("Spine package contains too many files")
+            names: list[str] = []
+            infos_by_name: dict[str, zipfile.ZipInfo] = {}
+            seen: set[str] = set()
+            total_uncompressed = 0
+            for info in infos:
+                name = info.filename.replace("\\", "/")
+                if name.startswith("/") or ".." in PurePosixPath(name).parts or "\x00" in name:
+                    raise ValueError("Spine package contains an unsafe path")
+                if info.flag_bits & 0x1 or stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK:
+                    raise ValueError("Spine package contains an unsupported file")
+                key = name.casefold()
+                if key in seen:
+                    raise ValueError("Spine package contains duplicate file paths")
+                seen.add(key)
+                names.append(name)
+                infos_by_name[name] = info
+                total_uncompressed += int(info.file_size)
+                if total_uncompressed > SPINE_PACKAGE_MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError("Spine package expands beyond the 128MB limit")
+            atlas_names = [name for name in names if name.lower().endswith((".atlas", ".atlas.txt"))]
+            skeleton_names = [name for name in names if name.lower().endswith((".json", ".skel"))]
+            image_names = [name for name in names if Path(name).suffix.lower() in {".png", ".webp", ".jpg", ".jpeg"}]
+            if len(atlas_names) != 1 or len(skeleton_names) != 1 or not image_names:
+                raise ValueError("Spine package must contain one skeleton, one atlas, and texture images")
+            atlas_info = infos_by_name[atlas_names[0]]
+            skeleton_info = infos_by_name[skeleton_names[0]]
+            if atlas_info.file_size > SPINE_ATLAS_MAX_BYTES:
+                raise ValueError("Spine package Atlas is too large")
+            if skeleton_info.file_size > SPINE_SKELETON_MAX_BYTES:
+                raise ValueError("Spine package skeleton is too large")
+            atlas_text = archive.read(atlas_info).decode("utf-8-sig")
+            skeleton_data = archive.read(skeleton_info)
+            if skeleton_names[0].lower().endswith(".json"):
+                try:
+                    skeleton_payload = json.loads(skeleton_data.decode("utf-8-sig"))
+                    spine_version = str(skeleton_payload["skeleton"]["spine"]).strip()
+                except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValueError("Spine package skeleton version is invalid") from exc
+            else:
+                version_match = re.search(rb"(?<!\d)(3\.8|4\.2)\.\d+(?!\d)", skeleton_data[:4096])
+                spine_version = version_match.group(0).decode("ascii") if version_match else ""
+            if re.fullmatch(r"(3\.8|4\.2)\.\d+", spine_version) is None:
+                raise ValueError("Spine package must use Spine 3.8 or 4.2 runtime data")
+            corrupt_entry = archive.testzip()
+            if corrupt_entry:
+                raise ValueError("Spine package contains a corrupt file")
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Spine package download is not a valid ZIP") from exc
+    return _parse_spine_atlas_manifest(atlas_text)
+
+
+def inspect_uploaded_spine_package(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    package_path: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    uploaded = upload_project_spine_package(
+        api_base=api_base,
+        api_key=api_key,
+        project_id=project_id,
+        package_path=package_path,
+        timeout=timeout,
+        verify=verify,
+    )
+    response = _request_with_skill_version_compatibility(
+        url=_normalize_base_url(api_base, uploaded["download_url"]),
+        headers=_base_headers(api_key),
+        send=lambda headers: requests.get(
+            _normalize_base_url(api_base, uploaded["download_url"]),
+            headers=headers,
+            timeout=timeout,
+            verify=verify,
+        ),
+    )
+    response.raise_for_status()
+    content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].lower()
+    if content_type != "application/zip":
+        raise ValueError("Spine package download did not return application/zip")
+    regions = _validate_spine_runtime_zip(response.content)
+    return {
+        "asset_id": uploaded["asset_id"],
+        "selected_parts": [
+            {"page": item["page"], "name": item["name"], "index": item["index"]}
+            for item in regions
+        ],
+    }
+
+
+def _read_selected_spine_parts(path_value: str) -> list[dict[str, Any]]:
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"selected parts JSON not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_parts = payload.get("selected_parts") if isinstance(payload, dict) else payload
+    if not isinstance(raw_parts, list) or not 1 <= len(raw_parts) <= 10:
+        raise ValueError("selected parts JSON must contain 1 to 10 parts")
+    parts: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int]] = set()
+    for item in raw_parts:
+        if not isinstance(item, dict):
+            raise ValueError("each selected Spine part must be an object")
+        part = {
+            "page": str(item.get("page") or "").strip(),
+            "name": str(item.get("name") or "").strip(),
+            "index": int(item.get("index", -1)),
+        }
+        key = (part["page"], part["name"], part["index"])
+        if not part["page"] or not part["name"] or part["index"] < 0 or key in seen:
+            raise ValueError("selected Spine parts must have unique page, name, and index values")
+        seen.add(key)
+        parts.append(part)
+    return parts
+
+
+def submit_spine_part_edit(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    project_id: str,
+    thread_id: str,
+    package_path: str,
+    selected_parts_path: str,
+    client_operation_id: str = "",
+    display_name: str = "Spine",
+    generation_model: str = "nano-banana",
+    resolution: str = "1K",
+    quality: str = "standard",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    uploaded = upload_project_spine_package(
+        api_base=api_base,
+        api_key=api_key,
+        project_id=project_id,
+        package_path=package_path,
+        timeout=timeout,
+        verify=verify,
+    )
+    selected_parts = _read_selected_spine_parts(selected_parts_path)
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        seed = f"{project_id}:{thread_id}:{uploaded['asset_id']}:{prompt}:{selected_parts}"
+        operation_id = f"spine-edit:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]}"
+    payload = {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "client_operation_id": operation_id,
+        "spine_asset_id": uploaded["asset_id"],
+        "display_name": display_name,
+        "prompt": prompt,
+        "selected_parts": selected_parts,
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "resolution": resolution,
+        "image2_quality": {
+            "standard": "low",
+            "detailed": "medium",
+            "ultimate": "high",
+        }[quality],
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/spine-agent/part-edit/jobs"),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
+def save_spine_final_package(
+    *,
+    api_base: str,
+    api_key: str,
+    job_id: str,
+    output_root: str,
+    slug_seed: str,
+    timeout: int,
+    verify: bool,
+    no_download: bool,
+) -> tuple[Path, list[dict[str, Any]]]:
+    output_dir = _predict_saved_dir(output_root, slug_seed)
+    downloads: list[dict[str, Any]] = []
+    if not no_download:
+        url = _normalize_base_url(
+            api_base,
+            f"/api/spine-agent/jobs/{quote(job_id, safe='')}/download",
+        )
+        response = _request_with_skill_version_compatibility(
+            url=url,
+            headers=_base_headers(api_key),
+            send=lambda headers: requests.get(url, headers=headers, timeout=timeout, verify=verify),
+        )
+        response.raise_for_status()
+        content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].lower()
+        if content_type != "application/zip":
+            raise ValueError("Spine final package did not return application/zip")
+        _validate_spine_runtime_zip(response.content)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        target = output_dir / f"{_safe_slug(slug_seed)}.zip"
+        target.write_bytes(response.content)
+        downloads.append({"type": "package", "path": str(target), "mime_type": content_type})
+    _save_json(output_dir / "final_outputs.json", {
+        "status": "success",
+        "job_id": job_id,
+        "outputs": downloads,
+    })
+    return output_dir, [{"type": "manifest", "path": str(output_dir / "final_outputs.json")}, *downloads]
+
+
 def submit_sound_effect_generator(
     *,
     api_base: str,
@@ -6264,6 +6562,34 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "pants", "short_skirt", "long_skirt"],
     )
 
+    spine_inspect = subparsers.add_parser(
+        "spine-inspect",
+        help="Inspect selectable parts in a Spine 3.8 or 4.2 package",
+    )
+    add_shared_path_args(spine_inspect)
+    spine_inspect.add_argument("--source-spine-package", required=True)
+    spine_inspect.add_argument("--project-id", required=True)
+
+    spine_edit_run = subparsers.add_parser(
+        "spine-edit-run",
+        help="Reskin 1 to 10 selected parts in an uploaded Spine package",
+    )
+    add_shared_path_args(spine_edit_run)
+    spine_edit_run.add_argument("--source-spine-package", required=True)
+    spine_edit_run.add_argument("--selected-parts-json", required=True)
+    spine_edit_run.add_argument("--prompt", required=True)
+    spine_edit_run.add_argument("--project-id", required=True)
+    spine_edit_run.add_argument("--thread-id", required=True)
+    spine_edit_run.add_argument("--client-operation-id", default="")
+    spine_edit_run.add_argument("--display-name", default="Spine")
+    spine_edit_run.add_argument(
+        "--generation-model",
+        default="nano-banana",
+        choices=GENERATION_MODEL_CHOICES,
+    )
+    spine_edit_run.add_argument("--resolution", default="1K", choices=["1K", "2K"])
+    spine_edit_run.add_argument("--quality", default="standard", choices=IMAGE2_QUALITY_CHOICES)
+
     subparsers.add_parser("credits-balance", help="Get current credits balance")
 
     subparsers.add_parser(
@@ -6454,6 +6780,8 @@ def build_parser() -> argparse.ArgumentParser:
         "style-gen-run",
         "pindou-run",
         "spine-run",
+        "spine-inspect",
+        "spine-edit-run",
         "credits-balance",
         "custom-workflow-list",
         "custom-workflow-run",
@@ -8826,6 +9154,71 @@ def main() -> int:
             print(_format_public_json(_credits_balance_for_display(payload)))
             return 0
 
+        if args.command == "spine-inspect":
+            payload = inspect_uploaded_spine_package(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=args.project_id,
+                package_path=args.source_spine_package,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            print(_format_public_json(payload))
+            return 0
+
+        if args.command == "spine-edit-run":
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
+            submit_payload = submit_spine_part_edit(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                package_path=args.source_spine_package,
+                selected_parts_path=args.selected_parts_json,
+                client_operation_id=args.client_operation_id,
+                display_name=args.display_name,
+                generation_model=args.generation_model,
+                resolution=args.resolution,
+                quality=args.quality,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            final_payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload=submit_payload,
+                label="spine part edit",
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            if str(final_payload.get("status") or "").strip().lower() != "success":
+                print(_format_json_for_display(final_payload))
+                return 1
+            job_id = str(
+                final_payload.get("api_job_id")
+                or final_payload.get("job_id")
+                or submit_payload.get("job_id")
+                or ""
+            ).strip()
+            if not job_id:
+                raise SkillCompatibilityError("Spine edit response is missing its Job ID")
+            output_dir, _downloads = save_spine_final_package(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                job_id=job_id,
+                output_root=str(effective_output_dir),
+                slug_seed=args.prompt,
+                timeout=args.timeout,
+                verify=verify,
+                no_download=args.no_download,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
         if args.command == "spine-run":
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
             request_payload = {
@@ -8872,16 +9265,26 @@ def main() -> int:
                 poll_interval=args.poll_interval,
                 verify=verify,
             )
-            output_dir, downloads = _save_run_outputs(
+            if str(final_payload.get("status") or "").strip().lower() != "success":
+                print(_format_json_for_display(final_payload))
+                return 1
+            job_id = str(
+                final_payload.get("api_job_id")
+                or final_payload.get("job_id")
+                or submit_payload.get("job_id")
+                or ""
+            ).strip()
+            if not job_id:
+                raise SkillCompatibilityError("Spine response is missing its Job ID")
+            output_dir, downloads = save_spine_final_package(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                job_id=job_id,
                 output_root=str(effective_output_dir),
                 slug_seed=args.prompt,
-                submit_payload=submit_payload,
-                final_payload=final_payload,
                 timeout=args.timeout,
                 verify=verify,
-                api_key=args.api_key,
                 no_download=args.no_download,
-                workflow_id="spine_agent",
             )
             _write_meta(
                 run_dir=run_dir,

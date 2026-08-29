@@ -20,7 +20,8 @@ Use this module to select one primary public command. Prefer the most specialize
 | Edit an animated GIF or WebP while preserving timing and layout | `animation-edit-run` | `ui-and-image-editing.md` |
 | Apply the public MeowU Island style preset | `style-gen-run` | `ui-and-image-editing.md` |
 | Convert an image to Pindou bead art or generate a sized HD bead-art design | `pindou-run` | `ui-and-image-editing.md` |
-| Reskin and export a Spine character package | `spine-run` | `ui-and-image-editing.md` |
+| Reskin and export a built-in Spine character package | `spine-run` | `ui-and-image-editing.md` |
+| Inspect or reskin 1-10 parts in an uploaded Spine 3.8/4.2 package | `spine-inspect`, then `spine-edit-run` | `ui-and-image-editing.md` |
 | Find or download a standard 64×64 flat material texture | `texture-reference-search`, `texture-reference-download` | `maps-tiles-and-textures.md` |
 | Create a seamless flat texture | `texture-gen-run` | `maps-tiles-and-textures.md` |
 | Create an isometric texture | `isometric-texture-run` | `maps-tiles-and-textures.md` |
