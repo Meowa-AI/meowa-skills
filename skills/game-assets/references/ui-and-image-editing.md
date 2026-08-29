@@ -42,13 +42,13 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Apply the public style preset | `style-gen-run` | Produce one styled game asset | Uses the preset, model, variant, and speed exposed by the web product |
 | Create Pindou bead art | `pindou-run` | Convert a pixel source at source size or generate an HD sized design | HD mode requires a supported target size |
 | Reskin a built-in Spine character | `spine-run` | Produce the public Spine-agent final package | Requires the project/thread message context used by the web workflow |
-| Reskin uploaded Spine parts | `spine-inspect`, `spine-edit-run` | Accept a 3.8/4.2 package and replace 1-10 selected Atlas parts | Source projects must be ZIPs containing one `.spine` file and its images |
+| Reskin uploaded Spine parts | `spine-inspect`, `spine-edit-run` | Accept Spine 3.6-4.2, or experimental 4.3, and replace 1-10 selected Atlas parts | Every import becomes a Spine 4.2 runtime |
 
 Use this module after base-asset generation when the task is refinement rather than a new asset family. Send a finalized still asset to animation or video only after the edit is approved.
 
 For Spine reskinning, choose the same template exposed by the web product. `--template-name character_template_slim` is the default four-head-tall template. The two-head-tall choices are `character_template_2head_celestial_librarian`, `character_template_2head_moon_jellyfish_cartographer`, `character_template_2head_clockwork_orchard_warden`, `character_template_2head_desert_glassblower_alchemist`, and `character_template_2head_deep_sea_choir_conductor`; the raw two-head base template is internal and is not a public choice. The command returns only the final Spine package.
 
-For an uploaded runtime or source-project ZIP, first run `spine-inspect --source-spine-package <package.zip> --project-id <project>` and save its safe JSON output. Select 1-10 entries from `selected_parts`, then pass that JSON to `spine-edit-run --selected-parts-json <selection.json>`. Runtime ZIPs contain one JSON/SKEL, one Atlas, and its texture pages. Source-project ZIPs contain one `.spine` file and its referenced images. Runtime packages keep their 3.8/4.2 version; 3.8 source projects are upgraded to a 4.2 runtime for web preview. The command returns only the final runtime ZIP.
+For an uploaded runtime or source-project ZIP, first run `spine-inspect --source-spine-package <package.zip> --project-id <project>` and save its safe JSON output. Select 1-10 entries from `selected_parts`, then pass that JSON to `spine-edit-run --selected-parts-json <selection.json>`. Runtime ZIPs contain one `.json` or `.skel`, one `.atlas` or `.atlas.txt`, and PNG/JPG/JPEG/WebP texture pages. Source-project ZIPs contain exactly one `.spine` file and its PNG/JPG/JPEG/WebP images. Spine 3.6, 3.7, 3.8, 4.0, 4.1, and 4.2 are stable inputs; Spine 4.3 conversion is experimental and returns a warning. Every successful import is normalized to a Spine 4.2 runtime. The command returns only the final runtime ZIP.
 
 ## Generate or extract game UI
 

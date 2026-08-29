@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.29.0"
+MEOWART_API_CLI_VERSION = "2026.08.29.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -4178,9 +4178,30 @@ def upload_project_spine_package(
         raise RuntimeError(_format_json_for_display(payload))
     asset_id = str(payload.get("assetId") or "").strip()
     download_url = str(payload.get("downloadUrl") or "").strip()
-    if not asset_id or not download_url:
+    source_spine_version = str(payload.get("sourceSpineVersion") or "").strip()
+    spine_version = str(payload.get("spineVersion") or "").strip()
+    source_format = str(payload.get("sourceFormat") or "").strip()
+    conversion_mode = str(payload.get("conversionMode") or "").strip()
+    warning_code = str(payload.get("warningCode") or "").strip() or None
+    if (
+        not asset_id
+        or not download_url
+        or not source_spine_version
+        or re.fullmatch(r"4\.2\.\d+", spine_version) is None
+        or source_format not in {"source_project", "runtime"}
+        or conversion_mode not in {"normalized", "experimental_downgrade"}
+        or warning_code not in {None, "spine_43_experimental_downgrade"}
+    ):
         raise SkillCompatibilityError("Spine upload response is missing its private asset identity")
-    return {"asset_id": asset_id, "download_url": download_url}
+    return {
+        "asset_id": asset_id,
+        "download_url": download_url,
+        "source_spine_version": source_spine_version,
+        "spine_version": spine_version,
+        "source_format": source_format,
+        "conversion_mode": conversion_mode,
+        "warning_code": warning_code,
+    }
 
 
 def _parse_spine_atlas_manifest(atlas_text: str) -> list[dict[str, Any]]:
@@ -4268,10 +4289,10 @@ def _validate_spine_runtime_zip(data: bytes) -> list[dict[str, Any]]:
                 except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ValueError("Spine package skeleton version is invalid") from exc
             else:
-                version_match = re.search(rb"(?<!\d)(3\.8|4\.2)\.\d+(?!\d)", skeleton_data[:4096])
+                version_match = re.search(rb"(?<!\d)4\.2\.\d+(?!\d)", skeleton_data[:4096])
                 spine_version = version_match.group(0).decode("ascii") if version_match else ""
-            if re.fullmatch(r"(3\.8|4\.2)\.\d+", spine_version) is None:
-                raise ValueError("Spine package must use Spine 3.8 or 4.2 runtime data")
+            if re.fullmatch(r"4\.2\.\d+", spine_version) is None:
+                raise ValueError("Spine package must use Spine 4.2 runtime data")
             corrupt_entry = archive.testzip()
             if corrupt_entry:
                 raise ValueError("Spine package contains a corrupt file")
@@ -4312,8 +4333,20 @@ def inspect_uploaded_spine_package(
     if content_type != "application/zip":
         raise ValueError("Spine package download did not return application/zip")
     regions = _validate_spine_runtime_zip(response.content)
+    warning = None
+    if uploaded["warning_code"] == "spine_43_experimental_downgrade":
+        warning = (
+            f"Spine {uploaded['source_spine_version']} was experimentally converted to "
+            f"{uploaded['spine_version']}; review meshes, constraints, and animations."
+        )
     return {
         "asset_id": uploaded["asset_id"],
+        "source_spine_version": uploaded["source_spine_version"],
+        "spine_version": uploaded["spine_version"],
+        "source_format": uploaded["source_format"],
+        "conversion_mode": uploaded["conversion_mode"],
+        "warning_code": uploaded["warning_code"],
+        "warning": warning,
         "selected_parts": [
             {"page": item["page"], "name": item["name"], "index": item["index"]}
             for item in regions
@@ -6564,7 +6597,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     spine_inspect = subparsers.add_parser(
         "spine-inspect",
-        help="Inspect selectable parts in a Spine 3.8 or 4.2 package",
+        help="Inspect parts in Spine 3.6-4.2 or experimental 4.3; output is Spine 4.2",
     )
     add_shared_path_args(spine_inspect)
     spine_inspect.add_argument("--source-spine-package", required=True)
