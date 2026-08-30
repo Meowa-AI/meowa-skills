@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.30.1"
+MEOWART_API_CLI_VERSION = "2026.08.30.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2061,6 +2061,13 @@ def submit_custom_workflow(
         raise ValueError(f"params JSON is invalid: {exc}") from exc
     if not isinstance(values, dict):
         raise ValueError("params JSON must contain one JSON object")
+
+    for field in schema.get("fields") or []:
+        if not isinstance(field, dict) or str(field.get("type") or "") == "image_upload":
+            continue
+        name = str(field.get("name") or "").strip()
+        if name and name not in values and "default" in field:
+            values[name] = field["default"]
 
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     for field in schema.get("fields") or []:
