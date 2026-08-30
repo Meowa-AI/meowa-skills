@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.29.1"
+MEOWART_API_CLI_VERSION = "2026.08.29.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -36,6 +36,21 @@ GAME_ASSETS_UPDATE_URL = "https://github.com/Meowa-AI/meowa-skills"
 _GAME_ASSETS_RELEASE_VERSION_PATTERN = re.compile(
     r"^([1-9]\d{3})\.(\d{2})\.(\d{2})\.(0|[1-9]\d*)$"
 )
+
+
+class _StoreExplicitArgument(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        del parser, option_string
+        setattr(namespace, self.dest, values)
+        setattr(namespace, f"{self.dest}_explicit", True)
+
+
 _SERVER_SKILL_VERSION_OVERRIDES: dict[str, str] = {}
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
@@ -3302,6 +3317,7 @@ def prepare_meowa_animation_prompt(
     quality_mode: str,
     animation_mode: str,
     remove_bg_method: str,
+    background_color: str,
     source_padding: dict[str, Any],
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
@@ -3318,6 +3334,7 @@ def prepare_meowa_animation_prompt(
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
             "remove_bg_method": remove_bg_method,
+            "background_color": background_color,
             "output_language": "en",
             "source_padding": json.dumps(source_padding),
         },
@@ -3341,6 +3358,7 @@ def submit_meowa_animation(
     quality_mode: str,
     animation_mode: str,
     remove_bg_method: str,
+    background_color: str,
     source_padding: dict[str, Any],
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
@@ -3357,6 +3375,7 @@ def submit_meowa_animation(
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
             "remove_bg_method": remove_bg_method,
+            "background_color": background_color,
             "source_padding": json.dumps(source_padding),
         },
         files={"source_image": _upload_part(image_path, label="animation source")},
@@ -6700,10 +6719,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     meowa_animation_run_parser.add_argument(
         "--remove-bg-method",
-        default="standard",
-        choices=["none", "standard"],
-        help="Background removal: none or standard",
+        default="advanced",
+        choices=["none", "standard", "advanced"],
+        action=_StoreExplicitArgument,
+        help="Background removal: none, standard, or advanced (advanced is unavailable for HD)",
     )
+    meowa_animation_run_parser.set_defaults(remove_bg_method_explicit=False)
+    meowa_animation_run_parser.add_argument("--background-color", default="#c6c6c6")
     meowa_animation_run_parser.set_defaults(optimize_prompt=True)
     meowa_animation_run_parser.add_argument(
         "--optimize-prompt",
@@ -6843,6 +6865,19 @@ def _parse_json_arg(raw: str, *, name: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{name} must be a JSON object")
     return payload
+
+
+def _resolve_meowa_animation_remove_bg_method(
+    *,
+    style_mode: str,
+    remove_bg_method: str,
+    explicitly_selected: bool,
+) -> str:
+    if style_mode == "hd" and remove_bg_method == "advanced":
+        if explicitly_selected:
+            raise ValueError("Advanced background removal is still in development for HD")
+        return "standard"
+    return remove_bg_method
 
 
 def _read_dotenv_value(key: str) -> str:
@@ -9339,6 +9374,11 @@ def main() -> int:
                 raise FileNotFoundError(f"animation source not found: {image_path}")
             if args.quality_mode == "advanced":
                 raise ValueError("Ultimate quality is still in development")
+            remove_bg_method = _resolve_meowa_animation_remove_bg_method(
+                style_mode=args.style_mode,
+                remove_bg_method=args.remove_bg_method,
+                explicitly_selected=args.remove_bg_method_explicit,
+            )
             if args.padding < 0:
                 raise ValueError("padding must be non-negative")
             if Image is None:
@@ -9365,7 +9405,8 @@ def main() -> int:
                     duration_seconds=duration_seconds,
                     quality_mode=args.quality_mode,
                     animation_mode=args.animation_mode,
-                    remove_bg_method=args.remove_bg_method,
+                    remove_bg_method=remove_bg_method,
+                    background_color=args.background_color,
                     source_padding=source_padding,
                     timeout=args.timeout,
                     verify=verify,
@@ -9383,7 +9424,8 @@ def main() -> int:
                 duration_seconds=duration_seconds,
                 quality_mode=args.quality_mode,
                 animation_mode=args.animation_mode,
-                remove_bg_method=args.remove_bg_method,
+                remove_bg_method=remove_bg_method,
+                background_color=args.background_color,
                 source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,
