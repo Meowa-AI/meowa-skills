@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.29.2"
+MEOWART_API_CLI_VERSION = "2026.08.30.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3311,6 +3311,7 @@ def prepare_meowa_animation_prompt(
     api_base: str,
     api_key: str,
     image_file: str,
+    last_image_file: str = "",
     prompt: str,
     style_mode: str,
     duration_seconds: int,
@@ -3323,6 +3324,9 @@ def prepare_meowa_animation_prompt(
     verify: bool = True,
 ) -> dict[str, Any]:
     image_path = Path(image_file).expanduser().resolve()
+    files = {"source_image": _upload_part(image_path, label="animation source")}
+    if last_image_file:
+        files["last_frame"] = _upload_part(last_image_file, label="animation last frame")
     response, body = _request_json(
         method="POST",
         url=_normalize_base_url(api_base, "/api/workflows/meowa_animation/prompts"),
@@ -3338,7 +3342,7 @@ def prepare_meowa_animation_prompt(
             "output_language": "en",
             "source_padding": json.dumps(source_padding),
         },
-        files={"source_image": _upload_part(image_path, label="animation source")},
+        files=files,
         timeout=timeout,
         verify=verify,
     )
@@ -3352,6 +3356,7 @@ def submit_meowa_animation(
     api_base: str,
     api_key: str,
     image_file: str,
+    last_image_file: str = "",
     action_timeline: str,
     style_mode: str,
     duration_seconds: int,
@@ -3364,6 +3369,9 @@ def submit_meowa_animation(
     verify: bool = True,
 ) -> dict[str, Any]:
     image_path = Path(image_file).expanduser().resolve()
+    files = {"source_image": _upload_part(image_path, label="animation source")}
+    if last_image_file:
+        files["last_frame"] = _upload_part(last_image_file, label="animation last frame")
     response, body = _request_json(
         method="POST",
         url=_normalize_base_url(api_base, "/api/workflows/meowa_animation/run"),
@@ -3378,7 +3386,7 @@ def submit_meowa_animation(
             "background_color": background_color,
             "source_padding": json.dumps(source_padding),
         },
-        files={"source_image": _upload_part(image_path, label="animation source")},
+        files=files,
         timeout=timeout,
         verify=verify,
     )
@@ -6694,6 +6702,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_shared_path_args(meowa_animation_run_parser)
     meowa_animation_run_parser.add_argument("--image-file", required=True)
+    meowa_animation_run_parser.add_argument(
+        "--last-image-file",
+        default="",
+        help="Optional exact last frame; when set, loop mode is ignored",
+    )
     meowa_animation_run_parser.add_argument("--prompt", required=True)
     meowa_animation_run_parser.add_argument(
         "--style-mode",
@@ -6719,10 +6732,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     meowa_animation_run_parser.add_argument(
         "--remove-bg-method",
-        default="advanced",
+        default="standard",
         choices=["none", "standard", "advanced"],
         action=_StoreExplicitArgument,
-        help="Background removal: none, standard, or advanced (advanced is unavailable for HD)",
+        help="Background removal: none or standard (advanced is temporarily unavailable)",
     )
     meowa_animation_run_parser.set_defaults(remove_bg_method_explicit=False)
     meowa_animation_run_parser.add_argument("--background-color", default="#c6c6c6")
@@ -6873,9 +6886,9 @@ def _resolve_meowa_animation_remove_bg_method(
     remove_bg_method: str,
     explicitly_selected: bool,
 ) -> str:
-    if style_mode == "hd" and remove_bg_method == "advanced":
+    if remove_bg_method == "advanced":
         if explicitly_selected:
-            raise ValueError("Advanced background removal is still in development for HD")
+            raise ValueError("Advanced background removal is temporarily unavailable")
         return "standard"
     return remove_bg_method
 
@@ -9385,10 +9398,19 @@ def main() -> int:
                 raise RuntimeError("Pillow is required for animation validation; run: python3 -m pip install Pillow")
             with Image.open(image_path) as source:
                 source_width, source_height = source.size
+            last_image_path = None
+            if args.last_image_file:
+                last_image_path = Path(args.last_image_file).expanduser().resolve()
+                if not last_image_path.is_file():
+                    raise FileNotFoundError(f"animation last frame not found: {last_image_path}")
+                with Image.open(last_image_path) as last_source:
+                    if last_source.size != (source_width, source_height):
+                        raise ValueError("animation first and last frames must have identical dimensions")
             if args.style_mode == "pixel" and max(source_width, source_height) > 256:
                 raise ValueError("pixel animation source cannot exceed 256 pixels on its longest side")
 
             duration_seconds = args.output_frames // 8
+            animation_mode = "non_loop" if last_image_path else args.animation_mode
             source_padding = {
                 "enabled": True,
                 "pixels": args.padding,
@@ -9400,11 +9422,12 @@ def main() -> int:
                     api_base=args.api_base,
                     api_key=args.api_key,
                     image_file=str(image_path),
+                    last_image_file=str(last_image_path) if last_image_path else "",
                     prompt=action_timeline,
                     style_mode=args.style_mode,
                     duration_seconds=duration_seconds,
                     quality_mode=args.quality_mode,
-                    animation_mode=args.animation_mode,
+                    animation_mode=animation_mode,
                     remove_bg_method=remove_bg_method,
                     background_color=args.background_color,
                     source_padding=source_padding,
@@ -9419,11 +9442,12 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 image_file=str(image_path),
+                last_image_file=str(last_image_path) if last_image_path else "",
                 action_timeline=action_timeline,
                 style_mode=args.style_mode,
                 duration_seconds=duration_seconds,
                 quality_mode=args.quality_mode,
-                animation_mode=args.animation_mode,
+                animation_mode=animation_mode,
                 remove_bg_method=remove_bg_method,
                 background_color=args.background_color,
                 source_padding=source_padding,

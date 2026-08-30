@@ -110,7 +110,7 @@ python3 skills/game-assets/meowart_api.py meowa-animation-run \
   --style-mode pixel \
   --output-frames 16 \
   --quality-mode standard \
-  --remove-bg-method advanced \
+  --remove-bg-method standard \
   --background-color '#c6c6c6' \
   --animation-mode loop \
   --optimize-prompt \
@@ -119,9 +119,11 @@ python3 skills/game-assets/meowart_api.py meowa-animation-run \
   --output-dir <output-dir>
 ```
 
-The defaults mirror the web UI: 16 frames (2 seconds), Pixel Style, Standard quality, advanced background removal, a `#c6c6c6` solid background, loop motion, and prompt optimization enabled. Frame choices are 8, 16, 24, and 32. Pixel inputs must not exceed 256 pixels on the longest side; HD inputs do not use that dimension limit. Background removal choices are `none`, `standard`, and `advanced`; advanced uses the selected source background color. Standard and Detailed output quality are available; Ultimate remains visible in the product but is still in development.
+The defaults mirror the web UI: 16 frames (2 seconds), Pixel Style, Standard quality, standard background removal, a `#c6c6c6` solid background, loop motion, and prompt optimization enabled. Frame choices are 8, 16, 24, and 32. Pixel inputs must not exceed 256 pixels on the longest side; HD inputs do not use that dimension limit. Background removal choices are `none` and `standard`; `advanced` remains visible but is temporarily unavailable. Standard and Detailed output quality are available; Ultimate remains visible in the product but is still in development.
 
-Use `--style-mode hd` for smooth high-definition output. HD supports `none` and `standard` background removal; `standard` is the conditional default and `advanced` is still in development. Source padding stays independent from style and is applied before generation. The final downloaded WebP always loops; `--animation-mode` controls the motion design rather than the playback metadata.
+Add `--last-image-file <last-frame.png>` for first-to-last-frame control. The two images must have identical dimensions. When a last frame is supplied, the runner ignores `--animation-mode loop` and submits `non_loop`, because the exact last frame is the endpoint.
+
+Use `--style-mode hd` for smooth high-definition output. HD supports `none` and `standard` background removal; `advanced` is temporarily unavailable. Source padding stays independent from style and is applied before generation. The final downloaded WebP always loops; `--animation-mode` controls the motion design rather than the playback metadata.
 
 ## Keyframe-controlled animation
 
