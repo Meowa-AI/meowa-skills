@@ -5758,7 +5758,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="image-2",
         choices=GENERATION_MODEL_CHOICES,
         help="Generation model; defaults to Image2",
-        help="Generation model (default: Nano Banana, matching the web editor)",
     )
     image_edit_run.add_argument(
         "--resolution",
