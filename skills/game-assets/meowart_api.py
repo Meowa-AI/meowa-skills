@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.30.1"
+MEOWART_API_CLI_VERSION = "2026.08.31.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3321,6 +3321,7 @@ def prepare_meowa_animation_prompt(
     last_image_file: str = "",
     prompt: str,
     style_mode: str,
+    resolution: str,
     duration_seconds: int,
     quality_mode: str,
     animation_mode: str,
@@ -3339,6 +3340,7 @@ def prepare_meowa_animation_prompt(
         data={
             "prompt": str(prompt or "").strip(),
             "style_mode": style_mode,
+            "resolution": resolution,
             "duration_seconds": str(duration_seconds),
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
@@ -3367,6 +3369,7 @@ def submit_meowa_animation(
     last_image_file: str = "",
     action_timeline: str,
     style_mode: str,
+    resolution: str,
     duration_seconds: int,
     quality_mode: str,
     animation_mode: str,
@@ -3385,6 +3388,7 @@ def submit_meowa_animation(
         data={
             "action_timeline": str(action_timeline or "").strip(),
             "style_mode": style_mode,
+            "resolution": resolution,
             "duration_seconds": str(duration_seconds),
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
@@ -6724,6 +6728,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["pixel", "hd"],
     )
     meowa_animation_run_parser.add_argument(
+        "--resolution",
+        default="480p",
+        choices=["480p", "720p"],
+        help="Output resolution; 720p is available only for HD and costs 10 extra credits",
+    )
+    meowa_animation_run_parser.add_argument(
         "--output-frames",
         type=int,
         default=16,
@@ -6731,10 +6741,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     meowa_animation_run_parser.add_argument(
         "--quality-mode",
-        default="standard",
+        default="medium",
         choices=["standard", "medium", "advanced"],
+        action=_StoreExplicitArgument,
         help="Standard or Detailed; Ultimate is visible but still in development",
     )
+    meowa_animation_run_parser.set_defaults(quality_mode_explicit=False)
     meowa_animation_run_parser.add_argument(
         "--animation-mode",
         default="loop",
@@ -6901,6 +6913,17 @@ def _resolve_meowa_animation_remove_bg_method(
             raise ValueError("Advanced background removal is temporarily unavailable")
         return "standard"
     return remove_bg_method
+
+
+def _resolve_meowa_animation_quality_mode(
+    *,
+    style_mode: str,
+    quality_mode: str,
+    explicitly_selected: bool,
+) -> str:
+    if explicitly_selected:
+        return quality_mode
+    return "standard" if style_mode == "hd" else "medium"
 
 
 def _read_dotenv_value(key: str) -> str:
@@ -9395,8 +9418,15 @@ def main() -> int:
             image_path = Path(args.image_file).expanduser().resolve()
             if not image_path.is_file():
                 raise FileNotFoundError(f"animation source not found: {image_path}")
-            if args.quality_mode == "advanced":
+            quality_mode = _resolve_meowa_animation_quality_mode(
+                style_mode=args.style_mode,
+                quality_mode=args.quality_mode,
+                explicitly_selected=args.quality_mode_explicit,
+            )
+            if quality_mode == "advanced":
                 raise ValueError("Ultimate quality is still in development")
+            if args.style_mode == "pixel" and args.resolution != "480p":
+                raise ValueError("720p resolution is unavailable for pixel style mode")
             remove_bg_method = _resolve_meowa_animation_remove_bg_method(
                 style_mode=args.style_mode,
                 remove_bg_method=args.remove_bg_method,
@@ -9435,8 +9465,9 @@ def main() -> int:
                     last_image_file=str(last_image_path) if last_image_path else "",
                     prompt=action_timeline,
                     style_mode=args.style_mode,
+                    resolution=args.resolution,
                     duration_seconds=duration_seconds,
-                    quality_mode=args.quality_mode,
+                    quality_mode=quality_mode,
                     animation_mode=animation_mode,
                     remove_bg_method=remove_bg_method,
                     background_color=args.background_color,
@@ -9455,8 +9486,9 @@ def main() -> int:
                 last_image_file=str(last_image_path) if last_image_path else "",
                 action_timeline=action_timeline,
                 style_mode=args.style_mode,
+                resolution=args.resolution,
                 duration_seconds=duration_seconds,
-                quality_mode=args.quality_mode,
+                quality_mode=quality_mode,
                 animation_mode=animation_mode,
                 remove_bg_method=remove_bg_method,
                 background_color=args.background_color,
