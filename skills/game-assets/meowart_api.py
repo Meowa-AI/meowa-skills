@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.29.2"
+MEOWART_API_CLI_VERSION = "2026.08.30.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2061,6 +2061,13 @@ def submit_custom_workflow(
         raise ValueError(f"params JSON is invalid: {exc}") from exc
     if not isinstance(values, dict):
         raise ValueError("params JSON must contain one JSON object")
+
+    for field in schema.get("fields") or []:
+        if not isinstance(field, dict) or str(field.get("type") or "") == "image_upload":
+            continue
+        name = str(field.get("name") or "").strip()
+        if name and name not in values and "default" in field:
+            values[name] = field["default"]
 
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     for field in schema.get("fields") or []:
@@ -4116,7 +4123,7 @@ def submit_spine_agent(
     client_operation_id: str = "",
     character_reference: str = "",
     template_name: str = "character_template_slim",
-    generation_model: str = "nano-banana",
+    generation_model: str = "image-2",
     export_resolution: str = "2K",
     quality: str = "detailed",
     weapon: str = "auto",
@@ -6597,8 +6604,9 @@ def build_parser() -> argparse.ArgumentParser:
     spine_run.add_argument("--client-operation-id", default="")
     spine_run.add_argument(
         "--generation-model",
-        default="nano-banana",
+        default="image-2",
         choices=GENERATION_MODEL_CHOICES,
+        help="Generation model; defaults to Image2",
     )
     spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
     spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
