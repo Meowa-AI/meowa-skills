@@ -26,7 +26,7 @@
       "web_sources": ["types.ts:ImageEditOptions", "components/InfiniteCanvas.tsx", "services/imageEditService.ts"],
       "parameters": {
         "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
+        "generation_model": {"flag": "--generation-model", "default": "image-2", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
         "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
         "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
         "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},

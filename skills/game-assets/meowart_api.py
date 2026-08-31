@@ -4417,7 +4417,7 @@ def submit_spine_part_edit(
     selected_parts_path: str,
     client_operation_id: str = "",
     display_name: str = "Spine",
-    generation_model: str = "nano-banana",
+    generation_model: str = "image-2",
     resolution: str = "1K",
     quality: str = "standard",
     timeout: int = DEFAULT_TIMEOUT,
@@ -5755,8 +5755,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     image_edit_run.add_argument(
         "--generation-model",
-        default="nano-banana",
+        default="image-2",
         choices=GENERATION_MODEL_CHOICES,
+        help="Generation model; defaults to Image2",
         help="Generation model (default: Nano Banana, matching the web editor)",
     )
     image_edit_run.add_argument(
