@@ -3381,6 +3381,7 @@ def prepare_meowa_animation_prompt(
     prompt: str,
     style_mode: str,
     resolution: str,
+    alpha_mode: str,
     duration_seconds: int,
     quality_mode: str,
     animation_mode: str,
@@ -3400,6 +3401,7 @@ def prepare_meowa_animation_prompt(
             "prompt": str(prompt or "").strip(),
             "style_mode": style_mode,
             "resolution": resolution,
+            "alpha_mode": alpha_mode,
             "duration_seconds": str(duration_seconds),
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
@@ -3429,6 +3431,7 @@ def submit_meowa_animation(
     action_timeline: str,
     style_mode: str,
     resolution: str,
+    alpha_mode: str,
     duration_seconds: int,
     quality_mode: str,
     animation_mode: str,
@@ -3448,6 +3451,7 @@ def submit_meowa_animation(
             "action_timeline": str(action_timeline or "").strip(),
             "style_mode": style_mode,
             "resolution": resolution,
+            "alpha_mode": alpha_mode,
             "duration_seconds": str(duration_seconds),
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
@@ -6859,6 +6863,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output resolution; 720p is available only for HD and costs 10 extra credits",
     )
     meowa_animation_run_parser.add_argument(
+        "--alpha-mode",
+        default="sharp",
+        choices=["soft", "sharp"],
+        action=_StoreExplicitArgument,
+        help="HD cutout edges: soft transition or sharp edges; Pixel is always sharp",
+    )
+    meowa_animation_run_parser.set_defaults(alpha_mode_explicit=False)
+    meowa_animation_run_parser.add_argument(
         "--output-frames",
         type=int,
         default=16,
@@ -7054,6 +7066,19 @@ def _resolve_meowa_animation_quality_mode(
     if explicitly_selected:
         return quality_mode
     return "standard" if style_mode == "hd" else "medium"
+
+
+def _resolve_meowa_animation_alpha_mode(
+    *,
+    style_mode: str,
+    alpha_mode: str,
+    explicitly_selected: bool,
+) -> str:
+    if style_mode == "pixel":
+        if explicitly_selected and alpha_mode == "soft":
+            raise ValueError("Soft alpha edges are unavailable for pixel style mode")
+        return "sharp"
+    return alpha_mode if explicitly_selected else "soft"
 
 
 def _read_dotenv_value(key: str) -> str:
@@ -9607,6 +9632,11 @@ def main() -> int:
                 raise ValueError("Ultimate quality is still in development")
             if args.style_mode == "pixel" and args.resolution != "480p":
                 raise ValueError("720p resolution is unavailable for pixel style mode")
+            alpha_mode = _resolve_meowa_animation_alpha_mode(
+                style_mode=args.style_mode,
+                alpha_mode=args.alpha_mode,
+                explicitly_selected=args.alpha_mode_explicit,
+            )
             remove_bg_method = _resolve_meowa_animation_remove_bg_method(
                 style_mode=args.style_mode,
                 remove_bg_method=args.remove_bg_method,
@@ -9646,6 +9676,7 @@ def main() -> int:
                     prompt=action_timeline,
                     style_mode=args.style_mode,
                     resolution=args.resolution,
+                    alpha_mode=alpha_mode,
                     duration_seconds=duration_seconds,
                     quality_mode=quality_mode,
                     animation_mode=animation_mode,
@@ -9667,6 +9698,7 @@ def main() -> int:
                 action_timeline=action_timeline,
                 style_mode=args.style_mode,
                 resolution=args.resolution,
+                alpha_mode=alpha_mode,
                 duration_seconds=duration_seconds,
                 quality_mode=quality_mode,
                 animation_mode=animation_mode,
@@ -9711,6 +9743,7 @@ def main() -> int:
                     "image_file": str(image_path),
                     "prompt": args.prompt,
                     "style_mode": args.style_mode,
+                    "alpha_mode": alpha_mode,
                     "output_frames": args.output_frames,
                     "quality_mode": args.quality_mode,
                     "animation_mode": args.animation_mode,
