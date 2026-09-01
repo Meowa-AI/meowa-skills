@@ -14,8 +14,9 @@ python3 skills/game-assets/meowart_api.py --version
 
 ## 更新 Skill
 
-服务端要求 runner 与当前发布版本一致。出现 `skill_upgrade_required`、API 响应不兼容，
-或成功任务没有可下载的最终文件时，先更新完整 Skill，不要重新提交已经扣费的任务：
+旧版 runner 仍可继续执行；服务端发现新版本时，runner 只提示一次，不会阻断命令。
+如果旧版 runner 执行失败，会额外提示该错误可能由版本滞后导致。此时先更新完整 Skill，
+不要重新提交已经扣费的任务：
 
 ```bash
 git -C <meowa-skills-repo> pull --ff-only

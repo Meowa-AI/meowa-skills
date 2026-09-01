@@ -110,7 +110,7 @@ Avoid unnecessary chains. Every generative step can change identity, scale, pale
 ## Route and execute
 
 1. For a new installation or missing authentication, read [meowart_api.md](meowart_api.md) and help the user configure the key locally. Never ask them to paste it into chat.
-2. If the runner reports `skill_upgrade_required` or an incompatible API response, update the complete Skill from the official repository, verify `meowart_api.py --version`, and run the matching `*-poll` command with the original job ID. Recovery waits for completion and downloads declared final outputs without resubmitting the paid task.
+2. An outdated runner may continue and warns once without blocking. If it then fails and suggests the old version may be the cause, update the complete Skill from the official repository, verify `meowart_api.py --version`, and run the matching `*-poll` command with the original job ID. Recovery waits for completion and downloads declared final outputs without resubmitting the paid task.
 3. Read [capability-routing.md](references/capability-routing.md).
 4. Read the selected capability module; read multiple modules only for an intentional production chain.
 5. Inspect `python3 meowart_api.py <command> --help` for current product options.

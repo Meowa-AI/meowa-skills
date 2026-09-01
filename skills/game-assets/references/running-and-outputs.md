@@ -22,17 +22,20 @@ Use the bundled runner as shipped. Do not fetch or execute a remote replacement 
 
 ## Version compatibility
 
-The service accepts only the current published runner. Check the installed version with:
+The service lets an older published runner continue. The runner warns once when the service
+reports a newer version, but the warning does not block the command. Check the installed version
+with:
 
 ```bash
 python3 skills/game-assets/meowart_api.py --version
 ```
 
-If the runner reports `skill_upgrade_required` or an incompatible API response, update from the
-official `Meowa-AI/meowa-skills` repository and copy the complete `skills/game-assets` directory
-into the Codex skills directory. Do not replace only one file. If a paid job already has an ID,
-update first and recover it with the matching `*-poll` command; never resubmit it merely because
-the old runner could not download the result.
+If a command fails while the runner is outdated, it also warns that the failure may be caused by
+the old version. Update from the official `Meowa-AI/meowa-skills` repository and copy the complete
+`skills/game-assets` directory into the Codex skills directory before retrying. Do not replace only
+one file. If a paid job already has an ID, recover it with the matching `*-poll` command after the
+update; never resubmit it merely because the old runner could not download the result. A legacy
+server may still return `skill_upgrade_required`; follow the same recovery procedure.
 
 ## Authentication
 

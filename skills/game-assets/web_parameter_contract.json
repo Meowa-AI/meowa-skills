@@ -149,6 +149,7 @@
         "template_name": {"flag": "--template-name", "default": "character_template_slim", "choices": ["character_template_slim", "character_template_2head_celestial_librarian", "character_template_2head_moon_jellyfish_cartographer", "character_template_2head_clockwork_orchard_warden", "character_template_2head_desert_glassblower_alchemist", "character_template_2head_deep_sea_choir_conductor"], "request_field": "template_name"},
         "generation_model": {"flag": "--generation-model", "default": "image-2", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
         "export_resolution": {"flag": "--export-resolution", "default": "2K", "choices": ["1K", "2K", "4K"], "request_field": "export_resolution"},
+        "export_version": {"flag": "--export-version", "default": "4.2", "choices": ["4.2", "3.8"], "request_field": "export_version"},
         "quality": {"flag": "--quality", "default": "detailed", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
         "weapon": {"flag": "--weapon", "default": "auto", "choices": ["auto", "yes", "no"], "request_field": "weapon_mode"},
         "hair": {"flag": "--hair", "default": "auto", "choices": ["auto", "short_hair", "long_hair", "twin_tail", "single_ponytail"], "request_field": "hair_type"},

@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.30.1"
+MEOWART_API_CLI_VERSION = "2026.08.31.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -52,6 +52,8 @@ class _StoreExplicitArgument(argparse.Action):
 
 
 _SERVER_SKILL_VERSION_OVERRIDES: dict[str, str] = {}
+_OUTDATED_SKILL_VERSIONS: dict[str, str] = {}
+_WARNED_OUTDATED_SKILL_ORIGINS: set[str] = set()
 DEFAULT_API_KEY_ENV = "MEOWART_API_KEY"
 DEFAULT_DEV_KEY_ENV = "DEV_API_KEY"
 _DEV_AUTH_PREFIX = "x-dev-key:"
@@ -338,6 +340,59 @@ def _backward_compatible_server_version(response: Any, *, url: str) -> str:
     return required_version
 
 
+def _record_latest_skill_version(response: Any, *, url: str) -> None:
+    origin = _skill_version_origin(url)
+    if not origin:
+        return
+    response_headers = getattr(response, "headers", {}) or {}
+    latest_version = str(
+        response_headers.get(GAME_ASSETS_SKILL_LATEST_VERSION_HEADER) or ""
+    ).strip()
+    installed_release = _parse_release_version(MEOWART_API_CLI_VERSION)
+    latest_release = _parse_release_version(latest_version)
+    if (
+        installed_release is None
+        or latest_release is None
+        or installed_release >= latest_release
+    ):
+        return
+
+    observed_version = _OUTDATED_SKILL_VERSIONS.get(origin, "")
+    observed_release = _parse_release_version(observed_version)
+    if observed_release is None or latest_release > observed_release:
+        _OUTDATED_SKILL_VERSIONS[origin] = latest_version
+    if origin in _WARNED_OUTDATED_SKILL_ORIGINS:
+        return
+    _WARNED_OUTDATED_SKILL_ORIGINS.add(origin)
+    print(
+        "[WARN] Your Meowa game-assets Skill is not the latest version. "
+        f"Installed: {MEOWART_API_CLI_VERSION}; latest: {latest_version}. "
+        "Updating is recommended, but this command will continue.",
+        file=sys.stderr,
+    )
+
+
+def _warn_if_outdated_after_failure() -> None:
+    if not _OUTDATED_SKILL_VERSIONS:
+        return
+    latest_version = max(
+        _OUTDATED_SKILL_VERSIONS.values(),
+        key=lambda value: _parse_release_version(value) or (0, 0, 0, 0),
+    )
+    print(
+        "[WARN] This error may be caused by the outdated Skill version "
+        f"({MEOWART_API_CLI_VERSION}; latest: {latest_version}); "
+        f"update the Skill and retry: {GAME_ASSETS_UPDATE_URL}",
+        file=sys.stderr,
+    )
+
+
+def _command_exit_code(code: int) -> int:
+    if code:
+        _warn_if_outdated_after_failure()
+    return code
+
+
 def _request_with_skill_version_compatibility(
     *,
     url: str,
@@ -357,6 +412,7 @@ def _request_with_skill_version_compatibility(
             skill_version_override=sent_version,
         )
     )
+    _record_latest_skill_version(response, url=url)
     compatible_version = _backward_compatible_server_version(response, url=url)
     if not compatible_version or compatible_version == sent_version:
         return response
@@ -368,6 +424,7 @@ def _request_with_skill_version_compatibility(
             skill_version_override=compatible_version,
         )
     )
+    _record_latest_skill_version(response, url=url)
     if int(getattr(response, "status_code", 0) or 0) != 426:
         _SERVER_SKILL_VERSION_OVERRIDES[origin] = compatible_version
     return response
@@ -4278,7 +4335,11 @@ def _parse_spine_atlas_manifest(atlas_text: str) -> list[dict[str, Any]]:
     return regions
 
 
-def _validate_spine_runtime_zip(data: bytes) -> list[dict[str, Any]]:
+def _validate_spine_runtime_zip(
+    data: bytes,
+    *,
+    expected_version_minor: str = "4.2",
+) -> list[dict[str, Any]]:
     if not data or len(data) > SPINE_PACKAGE_MAX_BYTES:
         raise ValueError("Spine package must be 25MB or smaller")
     try:
@@ -4325,10 +4386,20 @@ def _validate_spine_runtime_zip(data: bytes) -> list[dict[str, Any]]:
                 except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ValueError("Spine package skeleton version is invalid") from exc
             else:
-                version_match = re.search(rb"(?<!\d)4\.2\.\d+(?!\d)", skeleton_data[:4096])
+                version_pattern = (
+                    rb"(?<!\d)"
+                    + re.escape(expected_version_minor).encode("ascii")
+                    + rb"\.\d+(?!\d)"
+                )
+                version_match = re.search(version_pattern, skeleton_data[:4096])
                 spine_version = version_match.group(0).decode("ascii") if version_match else ""
-            if re.fullmatch(r"4\.2\.\d+", spine_version) is None:
-                raise ValueError("Spine package must use Spine 4.2 runtime data")
+            if re.fullmatch(
+                rf"{re.escape(expected_version_minor)}\.\d+",
+                spine_version,
+            ) is None:
+                raise ValueError(
+                    f"Spine package must use Spine {expected_version_minor} runtime data"
+                )
             corrupt_entry = archive.testzip()
             if corrupt_entry:
                 raise ValueError("Spine package contains a corrupt file")
@@ -4485,7 +4556,11 @@ def save_spine_final_package(
     timeout: int,
     verify: bool,
     no_download: bool,
+    export_version: str = "4.2",
 ) -> tuple[Path, list[dict[str, Any]]]:
+    normalized_export_version = str(export_version or "").strip()
+    if normalized_export_version not in {"4.2", "3.8"}:
+        raise ValueError("Spine export version must be 4.2 or 3.8")
     output_dir = _predict_saved_dir(output_root, slug_seed)
     downloads: list[dict[str, Any]] = []
     if not no_download:
@@ -4502,10 +4577,49 @@ def save_spine_final_package(
         content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].lower()
         if content_type != "application/zip":
             raise ValueError("Spine final package did not return application/zip")
-        _validate_spine_runtime_zip(response.content)
+        package_data = response.content
+        if normalized_export_version == "3.8":
+            export_url = _normalize_base_url(
+                api_base,
+                "/api/spine-agent/runtime-file",
+            )
+            response = _request_with_skill_version_compatibility(
+                url=export_url,
+                headers=_base_headers(api_key),
+                send=lambda headers: requests.post(
+                    export_url,
+                    headers=headers,
+                    data={
+                        "display_name": _safe_slug(slug_seed),
+                        "export_version": normalized_export_version,
+                        "skeleton_format": "source",
+                    },
+                    files={
+                        "file": (
+                            "spine.zip",
+                            package_data,
+                            "application/zip",
+                        )
+                    },
+                    timeout=timeout,
+                    verify=verify,
+                ),
+            )
+            response.raise_for_status()
+            content_type = str(
+                response.headers.get("content-type") or ""
+            ).split(";", 1)[0].lower()
+            if content_type != "application/zip":
+                raise ValueError("Spine version export did not return application/zip")
+            package_data = response.content
+        _validate_spine_runtime_zip(
+            package_data,
+            expected_version_minor=normalized_export_version,
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
-        target = output_dir / f"{_safe_slug(slug_seed)}.zip"
-        target.write_bytes(response.content)
+        version_suffix = "" if normalized_export_version == "4.2" else "-spine-3.8"
+        target = output_dir / f"{_safe_slug(slug_seed)}{version_suffix}.zip"
+        target.write_bytes(package_data)
         downloads.append({"type": "package", "path": str(target), "mime_type": content_type})
     _save_json(output_dir / "final_outputs.json", {
         "status": "success",
@@ -6619,6 +6733,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generation model; defaults to Image2",
     )
     spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
+    spine_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
     spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
     spine_run.add_argument("--weapon", default="auto", choices=["auto", "yes", "no"])
     spine_run.add_argument(
@@ -6659,6 +6774,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     spine_edit_run.add_argument("--resolution", default="1K", choices=["1K", "2K"])
     spine_edit_run.add_argument("--quality", default="standard", choices=IMAGE2_QUALITY_CHOICES)
+    spine_edit_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
 
     subparsers.add_parser("credits-balance", help="Get current credits balance")
 
@@ -7027,7 +7143,9 @@ def main() -> int:
             )
             print(f"[INFO] saved_dir={output_dir}")
             print(_format_public_json(manifest))
-            return 0 if str(job.get("status") or "").strip().lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(job.get("status") or "").strip().lower() == "success" else 1
+            )
 
         if args.command == "game-design-poll":
             job, public_events = poll_game_design_until_done(
@@ -7055,7 +7173,9 @@ def main() -> int:
             )
             print(f"[INFO] saved_dir={output_dir}")
             print(_format_public_json(manifest))
-            return 0 if str(job.get("status") or "").strip().lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(job.get("status") or "").strip().lower() == "success" else 1
+            )
 
         if args.command == "custom-workflow-list":
             payload = list_custom_workflows(
@@ -7114,7 +7234,9 @@ def main() -> int:
                     if item.get("type") != "manifest"
                 ],
             }))
-            return 0 if str(final_payload.get("status") or "").lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(final_payload.get("status") or "").lower() == "success" else 1
+            )
 
         if args.command == "video-prompt-list":
             payload = submit_curated_workflow(
@@ -7909,7 +8031,9 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            )
 
         if args.command == "pixel-gen-history":
             payload = pixel_gen_history(
@@ -8157,7 +8281,9 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            )
 
         if args.command == "hd-gen-history":
             payload = hd_gen_history(
@@ -8602,7 +8728,9 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            )
 
         if args.command in CHARACTER_MULTI_VIEW_SUBMIT_COMMANDS:
             request_payload = {
@@ -9223,7 +9351,9 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            return _command_exit_code(
+                0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            )
 
         if args.command == "credits-balance":
             payload = get_credits_balance(
@@ -9287,7 +9417,7 @@ def main() -> int:
             )
             if str(final_payload.get("status") or "").strip().lower() != "success":
                 print(_format_json_for_display(final_payload))
-                return 1
+                return _command_exit_code(1)
             job_id = str(
                 final_payload.get("api_job_id")
                 or final_payload.get("job_id")
@@ -9305,6 +9435,7 @@ def main() -> int:
                 timeout=args.timeout,
                 verify=verify,
                 no_download=args.no_download,
+                export_version=args.export_version,
             )
             print(f"[INFO] saved_dir={output_dir}")
             print(_format_json_for_display(final_payload))
@@ -9322,6 +9453,7 @@ def main() -> int:
                 "client_operation_id": args.client_operation_id,
                 "generation_model": args.generation_model,
                 "export_resolution": args.export_resolution,
+                "export_version": args.export_version,
                 "quality": args.quality,
                 "weapon": args.weapon,
                 "hair": args.hair,
@@ -9358,7 +9490,7 @@ def main() -> int:
             )
             if str(final_payload.get("status") or "").strip().lower() != "success":
                 print(_format_json_for_display(final_payload))
-                return 1
+                return _command_exit_code(1)
             job_id = str(
                 final_payload.get("api_job_id")
                 or final_payload.get("job_id")
@@ -9376,6 +9508,7 @@ def main() -> int:
                 timeout=args.timeout,
                 verify=verify,
                 no_download=args.no_download,
+                export_version=args.export_version,
             )
             _write_meta(
                 run_dir=run_dir,
@@ -9633,7 +9766,7 @@ def main() -> int:
                 )
                 print(f"[WARN] animate submitted but polling did not complete: {exc}")
                 print(_format_json_for_display(submit_payload))
-                return 1
+                return _command_exit_code(1)
             output_dir, downloads = _save_run_outputs(
                 output_root=str(effective_output_dir),
                 slug_seed=args.prompt or Path(args.image_file).stem,
@@ -9719,7 +9852,7 @@ def main() -> int:
             except (RuntimeError, TimeoutError) as exc:
                 print(f"[WARN] keyframes submitted but polling did not complete: {exc}")
                 print(_format_json_for_display(submit_payload))
-                return 1
+                return _command_exit_code(1)
             output_dir, _downloads = _save_run_outputs(
                 output_root=str(effective_output_dir),
                 slug_seed=slug_seed,
@@ -9772,11 +9905,22 @@ def main() -> int:
             if downloads:
                 print(f"[INFO] saved_dir={effective_poll_output_dir}")
             print(_format_json_for_display(payload))
-            return 0 if str(payload.get("status") or "").strip().lower() in SUCCESS_ANIMATE_STATUSES else 1
+            return _command_exit_code(
+                0
+                if str(payload.get("status") or "").strip().lower()
+                in SUCCESS_ANIMATE_STATUSES
+                else 1
+            )
 
         print(f"[ERROR] unknown command: {args.command}", file=sys.stderr)
         return 2
-    except (RuntimeError, ValueError, FileNotFoundError, TimeoutError) as exc:
+    except (
+        RuntimeError,
+        ValueError,
+        FileNotFoundError,
+        TimeoutError,
+        requests.RequestException,
+    ) as exc:
         _write_meta(
             run_dir=run_dir,
             started_at=started_at,
@@ -9789,7 +9933,7 @@ def main() -> int:
             error=str(exc),
         )
         print(f"[ERROR] {exc}", file=sys.stderr)
-        return 1
+        return _command_exit_code(1)
 
 
 if __name__ == "__main__":
