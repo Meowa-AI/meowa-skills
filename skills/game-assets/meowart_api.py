@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.01.1"
+MEOWART_API_CLI_VERSION = "2026.09.01.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -4508,6 +4508,7 @@ def submit_spine_part_edit(
     selected_parts_path: str,
     client_operation_id: str = "",
     display_name: str = "Spine",
+    reference_image: str = "",
     generation_model: str = "image-2",
     resolution: str = "1K",
     quality: str = "standard",
@@ -4523,9 +4524,27 @@ def submit_spine_part_edit(
         verify=verify,
     )
     selected_parts = _read_selected_spine_parts(selected_parts_path)
+    input_assets: list[dict[str, Any]] = []
+    if reference_image:
+        reference_asset_id = upload_project_input_asset(
+            api_base=api_base,
+            api_key=api_key,
+            project_id=project_id,
+            image_path=reference_image,
+            timeout=timeout,
+            verify=verify,
+        )
+        input_assets.append({
+            "role": "edit_reference",
+            "asset_id": reference_asset_id,
+            "ordinal": 0,
+        })
     operation_id = str(client_operation_id or "").strip()
     if not operation_id:
-        seed = f"{project_id}:{thread_id}:{uploaded['asset_id']}:{prompt}:{selected_parts}"
+        seed = (
+            f"{project_id}:{thread_id}:{uploaded['asset_id']}:{prompt}:"
+            f"{selected_parts}:{input_assets}"
+        )
         operation_id = f"spine-edit:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]}"
     payload = {
         "project_id": project_id,
@@ -4535,6 +4554,7 @@ def submit_spine_part_edit(
         "display_name": display_name,
         "prompt": prompt,
         "selected_parts": selected_parts,
+        "input_assets": input_assets,
         "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
         "resolution": resolution,
         "image2_quality": {
@@ -6784,6 +6804,7 @@ def build_parser() -> argparse.ArgumentParser:
     spine_edit_run.add_argument("--thread-id", required=True)
     spine_edit_run.add_argument("--client-operation-id", default="")
     spine_edit_run.add_argument("--display-name", default="Spine")
+    spine_edit_run.add_argument("--reference-image", default="")
     spine_edit_run.add_argument(
         "--generation-model",
         default="nano-banana",
@@ -9494,6 +9515,7 @@ def main() -> int:
                 selected_parts_path=args.selected_parts_json,
                 client_operation_id=args.client_operation_id,
                 display_name=args.display_name,
+                reference_image=args.reference_image,
                 generation_model=args.generation_model,
                 resolution=args.resolution,
                 quality=args.quality,
