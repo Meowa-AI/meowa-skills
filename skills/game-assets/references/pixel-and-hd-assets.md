@@ -112,6 +112,14 @@ python3 skills/game-assets/meowart_api.py nano-banana-run \
   --output-dir <output-dir>
 ```
 
+If that task was submitted but polling or download was interrupted, recover the same paid job:
+
+```bash
+python3 skills/game-assets/meowart_api.py nano-banana-poll \
+  --job-id <original-job-id> \
+  --output-dir <output-dir>
+```
+
 Use Image-2 when its quality tiers and direct HD asset generation fit the task:
 
 ```bash
@@ -122,6 +130,9 @@ python3 skills/game-assets/meowart_api.py image-2-run \
   --quality standard \
   --output-dir <output-dir>
 ```
+
+Use `image-2-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted
+Image-2 task without submitting it again.
 
 - Default both commands to the shared 1K, 1:1 square working canvas. Treat it as the common 1024×1024-tier contract when moving a composition between Nano Banana and Image-2, and inspect the saved file for its actual delivered dimensions.
 - Start Image-2 prompt iteration with `standard` (`Standard`), which is inexpensive. After the wording and composition are approved, rerun the same prompt with `detailed` (`Detailed`) for the production candidate. Use `ultimate` only when the final asset genuinely benefits from the additional quality and cost.

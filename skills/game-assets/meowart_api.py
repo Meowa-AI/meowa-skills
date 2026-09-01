@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.08.31.1"
+MEOWART_API_CLI_VERSION = "2026.09.01.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -443,8 +443,8 @@ def _upgrade_required_message(
         f"Update the Skill from {source}, copy the complete skills/game-assets directory "
         "into your Codex skills directory, then verify it with "
         "python3 skills/game-assets/meowart_api.py --version. "
-        "If a paid job was already submitted, retry the matching *-poll command with the "
-        "original job ID; do not submit the generation again."
+        "If a paid job was already submitted, keep the original job ID, list the available "
+        "recovery commands with --help, and do not submit the generation again."
     )
 
 
@@ -470,8 +470,8 @@ def _raise_for_skill_upgrade(response: Any, payload: Any) -> None:
 
 def _compatibility_error(reason: str, *, job_id: str = "") -> SkillCompatibilityError:
     recovery = (
-        f" After updating, retry the matching *-poll command with job ID {job_id}; "
-        "do not submit the generation again."
+        f" After updating, keep job ID {job_id}, list the available recovery commands "
+        "with --help, and do not submit the generation again."
         if str(job_id or "").strip()
         else ""
     )
@@ -1481,22 +1481,27 @@ def _print_status(prefix: str, payload: dict[str, Any]) -> None:
     print(line)
 
 
-def _collect_http_urls(value: Any, *, prefix: str = "") -> list[tuple[str, str]]:
+def _collect_http_urls(
+    value: Any,
+    *,
+    prefix: str = "",
+    api_base: str = DEFAULT_API_BASE,
+) -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     if isinstance(value, dict):
         for key, inner in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
-            found.extend(_collect_http_urls(inner, prefix=child_prefix))
+            found.extend(_collect_http_urls(inner, prefix=child_prefix, api_base=api_base))
         return found
     if isinstance(value, list):
         for index, inner in enumerate(value):
             child_prefix = f"{prefix}[{index}]"
-            found.extend(_collect_http_urls(inner, prefix=child_prefix))
+            found.extend(_collect_http_urls(inner, prefix=child_prefix, api_base=api_base))
         return found
     if isinstance(value, str):
         raw = value.strip()
-        if raw.startswith("http://") or raw.startswith("https://"):
-            found.append((prefix or "url", raw))
+        if raw.startswith(("http://", "https://", "/api/")):
+            found.append((prefix or "url", _absolute_url(api_base, raw)))
     return found
 
 
@@ -1751,9 +1756,6 @@ def _looks_like_downloadable_output_url(key: str, url: str, *, workflow_id: str 
     if normalized_workflow_id == "animate" and _is_declared_animate_download_url(key_parts, parsed):
         return True
 
-    path = parsed.path or ""
-    if path.endswith("/") or Path(path).suffix.lower() not in _DOWNLOADABLE_MEDIA_EXTENSIONS:
-        return False
     allowed_containers = _WORKFLOW_FINAL_OUTPUT_CONTAINERS.get(normalized_workflow_id, frozenset())
 
     leaf = key_parts[-1]
@@ -5532,11 +5534,6 @@ def _save_run_outputs(
         for key, url in _collect_http_urls(final_payload)
         if _looks_like_downloadable_output_url(key, url, workflow_id=normalized_workflow_id)
     ]
-    require_animate_media = (
-        normalized_workflow_id == "animate"
-        and str(final_payload.get("status") or "").strip().lower() in SUCCESS_ANIMATE_STATUSES
-        and not no_download
-    )
     succeeded = str(final_payload.get("status") or "").strip().lower() in {
         "success",
         "completed",
@@ -5558,9 +5555,9 @@ def _save_run_outputs(
             verify=verify,
             headers=headers,
         ))
-    if require_animate_media and not downloads:
+    if succeeded and normalized_workflow_id and not no_download and not downloads:
         raise RuntimeError(
-            "animate job succeeded but no final media could be downloaded"
+            f"{normalized_workflow_id} job succeeded but no final media could be downloaded"
         )
     final_outputs_path = output_dir / "final_outputs.json"
     manifest = {
@@ -5834,6 +5831,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"],
         help="Canvas ratio; recommended shared default is 1:1",
     )
+    nano_banana_poll = subparsers.add_parser(
+        "nano-banana-poll",
+        help="Recover one Nano Banana job and download its final outputs",
+    )
+    add_shared_path_args(nano_banana_poll)
+    nano_banana_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
     image_2_run = subparsers.add_parser(
         "image-2-run",
@@ -5868,6 +5871,12 @@ def build_parser() -> argparse.ArgumentParser:
             "rerun with Detailed after the prompt is approved"
         ),
     )
+    image_2_poll = subparsers.add_parser(
+        "image-2-poll",
+        help="Recover one Image-2 job and download its final outputs",
+    )
+    add_shared_path_args(image_2_poll)
+    image_2_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
     image_edit_run = subparsers.add_parser("image-edit-run", help="Edit one or more game-art images")
     add_shared_path_args(image_edit_run)
@@ -6995,6 +7004,11 @@ def build_parser() -> argparse.ArgumentParser:
         "meowa-animation-run",
         "keyframes-run",
     }
+    public_commands.update(
+        action.dest
+        for action in subparsers._choices_actions
+        if action.dest.endswith("-poll")
+    )
     subparsers._choices_actions[:] = [
         action for action in subparsers._choices_actions if action.dest in public_commands
     ]
@@ -7496,6 +7510,39 @@ def main() -> int:
             print(f"[INFO] saved_dir={output_dir}")
             print(_format_json_for_display(final_payload))
             return 0
+
+        if args.command in {"nano-banana-poll", "image-2-poll"}:
+            capability = "nano-banana" if args.command == "nano-banana-poll" else "image-2"
+            payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload={"job_id": args.api_job_id},
+                label=capability,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            downloads: list[dict[str, Any]] = []
+            effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
+            if str(payload.get("status") or "").strip().lower() == "success":
+                effective_poll_output_dir, downloads = _save_run_outputs(
+                    output_root=str(effective_output_dir),
+                    slug_seed=args.api_job_id,
+                    submit_payload={"api_job_id": args.api_job_id},
+                    final_payload=payload,
+                    timeout=args.timeout,
+                    verify=verify,
+                    api_key=args.api_key,
+                    no_download=args.no_download,
+                    workflow_id="gemini_image",
+                )
+            if downloads:
+                print(f"[INFO] saved_dir={effective_poll_output_dir}")
+            print(_format_json_for_display(payload))
+            return _command_exit_code(
+                0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            )
 
         curated_commands = {
             "image-edit-run",

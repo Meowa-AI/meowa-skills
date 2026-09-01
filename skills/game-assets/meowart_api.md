@@ -25,8 +25,17 @@ cp -R <meowa-skills-repo>/skills/game-assets/. \
 python3 "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/meowart_api.py" --version
 ```
 
-更新后使用原 `job_id` 执行对应的 `*-poll` 命令恢复下载。必须复制整个
-`skills/game-assets` 目录，不能只替换 `SKILL.md` 或 `meowart_api.py`。
+更新后先用顶层 `--help` 查看可用的 `*-poll` 恢复命令，再使用原 `job_id` 恢复下载。
+通用图片任务分别使用 `nano-banana-poll` 和 `image-2-poll`。恢复命令只轮询原任务，
+不会重新提交或再次扣费。必须复制整个 `skills/game-assets` 目录，不能只替换
+`SKILL.md` 或 `meowart_api.py`。
+
+```bash
+python3 skills/game-assets/meowart_api.py --help
+python3 skills/game-assets/meowart_api.py nano-banana-poll \
+  --job-id <original-job-id> \
+  --output-dir <output-dir>
+```
 
 ## 创建 Meowa API key
 

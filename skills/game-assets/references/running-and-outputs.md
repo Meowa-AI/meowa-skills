@@ -33,9 +33,10 @@ python3 skills/game-assets/meowart_api.py --version
 If a command fails while the runner is outdated, it also warns that the failure may be caused by
 the old version. Update from the official `Meowa-AI/meowa-skills` repository and copy the complete
 `skills/game-assets` directory into the Codex skills directory before retrying. Do not replace only
-one file. If a paid job already has an ID, recover it with the matching `*-poll` command after the
-update; never resubmit it merely because the old runner could not download the result. A legacy
-server may still return `skill_upgrade_required`; follow the same recovery procedure.
+one file. If a paid job already has an ID, inspect top-level `--help` for the available `*-poll`
+recovery command after the update; never resubmit it merely because the old runner could not
+download the result. General HD image jobs use `nano-banana-poll` or `image-2-poll`. A legacy server
+may still return `skill_upgrade_required`; follow the same recovery procedure.
 
 ## Authentication
 
@@ -78,7 +79,17 @@ The runner does not save submission responses, job responses, provider responses
 
 ## Polling and recovery
 
-Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Recover with the matching `*-poll` command and the original job identifier. Recovery waits through transient connection failures, never submits a replacement job, and downloads every declared final output after success.
+Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Top-level `--help` lists the available recovery commands. Use the relevant `*-poll` command with the original job identifier; `nano-banana-poll` and `image-2-poll` recover their corresponding general HD image jobs. Recovery waits through transient connection failures, never submits a replacement job, and downloads every declared final output after success.
+
+```bash
+python3 skills/game-assets/meowart_api.py nano-banana-poll \
+  --job-id <original-job-id> \
+  --output-dir <output-dir>
+```
+
+Authenticated `/api/project-assets/{assetId}/download` URLs are valid final media endpoints even
+though the URL has no filename extension. Final-output membership comes only from the capability's
+declared field contract; the response Content-Type determines the downloaded media type.
 
 When a run times out after submission, report the job identifier and the timeout. Do not resubmit automatically because that may create a duplicate billable job.
 
