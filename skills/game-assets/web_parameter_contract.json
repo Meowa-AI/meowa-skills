@@ -222,9 +222,10 @@
       "web_sources": ["types.ts:AnimationAgentSettings", "components/SettingsPanel.tsx", "services/animateService.ts", "utils/meowaAnimation.ts"],
       "parameters": {
         "style_mode": {"flag": "--style-mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "style_mode"},
+        "resolution": {"flag": "--resolution", "default": "480p", "choices": ["480p", "720p"], "unavailable_choices": {"pixel": ["720p"]}, "request_field": "resolution"},
         "last_image_file": {"flag": "--last-image-file", "default": "", "request_field": "last_frame"},
         "output_frames": {"flag": "--output-frames", "default": 16, "choices": [8, 16, 24, 32], "request_field": "duration_seconds"},
-        "quality_mode": {"flag": "--quality-mode", "default": "standard", "choices": ["standard", "medium", "advanced"], "request_field": "quality_mode"},
+        "quality_mode": {"flag": "--quality-mode", "default": "medium", "conditional_default": {"pixel": "medium", "hd": "standard"}, "choices": ["standard", "medium", "advanced"], "request_field": "quality_mode"},
         "animation_mode": {"flag": "--animation-mode", "default": "loop", "choices": ["loop", "non_loop"], "request_field": "animation_mode"},
         "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "unavailable_choices": {"pixel": ["advanced"], "hd": ["advanced"]}, "request_field": "remove_bg_method"},
         "background_color": {"flag": "--background-color", "default": "#c6c6c6", "request_field": "background_color"},
