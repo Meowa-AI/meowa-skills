@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.01.2"
+MEOWART_API_CLI_VERSION = "2026.09.03.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2400,6 +2400,8 @@ def _public_game_design_event(event: Any) -> dict[str, Any] | None:
             ("estimated_credits", "estimatedCredits"),
             ("calculated_credits", "calculatedCredits"),
             ("charged_credits", "chargedCredits"),
+            ("monthly_free_credits_applied", "monthlyFreeCreditsApplied"),
+            ("monthly_free_credits_remaining", "monthlyFreeCreditsRemaining"),
             ("gross_charged_credits", "grossChargedCredits"),
             ("refunded_credits", "refundedCredits"),
             ("net_charged_credits", "netChargedCredits"),
@@ -2485,7 +2487,9 @@ def poll_game_design_until_done(
                     print(
                         "[INFO] game-design billing "
                         f"calculated={public_event.get('calculated_credits', 0)} "
+                        f"free={public_event.get('monthly_free_credits_applied', 0)} "
                         f"charged={public_event.get('charged_credits', 0)} "
+                        f"free_remaining={public_event.get('monthly_free_credits_remaining', 0)} "
                         f"remaining={public_event.get('remaining_credits', 0)}"
                     )
                 elif (
@@ -2598,6 +2602,11 @@ def save_game_design_outputs(
             ("estimated_credits", "estimatedCredits"),
             ("calculated_credits", "calculatedCredits"),
             ("charged_credits", "chargedCredits"),
+            ("monthly_free_marketing_tokens", "monthlyFreeMarketingTokens"),
+            ("monthly_free_credits", "monthlyFreeCredits"),
+            ("monthly_free_credits_applied", "monthlyFreeCreditsApplied"),
+            ("monthly_free_credits_refunded", "monthlyFreeCreditsRefunded"),
+            ("monthly_free_credits_remaining", "monthlyFreeCreditsRemaining"),
             ("gross_charged_credits", "grossChargedCredits"),
             ("refunded_credits", "refundedCredits"),
             ("net_charged_credits", "netChargedCredits"),
@@ -2614,6 +2623,14 @@ def save_game_design_outputs(
                 safe_billing[public_key] = value
         if billing.get("serverFailureRefunded") is True:
             safe_billing["server_failure_refunded"] = True
+        for public_key, api_key in (
+            ("monthly_free_period_start", "monthlyFreePeriodStart"),
+            ("monthly_free_reset_at", "monthlyFreeResetAt"),
+            ("monthly_reset_timezone", "monthlyResetTimezone"),
+        ):
+            value = str(billing.get(api_key) or "").strip()
+            if value:
+                safe_billing[public_key] = value
         safe_billing["credits_exhausted"] = billing.get("creditsExhausted") is True
     manifest: dict[str, Any] = {
         "format_version": 1,
