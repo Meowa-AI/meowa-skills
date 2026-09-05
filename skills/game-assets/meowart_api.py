@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.01.2"
+MEOWART_API_CLI_VERSION = "2026.09.03.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -6888,7 +6888,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="sharp",
         choices=["soft", "sharp"],
         action=_StoreExplicitArgument,
-        help="HD cutout edges: soft transition or sharp edges; Pixel is always sharp",
+        help="Preserve translucent regions with soft, or binarize alpha with sharp",
     )
     meowa_animation_run_parser.set_defaults(alpha_mode_explicit=False)
     meowa_animation_run_parser.add_argument(
@@ -7095,11 +7095,9 @@ def _resolve_meowa_animation_alpha_mode(
     alpha_mode: str,
     explicitly_selected: bool,
 ) -> str:
-    if style_mode == "pixel":
-        if explicitly_selected and alpha_mode == "soft":
-            raise ValueError("Soft alpha edges are unavailable for pixel style mode")
-        return "sharp"
-    return alpha_mode if explicitly_selected else "soft"
+    if explicitly_selected:
+        return alpha_mode
+    return "sharp" if style_mode == "pixel" else "soft"
 
 
 def _read_dotenv_value(key: str) -> str:

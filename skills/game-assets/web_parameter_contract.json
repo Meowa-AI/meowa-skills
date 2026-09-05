@@ -224,7 +224,7 @@
       "parameters": {
         "style_mode": {"flag": "--style-mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "style_mode"},
         "resolution": {"flag": "--resolution", "default": "480p", "choices": ["480p", "720p"], "unavailable_choices": {"pixel": ["720p"]}, "request_field": "resolution"},
-        "alpha_mode": {"flag": "--alpha-mode", "default": "sharp", "conditional_default": {"pixel": "sharp", "hd": "soft"}, "choices": ["soft", "sharp"], "unavailable_choices": {"pixel": ["soft"]}, "request_field": "alpha_mode"},
+        "alpha_mode": {"flag": "--alpha-mode", "default": "sharp", "conditional_default": {"pixel": "sharp", "hd": "soft"}, "choices": ["soft", "sharp"], "request_field": "alpha_mode"},
         "last_image_file": {"flag": "--last-image-file", "default": "", "request_field": "last_frame"},
         "output_frames": {"flag": "--output-frames", "default": 16, "choices": [8, 16, 24, 32], "request_field": "duration_seconds"},
         "quality_mode": {"flag": "--quality-mode", "default": "medium", "conditional_default": {"pixel": "medium", "hd": "standard"}, "choices": ["standard", "medium", "advanced"], "request_field": "quality_mode"},
