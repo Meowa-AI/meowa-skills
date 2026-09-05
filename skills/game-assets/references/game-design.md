@@ -36,11 +36,12 @@ python3 meowart_api.py game-design-poll \
 
 ## Billing
 
+- Every account receives 1,000,000 free Game Designer tokens per UTC calendar month, settled as a shared 60-credit allowance across all of the account's projects.
 - There is no initial credit reservation and no per-run maximum charge.
-- Usage is charged incrementally after each planning-model call: uncached input is 150 credits per million tokens, cached input is 15 per million, and output including reasoning is 900 per million. The cumulative per-job amount is rounded up to whole credits.
-- Before accepting a message and before each later planning round, the service checks the current balance against that round's estimated input, recent observed cache, and estimated output. A call proceeds only when the estimate is covered.
-- The runner prints cumulative calculated credits, charged credits, and remaining credits while polling. If the balance is empty or cannot cover the next estimated round, it reports the exact balance state and includes the recharge URL instead of starting another model call.
-- A server-side task failure fully refunds this run's planning-model token charges. The final billing summary reports gross charges, refunded credits, and net charges separately.
+- After the monthly allowance, usage is charged incrementally after each planning-model call: uncached input is 150 credits per million tokens, cached input is 15 per million, and output including reasoning is 900 per million. The cumulative per-job amount is rounded up to whole credits.
+- Before accepting a message and before each later planning round, the service applies the remaining monthly allowance, then checks the current balance against the uncovered estimate. A call proceeds only when that amount is covered.
+- The runner prints cumulative calculated credits, free credits applied, charged credits, monthly free credits remaining, and wallet credits remaining while polling. If the allowance and balance cannot cover the next estimated round, it reports the exact balance state and includes the recharge URL instead of starting another model call.
+- A server-side task failure fully refunds this run's planning-model token charges and restores its monthly allowance use. The final billing summary reports paid and free settlement separately.
 - Completed model calls remain charged when the user cancels a task or when the run stops because the balance cannot cover another planning round; calls that never start are not charged.
 - Asset, image, audio, video, web-research, or other paid tools are priced separately under their existing capability rules. The Agent token charge does not include them.
 
