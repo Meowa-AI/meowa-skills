@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.07.4"
+MEOWART_API_CLI_VERSION = "2026.09.07.5"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -1606,7 +1606,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
-    "meowa_animation": frozenset({"video_path", "url"}),
+    "meowa_animation": frozenset({"video_path", "background_video_path", "url"}),
     "one_click_pixelate": frozenset({"output_path"}),
     "one_click_upgrade": frozenset({"output_paths"}),
     "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),

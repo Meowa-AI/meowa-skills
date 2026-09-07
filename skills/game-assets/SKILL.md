@@ -51,6 +51,7 @@ Do not use legacy diffusion-style prompt engineering: no long keyword stacks, se
 - Keep style, scale, camera, palette, light direction, and anchor conventions consistent across related assets.
 - For HD Isometric and HD Hex tiles, preserve the generated transparent canvas and center anchor, use smooth sampling, and take the footprint from the generation mode: `standard = 1×1`, `tetraploid = 2×2`. Never infer footprint from the outer PNG size. Read the exact placement contract in [Maps, tiles, and textures](references/maps-tiles-and-textures.md) before assembly.
 - Treat source images and downloaded references as inputs, never as generated deliverables.
+- Meowa animation with background removal delivers both removed-background and retained-background final animations; keep both.
 - Prefer a specialized capability over a generic image path.
 - Validate the asset at its intended gameplay scale, not only in a large preview.
 

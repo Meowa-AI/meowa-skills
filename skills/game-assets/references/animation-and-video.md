@@ -123,6 +123,8 @@ python3 skills/game-assets/meowart_api.py meowa-animation-run \
 
 The defaults mirror the web UI: 16 frames (2 seconds), Pixel Style, 480P, Detailed quality for Pixel and Standard quality for HD, standard background removal, a `#c6c6c6` solid background, loop motion, and prompt optimization enabled. Frame choices are 8, 16, 24, and 32. Pixel inputs must not exceed 256 pixels on the longest side and use 480P; HD inputs do not use that dimension limit and support 480P or 720P. HD 720P costs 10 extra credits. Pixel defaults to `--alpha-mode sharp`; HD keeps its existing `--alpha-mode soft` default. Both styles accept `soft` to preserve translucent regions and `sharp` to binarize alpha. Background removal choices are `none` and `standard`; `advanced` remains visible but is temporarily unavailable. Standard and Detailed output quality are available; Ultimate remains visible in the product but is still in development.
 
+Meowa animation with background removal returns two final animated WebPs: `video_path` (background removed) and `background_video_path` (background retained), with matching dimensions, frame count, and timing. Pixel outputs are both pixelated. With `none`, only `video_path` is returned.
+
 With standard background removal, `--remove-bg-batch-size` accepts `1`, `4`, `8`, `16` (default), or `all`: highest, high, medium, low, or lowest quality. Removal costs `ceil(output_frames / batch_size) × 5` credits; `all` costs 5. At 16 frames (2 seconds), batches of 4 cost 20 removal credits, added to generation credits. `none` costs zero removal credits and makes no removal calls. With `none`, the background defaults to green (`#00b140`) for later cleanup in the Meowa Background Removal Workshop; an explicit `--background-color` overrides this.
 
 
