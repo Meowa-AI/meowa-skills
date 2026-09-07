@@ -129,3 +129,5 @@ For game planning, follow [Game Designer](references/game-design.md). Its realti
 - Never overwrite source assets or return input references, internal templates, masks, metadata, debug artifacts, or intermediate files.
 - Return only declared final deliverables.
 - Do not claim dimensions, transparency, seamlessness, directional consistency, component separation, or animation quality until the final files have been inspected.
+
+For Frame Animation V2 removal batch size, quality levels, and per-batch credits, read [Animation and video](references/animation-and-video.md).

@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.07.2"
+MEOWART_API_CLI_VERSION = "2026.09.07.4"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3406,6 +3406,7 @@ def prepare_meowa_animation_prompt(
     quality_mode: str,
     animation_mode: str,
     remove_bg_method: str,
+    remove_bg_batch_size: str = "16",
     background_color: str,
     source_padding: dict[str, Any],
     timeout: int = DEFAULT_TIMEOUT,
@@ -3426,6 +3427,7 @@ def prepare_meowa_animation_prompt(
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
             "remove_bg_method": remove_bg_method,
+            "remove_bg_batch_size": remove_bg_batch_size,
             "background_color": background_color,
             "output_language": "en",
             "source_padding": json.dumps(source_padding),
@@ -3456,6 +3458,7 @@ def submit_meowa_animation(
     quality_mode: str,
     animation_mode: str,
     remove_bg_method: str,
+    remove_bg_batch_size: str = "16",
     background_color: str,
     source_padding: dict[str, Any],
     timeout: int = DEFAULT_TIMEOUT,
@@ -3476,6 +3479,7 @@ def submit_meowa_animation(
             "quality_mode": quality_mode,
             "animation_mode": animation_mode,
             "remove_bg_method": remove_bg_method,
+            "remove_bg_batch_size": remove_bg_batch_size,
             "background_color": background_color,
             "source_padding": json.dumps(source_padding),
         },
@@ -7152,7 +7156,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Background removal: none or standard (advanced is temporarily unavailable)",
     )
     meowa_animation_run_parser.set_defaults(remove_bg_method_explicit=False)
-    meowa_animation_run_parser.add_argument("--background-color", default="#c6c6c6")
+    meowa_animation_run_parser.add_argument(
+        "--remove-bg-batch-size", choices=["1", "4", "8", "16", "all"], default="16",
+        help="Frames per removal (highest to lowest quality); each batch costs 5 credits",
+    )
+    meowa_animation_run_parser.add_argument(
+        "--background-color", default="#c6c6c6", action=_StoreExplicitArgument,
+        help="Source background color; defaults to #00b140 when removal is none",
+    )
+    meowa_animation_run_parser.set_defaults(background_color_explicit=False)
     meowa_animation_run_parser.set_defaults(optimize_prompt=True)
     meowa_animation_run_parser.add_argument(
         "--optimize-prompt",
@@ -10010,6 +10022,8 @@ def main() -> int:
                 remove_bg_method=args.remove_bg_method,
                 explicitly_selected=args.remove_bg_method_explicit,
             )
+            if remove_bg_method == "none" and not args.background_color_explicit:
+                args.background_color = "#00b140"
             if args.padding < 0:
                 raise ValueError("padding must be non-negative")
             if Image is None:
@@ -10049,6 +10063,7 @@ def main() -> int:
                     quality_mode=quality_mode,
                     animation_mode=animation_mode,
                     remove_bg_method=remove_bg_method,
+                    remove_bg_batch_size=args.remove_bg_batch_size,
                     background_color=args.background_color,
                     source_padding=source_padding,
                     timeout=args.timeout,
@@ -10071,6 +10086,7 @@ def main() -> int:
                 quality_mode=quality_mode,
                 animation_mode=animation_mode,
                 remove_bg_method=remove_bg_method,
+                remove_bg_batch_size=args.remove_bg_batch_size,
                 background_color=args.background_color,
                 source_padding=source_padding,
                 timeout=args.timeout,

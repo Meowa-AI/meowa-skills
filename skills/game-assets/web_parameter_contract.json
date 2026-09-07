@@ -259,7 +259,8 @@
         "quality_mode": {"flag": "--quality-mode", "default": "medium", "conditional_default": {"pixel": "medium", "hd": "standard"}, "choices": ["standard", "medium", "advanced"], "request_field": "quality_mode"},
         "animation_mode": {"flag": "--animation-mode", "default": "loop", "choices": ["loop", "non_loop"], "request_field": "animation_mode"},
         "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "unavailable_choices": {"pixel": ["advanced"], "hd": ["advanced"]}, "request_field": "remove_bg_method"},
-        "background_color": {"flag": "--background-color", "default": "#c6c6c6", "request_field": "background_color"},
+        "remove_bg_batch_size": {"flag": "--remove-bg-batch-size", "default": "16", "choices": ["1", "4", "8", "16", "all"], "available_when": {"remove_bg_method": ["standard"]}, "request_field": "remove_bg_batch_size"},
+        "background_color": {"flag": "--background-color", "default": "#c6c6c6", "conditional_default": {"none": "#00b140", "standard": "#c6c6c6"}, "pattern": "^#[0-9a-fA-F]{6}$", "request_field": "background_color"},
         "optimize_prompt": {"flag": "--optimize-prompt", "default": true, "request_field": "action_timeline"},
         "padding": {"flag": "--padding", "default": 0, "request_field": "source_padding"},
         "padding_alignment": {"flag": "--padding-alignment", "default": "center", "choices": ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"], "request_field": "source_padding"}
