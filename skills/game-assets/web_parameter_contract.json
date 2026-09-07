@@ -146,7 +146,7 @@
       "command": "spine-run",
       "web_sources": ["types.ts:SpineGenerationSettings", "components/SettingsPanel.tsx", "services/spineAgentService.ts"],
       "parameters": {
-        "template_name": {"flag": "--template-name", "default": "character_template_slim", "choices": ["character_template_slim", "character_template_2head_celestial_librarian", "character_template_2head_moon_jellyfish_cartographer", "character_template_2head_clockwork_orchard_warden", "character_template_2head_desert_glassblower_alchemist", "character_template_2head_deep_sea_choir_conductor"], "request_field": "template_name"},
+        "template_name": {"flag": "--template-name", "default": "character_template_2head_celestial_librarian", "choices": ["character_template_slim", "character_template_2head_celestial_librarian", "character_template_2head_moon_jellyfish_cartographer", "character_template_2head_clockwork_orchard_warden", "character_template_2head_desert_glassblower_alchemist", "character_template_2head_deep_sea_choir_conductor"], "request_field": "template_name"},
         "generation_model": {"flag": "--generation-model", "default": "image-2", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
         "export_resolution": {"flag": "--export-resolution", "default": "2K", "choices": ["1K", "2K", "4K"], "request_field": "export_resolution"},
         "export_version": {"flag": "--export-version", "default": "4.2", "choices": ["4.2", "3.8"], "request_field": "export_version"},
@@ -166,6 +166,35 @@
         "reference_image": {"flag": "--reference-image", "default": "", "request_field": "input_assets"},
         "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
         "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},
+        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"}
+      }
+    },
+    "spine_part_replace": {
+      "command": "spine-replace-run",
+      "web_sources": ["components/spine-editor/SpineAtlasEditor.tsx", "services/spineAgentService.ts", "utils/spineAgentCredits.ts"],
+      "parameters": {
+        "source_spine_package": {"flag": "--source-spine-package", "request_field": "spine_asset_id"},
+        "selected_parts": {"flag": "--selected-parts-json", "request_field": "selected_parts"},
+        "replacement_image": {"flag": "--replacement-image", "request_field": "input_assets"},
+        "display_name": {"flag": "--display-name", "default": "Spine", "request_field": "display_name"},
+        "skin_name": {"flag": "--skin-name", "default": "", "request_field": "skin_name"},
+        "scale_percent": {"flag": "--scale-percent", "default": 100, "request_field": "scale_percent"},
+        "offset_x_percent": {"flag": "--offset-x-percent", "default": 0, "request_field": "offset_x_percent"},
+        "offset_y_percent": {"flag": "--offset-y-percent", "default": 0, "request_field": "offset_y_percent"},
+        "rotation_degrees": {"flag": "--rotation-degrees", "default": 0, "request_field": "rotation_degrees"},
+        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard"], "request_field": "remove_bg_method"}
+      }
+    },
+    "spine_full_reskin": {
+      "command": "spine-reskin-run",
+      "web_sources": ["components/spine-editor/SpineAtlasEditor.tsx", "services/spineAgentService.ts", "utils/spineAgentCredits.ts"],
+      "parameters": {
+        "source_spine_package": {"flag": "--source-spine-package", "request_field": "spine_asset_id"},
+        "display_name": {"flag": "--display-name", "default": "Spine", "request_field": "display_name"},
+        "skin_name": {"flag": "--skin-name", "default": "", "request_field": "skin_name"},
+        "reference_image": {"flag": "--reference-image", "default": "", "request_field": "input_assets"},
+        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
+        "resolution": {"flag": "--resolution", "default": "2K", "choices": ["1K", "2K"], "request_field": "resolution"},
         "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"}
       }
     },

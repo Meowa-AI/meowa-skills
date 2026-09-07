@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.03.1"
+MEOWART_API_CLI_VERSION = "2026.09.07.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -83,6 +83,9 @@ NANO_BANANA_MODELS = (
 GENERATION_MODEL_CHOICES = ("nano-banana", "image-2")
 GENERATION_SPEED_CHOICES = ("normal", "fast")
 IMAGE2_QUALITY_CHOICES = ("standard", "detailed", "ultimate")
+SPINE_AGENT_DEFAULT_TEMPLATE_NAME = (
+    "character_template_2head_celestial_librarian"
+)
 VIDEO_MOTION_MODE_TO_MODEL = {
     "controlled": "doubao-seedance-1-5-pro-251215",
     "complex": "doubao-seedance-2-0-mini-260615",
@@ -4216,7 +4219,7 @@ def submit_spine_agent(
     source_message_id: str,
     client_operation_id: str = "",
     character_reference: str = "",
-    template_name: str = "character_template_slim",
+    template_name: str = SPINE_AGENT_DEFAULT_TEMPLATE_NAME,
     generation_model: str = "image-2",
     export_resolution: str = "2K",
     quality: str = "detailed",
@@ -4488,14 +4491,18 @@ def inspect_uploaded_spine_package(
     }
 
 
-def _read_selected_spine_parts(path_value: str) -> list[dict[str, Any]]:
+def _read_selected_spine_parts(
+    path_value: str,
+    *,
+    maximum: int = 40,
+) -> list[dict[str, Any]]:
     path = Path(path_value).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"selected parts JSON not found: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
     raw_parts = payload.get("selected_parts") if isinstance(payload, dict) else payload
-    if not isinstance(raw_parts, list) or not 1 <= len(raw_parts) <= 10:
-        raise ValueError("selected parts JSON must contain 1 to 10 parts")
+    if not isinstance(raw_parts, list) or not 1 <= len(raw_parts) <= maximum:
+        raise ValueError(f"selected parts JSON must contain 1 to {maximum} parts")
     parts: list[dict[str, Any]] = []
     seen: set[tuple[str, str, int]] = set()
     for item in raw_parts:
@@ -4583,6 +4590,162 @@ def submit_spine_part_edit(
     response, body = _request_json(
         method="POST",
         url=_normalize_base_url(api_base, "/api/spine-agent/part-edit/jobs"),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
+def submit_spine_part_replace(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    thread_id: str,
+    package_path: str,
+    selected_parts_path: str,
+    replacement_image: str,
+    client_operation_id: str = "",
+    display_name: str = "Spine",
+    skin_name: str = "",
+    scale_percent: float = 100,
+    offset_x_percent: float = 0,
+    offset_y_percent: float = 0,
+    rotation_degrees: float = 0,
+    remove_bg_method: str = "none",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    uploaded = upload_project_spine_package(
+        api_base=api_base,
+        api_key=api_key,
+        project_id=project_id,
+        package_path=package_path,
+        timeout=timeout,
+        verify=verify,
+    )
+    selected_parts = _read_selected_spine_parts(selected_parts_path, maximum=1)
+    replacement_asset_id = upload_project_input_asset(
+        api_base=api_base,
+        api_key=api_key,
+        project_id=project_id,
+        image_path=replacement_image,
+        timeout=timeout,
+        verify=verify,
+    )
+    input_assets = [{
+        "role": "replacement_source",
+        "asset_id": replacement_asset_id,
+        "ordinal": 0,
+    }]
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        seed = (
+            f"{project_id}:{thread_id}:{uploaded['asset_id']}:{selected_parts}:"
+            f"{replacement_asset_id}:{scale_percent}:{offset_x_percent}:"
+            f"{offset_y_percent}:{rotation_degrees}:{remove_bg_method}"
+        )
+        operation_id = f"spine-replace:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]}"
+    payload = {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "client_operation_id": operation_id,
+        "spine_asset_id": uploaded["asset_id"],
+        "display_name": display_name,
+        "skin_name": str(skin_name or "").strip() or None,
+        "selected_parts": selected_parts,
+        "input_assets": input_assets,
+        "scale_percent": scale_percent,
+        "offset_x_percent": offset_x_percent,
+        "offset_y_percent": offset_y_percent,
+        "rotation_degrees": rotation_degrees,
+        "remove_bg_method": remove_bg_method,
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/spine-agent/part-replace/jobs"),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
+def submit_spine_full_reskin(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    project_id: str,
+    thread_id: str,
+    package_path: str,
+    client_operation_id: str = "",
+    display_name: str = "Spine",
+    skin_name: str = "",
+    reference_image: str = "",
+    generation_model: str = "nano-banana",
+    resolution: str = "2K",
+    quality: str = "standard",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    uploaded = upload_project_spine_package(
+        api_base=api_base,
+        api_key=api_key,
+        project_id=project_id,
+        package_path=package_path,
+        timeout=timeout,
+        verify=verify,
+    )
+    input_assets: list[dict[str, Any]] = []
+    if reference_image:
+        reference_asset_id = upload_project_input_asset(
+            api_base=api_base,
+            api_key=api_key,
+            project_id=project_id,
+            image_path=reference_image,
+            timeout=timeout,
+            verify=verify,
+        )
+        input_assets.append({
+            "role": "edit_reference",
+            "asset_id": reference_asset_id,
+            "ordinal": 0,
+        })
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        seed = (
+            f"{project_id}:{thread_id}:{uploaded['asset_id']}:{prompt}:"
+            f"{skin_name}:{input_assets}:{generation_model}:{resolution}:{quality}"
+        )
+        operation_id = f"spine-reskin:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]}"
+    payload = {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "client_operation_id": operation_id,
+        "spine_asset_id": uploaded["asset_id"],
+        "display_name": display_name,
+        "skin_name": str(skin_name or "").strip() or None,
+        "prompt": prompt,
+        "input_assets": input_assets,
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "resolution": resolution,
+        "image2_quality": {
+            "standard": "low",
+            "detailed": "medium",
+            "ultimate": "high",
+        }[quality],
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/spine-agent/full-reskin/jobs"),
         headers={**_base_headers(api_key), "Content-Type": "application/json"},
         json_body=payload,
         timeout=timeout,
@@ -5643,6 +5806,18 @@ def _local_run_summary(
             if item.get("type") == "media"
         ],
     }
+
+
+def _bounded_integer(minimum: int, maximum: int) -> Callable[[str], int]:
+    def parse(value: str) -> int:
+        parsed = int(value)
+        if not minimum <= parsed <= maximum:
+            raise argparse.ArgumentTypeError(
+                f"value must be between {minimum} and {maximum}"
+            )
+        return parsed
+
+    return parse
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -6766,7 +6941,7 @@ def build_parser() -> argparse.ArgumentParser:
     spine_run.add_argument("--character-reference", default="")
     spine_run.add_argument(
         "--template-name",
-        default="character_template_slim",
+        default=SPINE_AGENT_DEFAULT_TEMPLATE_NAME,
         choices=[
             "character_template_slim",
             "character_template_2head_celestial_librarian",
@@ -6811,7 +6986,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     spine_edit_run = subparsers.add_parser(
         "spine-edit-run",
-        help="Reskin 1 to 10 selected parts in an uploaded Spine package",
+        help="Reskin 1 to 40 selected parts in an uploaded Spine package",
     )
     add_shared_path_args(spine_edit_run)
     spine_edit_run.add_argument("--source-spine-package", required=True)
@@ -6830,6 +7005,48 @@ def build_parser() -> argparse.ArgumentParser:
     spine_edit_run.add_argument("--resolution", default="1K", choices=["1K", "2K"])
     spine_edit_run.add_argument("--quality", default="standard", choices=IMAGE2_QUALITY_CHOICES)
     spine_edit_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
+
+    spine_replace_run = subparsers.add_parser(
+        "spine-replace-run",
+        help="Use one image directly to replace one selected Spine atlas part",
+    )
+    add_shared_path_args(spine_replace_run)
+    spine_replace_run.add_argument("--source-spine-package", required=True)
+    spine_replace_run.add_argument("--selected-parts-json", required=True)
+    spine_replace_run.add_argument("--replacement-image", required=True)
+    spine_replace_run.add_argument("--project-id", required=True)
+    spine_replace_run.add_argument("--thread-id", required=True)
+    spine_replace_run.add_argument("--client-operation-id", default="")
+    spine_replace_run.add_argument("--display-name", default="Spine")
+    spine_replace_run.add_argument("--skin-name", default="")
+    spine_replace_run.add_argument("--scale-percent", type=_bounded_integer(10, 100), default=100)
+    spine_replace_run.add_argument("--offset-x-percent", type=_bounded_integer(-100, 100), default=0)
+    spine_replace_run.add_argument("--offset-y-percent", type=_bounded_integer(-100, 100), default=0)
+    spine_replace_run.add_argument("--rotation-degrees", type=_bounded_integer(-180, 180), default=0)
+    spine_replace_run.add_argument("--remove-bg-method", default="none", choices=["none", "standard"])
+    spine_replace_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
+
+    spine_reskin_run = subparsers.add_parser(
+        "spine-reskin-run",
+        help="Reskin every textured module in an uploaded Spine package",
+    )
+    add_shared_path_args(spine_reskin_run)
+    spine_reskin_run.add_argument("--source-spine-package", required=True)
+    spine_reskin_run.add_argument("--prompt", required=True)
+    spine_reskin_run.add_argument("--project-id", required=True)
+    spine_reskin_run.add_argument("--thread-id", required=True)
+    spine_reskin_run.add_argument("--client-operation-id", default="")
+    spine_reskin_run.add_argument("--display-name", default="Spine")
+    spine_reskin_run.add_argument("--skin-name", default="")
+    spine_reskin_run.add_argument("--reference-image", default="")
+    spine_reskin_run.add_argument(
+        "--generation-model",
+        default="nano-banana",
+        choices=GENERATION_MODEL_CHOICES,
+    )
+    spine_reskin_run.add_argument("--resolution", default="2K", choices=["1K", "2K"])
+    spine_reskin_run.add_argument("--quality", default="standard", choices=IMAGE2_QUALITY_CHOICES)
+    spine_reskin_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
 
     subparsers.add_parser("credits-balance", help="Get current credits balance")
 
@@ -7047,6 +7264,8 @@ def build_parser() -> argparse.ArgumentParser:
         "spine-run",
         "spine-inspect",
         "spine-edit-run",
+        "spine-replace-run",
+        "spine-reskin-run",
         "credits-balance",
         "custom-workflow-list",
         "custom-workflow-run",
@@ -9558,6 +9777,118 @@ def main() -> int:
             ).strip()
             if not job_id:
                 raise SkillCompatibilityError("Spine edit response is missing its Job ID")
+            output_dir, _downloads = save_spine_final_package(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                job_id=job_id,
+                output_root=str(effective_output_dir),
+                slug_seed=args.prompt,
+                timeout=args.timeout,
+                verify=verify,
+                no_download=args.no_download,
+                export_version=args.export_version,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command == "spine-replace-run":
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.display_name)}")
+            submit_payload = submit_spine_part_replace(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                package_path=args.source_spine_package,
+                selected_parts_path=args.selected_parts_json,
+                replacement_image=args.replacement_image,
+                client_operation_id=args.client_operation_id,
+                display_name=args.display_name,
+                skin_name=args.skin_name,
+                scale_percent=args.scale_percent,
+                offset_x_percent=args.offset_x_percent,
+                offset_y_percent=args.offset_y_percent,
+                rotation_degrees=args.rotation_degrees,
+                remove_bg_method=args.remove_bg_method,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            final_payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload=submit_payload,
+                label="Spine part replacement",
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            if str(final_payload.get("status") or "").strip().lower() != "success":
+                print(_format_json_for_display(final_payload))
+                return _command_exit_code(1)
+            job_id = str(
+                final_payload.get("api_job_id")
+                or final_payload.get("job_id")
+                or submit_payload.get("job_id")
+                or ""
+            ).strip()
+            if not job_id:
+                raise SkillCompatibilityError("Spine replacement response is missing its Job ID")
+            output_dir, _downloads = save_spine_final_package(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                job_id=job_id,
+                output_root=str(effective_output_dir),
+                slug_seed=args.display_name,
+                timeout=args.timeout,
+                verify=verify,
+                no_download=args.no_download,
+                export_version=args.export_version,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command == "spine-reskin-run":
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
+            submit_payload = submit_spine_full_reskin(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                package_path=args.source_spine_package,
+                client_operation_id=args.client_operation_id,
+                display_name=args.display_name,
+                skin_name=args.skin_name,
+                reference_image=args.reference_image,
+                generation_model=args.generation_model,
+                resolution=args.resolution,
+                quality=args.quality,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            final_payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload=submit_payload,
+                label="Spine full reskin",
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            if str(final_payload.get("status") or "").strip().lower() != "success":
+                print(_format_json_for_display(final_payload))
+                return _command_exit_code(1)
+            job_id = str(
+                final_payload.get("api_job_id")
+                or final_payload.get("job_id")
+                or submit_payload.get("job_id")
+                or ""
+            ).strip()
+            if not job_id:
+                raise SkillCompatibilityError("Spine reskin response is missing its Job ID")
             output_dir, _downloads = save_spine_final_package(
                 api_base=args.api_base,
                 api_key=args.api_key,
