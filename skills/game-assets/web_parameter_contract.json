@@ -39,9 +39,11 @@
       "command": "remove-background-run",
       "web_sources": ["types.ts:RemoveBackgroundOptions", "components/InfiniteCanvas.tsx", "components/Workspace.tsx"],
       "parameters": {
+        "preserve_translucency": {"flag": "--preserve-translucency", "default": false, "request_field": "preserve_translucency", "available_when": "Pixel removal"},
         "mode": {"flag": "--mode", "default": "hd", "choices": ["pixel", "hd"], "request_field": "method"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "advanced"], "request_field": "remove_bg_method"},
-        "source_background_color": {"flag": "--source-background-color", "default": "#ffffff", "request_field": "source_background_color"}
+        "quality": {"flag": "--quality", "default": "advanced", "conditional_default": {"pixel": "standard", "hd": "advanced"}, "choices": ["standard", "advanced"], "request_field": "remove_bg_method"},
+        "source_background_color": {"flag": "--source-background-color", "default": "#ffffff", "request_field": "source_background_color"},
+        "remove_bg_batch_size": {"flag": "--remove-bg-batch-size", "default": "16", "choices": ["1", "4", "8", "16", "all"], "request_field": "remove_bg_batch_size", "available_when": "animated input except Pixel advanced"}
       }
     },
     "animation_edit": {

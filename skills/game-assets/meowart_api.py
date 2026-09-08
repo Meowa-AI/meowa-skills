@@ -25,7 +25,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.07.5"
+MEOWART_API_CLI_VERSION = "2026.09.08.4"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3607,8 +3607,10 @@ def submit_remove_background(
     api_key: str,
     image_file: str,
     mode: str = "hd",
-    quality: str = "standard",
+    quality: str = "advanced",
     source_background_color: str = "#ffffff",
+    remove_bg_batch_size: str = "16",
+    preserve_translucency: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3618,16 +3620,20 @@ def submit_remove_background(
     normalized_mode = str(mode or "hd").strip().lower()
     if normalized_mode not in {"pixel", "hd"}:
         raise ValueError("mode must be one of: pixel, hd")
-    normalized_quality = str(quality or "standard").strip().lower()
+    normalized_quality = str(quality or "advanced").strip().lower()
     if normalized_quality not in {"standard", "advanced"}:
         raise ValueError("quality must be one of: standard, advanced")
     normalized_source_color = str(source_background_color or "#ffffff").strip().lower()
     if not re.fullmatch(r"#[0-9a-f]{6}", normalized_source_color):
         raise ValueError("source_background_color must be a six-digit HEX color")
+    if remove_bg_batch_size not in {"1", "4", "8", "16", "all"}:
+        raise ValueError("remove_bg_batch_size must be one of: 1, 4, 8, 16, all")
     data = {
         "method": normalized_mode,
         "remove_bg_method": normalized_quality,
         "source_background_color": normalized_source_color,
+        "remove_bg_batch_size": remove_bg_batch_size,
+        "preserve_translucency": "true" if preserve_translucency else "false",
     }
     files = {"file": (path.name, path.read_bytes(), _mime_for_path(path))}
     url = _normalize_base_url(api_base, "/api/image/remove-background")
@@ -3651,8 +3657,10 @@ def run_remove_background(
     api_key: str,
     image_file: str,
     mode: str = "hd",
-    quality: str = "standard",
+    quality: str = "advanced",
     source_background_color: str = "#ffffff",
+    remove_bg_batch_size: str = "16",
+    preserve_translucency: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -3665,6 +3673,8 @@ def run_remove_background(
         mode=mode,
         quality=quality,
         source_background_color=source_background_color,
+        remove_bg_batch_size=remove_bg_batch_size,
+        preserve_translucency=preserve_translucency,
         timeout=timeout,
         verify=verify,
     )
@@ -5824,8 +5834,24 @@ def _bounded_integer(minimum: int, maximum: int) -> Callable[[str], int]:
     return parse
 
 
+class RemoveBackgroundQualityAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        namespace._remove_bg_quality_explicit = True
+
+
+class GameAssetsArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):
+        arguments = list(sys.argv[1:] if args is None else args)
+        parsed = super().parse_args(arguments, namespace)
+        quality_explicit = vars(parsed).pop("_remove_bg_quality_explicit", False)
+        if parsed.command in {"remove-background-submit", "remove-background-run"} and not quality_explicit:
+            parsed.quality = "standard" if parsed.mode == "pixel" else "advanced"
+        return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Create production-ready game assets with Meowa.")
+    parser = GameAssetsArgumentParser(description="Create production-ready game assets with Meowa.")
     parser.add_argument("--version", action="version", version=f"meowart_api.py {MEOWART_API_CLI_VERSION}")
     parser.add_argument(
         "--output-dir",
@@ -6603,15 +6629,20 @@ def build_parser() -> argparse.ArgumentParser:
     remove_bg_submit.add_argument("--mode", default="hd", choices=["pixel", "hd"], help="Source artwork type")
     remove_bg_submit.add_argument(
         "--quality",
-        default="standard",
+        default="advanced",
+        action=RemoveBackgroundQualityAction,
         choices=["standard", "advanced"],
-        help="Removal quality tier; Pixel advanced supports at most 32 frames",
+        help="Pixel: standard general (default), advanced complex (max 32 frames). HD: standard budget (2 credits/batch), advanced general (default, 5 credits/batch). Pixel animation frames must be at most 256x256; static images have no 256x256 restriction.",
     )
     remove_bg_submit.add_argument(
         "--source-background-color",
         default="#ffffff",
         help="Solid source background color used by Pixel advanced; defaults to white",
     )
+
+    remove_bg_submit.add_argument("--remove-bg-batch-size", default="16", choices=["1", "4", "8", "16", "all"], help="Frames per removal call; HD recommends 4; ignored for Pixel advanced")
+
+    remove_bg_submit.add_argument("--preserve-translucency", action=argparse.BooleanOptionalAction, default=False, help="Keep soft alpha in Pixel removal; HD always keeps soft alpha; no extra credits")
 
     remove_bg_run = subparsers.add_parser("remove-background-run", help="Create a transparent-background asset")
     for action in remove_bg_submit._actions[1:]:
@@ -8722,6 +8753,8 @@ def main() -> int:
                 mode=args.mode,
                 quality=args.quality,
                 source_background_color=args.source_background_color,
+                remove_bg_batch_size=args.remove_bg_batch_size,
+                preserve_translucency=args.preserve_translucency,
                 timeout=args.timeout,
                 verify=verify,
             )
@@ -8735,6 +8768,8 @@ def main() -> int:
                     "mode": args.mode,
                     "quality": args.quality,
                     "source_background_color": args.source_background_color,
+                    "remove_bg_batch_size": args.remove_bg_batch_size,
+                    "preserve_translucency": args.preserve_translucency,
                 },
                 response_payload=payload,
                 downloads=[],
@@ -8752,6 +8787,8 @@ def main() -> int:
                 mode=args.mode,
                 quality=args.quality,
                 source_background_color=args.source_background_color,
+                remove_bg_batch_size=args.remove_bg_batch_size,
+                preserve_translucency=args.preserve_translucency,
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -8778,6 +8815,8 @@ def main() -> int:
                     "mode": args.mode,
                     "quality": args.quality,
                     "source_background_color": args.source_background_color,
+                    "remove_bg_batch_size": args.remove_bg_batch_size,
+                    "preserve_translucency": args.preserve_translucency,
                 },
                 response_payload={"submit": submit_payload, "final": final_payload},
                 downloads=downloads,

@@ -132,3 +132,7 @@ For game planning, follow [Game Designer](references/game-design.md). Its realti
 - Do not claim dimensions, transparency, seamlessness, directional consistency, component separation, or animation quality until the final files have been inspected.
 
 For Frame Animation V2 removal batch size, quality levels, and per-batch credits, read [Animation and video](references/animation-and-video.md).
+
+Background removal accepts animated WebP/GIF with `--remove-bg-batch-size 1|4|8|16|all` (default `16`); HD defaults to General removal (`advanced`, 5 credits per batch); Budget removal (`standard`) costs 2. HD recommends batches of 4. Pixel defaults to General removal (`standard`), requires animation frames at most 256×256 (static images have no 256×256 restriction), and Complex removal (`advanced`) retains its separate frame tiers. See [Pixel and HD assets](references/pixel-and-hd-assets.md).
+
+Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.

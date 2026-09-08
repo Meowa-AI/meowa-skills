@@ -252,9 +252,9 @@ python3 skills/game-assets/meowart_api.py remove-background-run \
 ```
 
 - Choose `pixel` or `hd` to match the source artwork.
-- Choose `standard` for routine removal. HD advanced is available for more difficult edges.
+- Pixel: `standard` is General removal (default); `advanced` is Complex removal, which may leave edge residue but handles mesh and other complex shapes. Pixel animation frames must be at most 256×256; static images have no 256×256 restriction. HD has no 256×256 restriction: `standard` is Budget removal and `advanced` is General removal (default).
 - Pixel advanced requires a solid-color source background. Pass that exact color as a six-digit HEX value; it defaults to white.
-- Pixel advanced costs 10 credits for 1–16 frames and 20 credits for 17–32 frames. More than 32 frames is unsupported. Other combinations use a fixed tier price.
+- Pixel advanced costs 10 credits for 1–16 frames and 20 credits for 17–32 frames. More than 32 frames is unsupported. Other animated modes pack `--remove-bg-batch-size 1|4|8|16|all` frames per call (default `16`). Pixel standard costs 5 credits per batch; HD standard costs 2 and HD advanced costs 5. HD recommends batch size 4. Round the batch count up; 32 frames with batch size 4 costs 16 credits for HD Budget removal or 40 credits for HD General removal. Upload the whole animated WebP/GIF; no separate frame uploads are needed.
 - Do not name or select a background-removal provider.
 
 ## Pixel cleanup
@@ -276,3 +276,5 @@ The public command always uses automatic pixel-size detection. Review the result
 - Inspect edges at an integer zoom with nearest-neighbor sampling.
 - Check that sprite sheets contain complete, non-overlapping cells.
 - Check `final_outputs.json` and deliver only the listed final media.
+
+Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.
