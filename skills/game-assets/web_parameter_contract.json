@@ -12,6 +12,46 @@
         "aspect_ratio": {"flag": "--aspect-ratio", "default": "1:1", "choices": ["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"], "request_field": "aspectRatio"}
       }
     },
+    "general_image2_5": {
+      "command": "image-2.5-run",
+      "web_sources": [
+        "types.ts:GenerationSettings",
+        "components/SettingsPanel.tsx"
+      ],
+      "parameters": {
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2Quality"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "default": "1:1",
+          "choices": [
+            "1:1",
+            "3:4",
+            "4:3",
+            "9:16",
+            "16:9"
+          ],
+          "request_field": "aspectRatio"
+        }
+      }
+    },
     "general_image2": {
       "command": "image-2-run",
       "web_sources": ["types.ts:GenerationSettings", "components/SettingsPanel.tsx"],
@@ -26,7 +66,7 @@
       "web_sources": ["types.ts:ImageEditOptions", "components/InfiniteCanvas.tsx", "services/imageEditService.ts"],
       "parameters": {
         "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
+        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2", "image-2.5"], "request_field": "generation_provider"},
         "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
         "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
         "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},

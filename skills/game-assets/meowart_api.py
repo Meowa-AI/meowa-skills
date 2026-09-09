@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import base64
 from datetime import date, datetime
 import hashlib
@@ -25,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.08.4"
+MEOWART_API_CLI_VERSION = "2026.09.09.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3928,8 +3929,8 @@ def submit_general_image(
     verify: bool = True,
 ) -> dict[str, Any]:
     normalized_capability = str(capability or "").strip().lower()
-    if normalized_capability not in {"nano-banana", "image-2"}:
-        raise ValueError("capability must be nano-banana or image-2")
+    if normalized_capability not in {"nano-banana", "image-2", "image-2.5"}:
+        raise ValueError("capability must be nano-banana, image-2 or image-2.5")
 
     quality_map = {"standard": "low", "detailed": "medium", "ultimate": "high"}
     normalized_quality = str(quality or "standard").strip().lower()
@@ -3952,11 +3953,11 @@ def submit_general_image(
         if normalized_model == "gemini-3-pro-image" and aspect_ratio in {"1:4", "4:1", "1:8", "8:1"}:
             raise ValueError("gemini-3-pro-image does not support extreme 1:4, 4:1, 1:8, or 8:1 ratios")
     if not is_nano_banana:
-        normalized_model = IMAGE_2_MODEL
+        normalized_model = "gpt-image-2.5-sunburst" if normalized_capability == "image-2.5" else IMAGE_2_MODEL
     if generation_speed not in GENERATION_SPEED_CHOICES:
         raise ValueError("generation_speed must be one of: normal, fast")
     payload = {
-        "generationProvider": "nanobanana" if is_nano_banana else "image2",
+        "generationProvider": "nanobanana" if is_nano_banana else "image2_5" if normalized_capability == "image-2.5" else "image2",
         "model": normalized_model,
         "image2Quality": "medium" if is_nano_banana else quality_map[normalized_quality],
         "generationSpeed": generation_speed,
@@ -6117,8 +6118,17 @@ def build_parser() -> argparse.ArgumentParser:
             "rerun with Detailed after the prompt is approved"
         ),
     )
+    image_2_5_run = subparsers.add_parser("image-2.5-run", help="Create a general image with Image 2.5 Sunburst")
+    for action in image_2_run._actions[1:]:
+        cloned_action = copy.copy(action)
+        if cloned_action.dest == "quality":
+            cloned_action.help = "Image quality: standard (default), detailed, ultimate"
+        image_2_5_run._add_action(cloned_action)
+    image_2_5_run.set_defaults(quality="standard")
+
     image_2_poll = subparsers.add_parser(
         "image-2-poll",
+        aliases=["image-2.5-poll"],
         help="Recover one Image-2 job and download its final outputs",
     )
     add_shared_path_args(image_2_poll)
@@ -6139,7 +6149,7 @@ def build_parser() -> argparse.ArgumentParser:
     image_edit_run.add_argument(
         "--generation-model",
         default="nano-banana",
-        choices=GENERATION_MODEL_CHOICES,
+        choices=[*GENERATION_MODEL_CHOICES, "image-2.5"],
         help="Generation model (default: Nano Banana, matching the web editor)",
     )
     image_edit_run.add_argument(
@@ -7271,6 +7281,7 @@ def build_parser() -> argparse.ArgumentParser:
         "texture-reference-download",
         "nano-banana-run",
         "image-2-run",
+        "image-2.5-run",
         "image-edit-run",
         "animation-edit-run",
         "one-click-upgrade-prompts",
@@ -7800,8 +7811,8 @@ def main() -> int:
             print(_format_public_json(public_search_payload))
             return 0
 
-        if args.command in {"nano-banana-run", "image-2-run"}:
-            capability = "nano-banana" if args.command == "nano-banana-run" else "image-2"
+        if args.command in {"nano-banana-run", "image-2-run", "image-2.5-run"}:
+            capability = args.command.removesuffix("-run")
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
             submit_payload, final_payload = run_general_image(
                 api_base=args.api_base,
@@ -7834,7 +7845,7 @@ def main() -> int:
             print(_format_json_for_display(final_payload))
             return 0
 
-        if args.command in {"nano-banana-poll", "image-2-poll"}:
+        if args.command in {"nano-banana-poll", "image-2-poll", "image-2.5-poll"}:
             capability = "nano-banana" if args.command == "nano-banana-poll" else "image-2"
             payload = wait_submitted_workflow_job(
                 api_base=args.api_base,
@@ -7906,12 +7917,12 @@ def main() -> int:
                     "strict": "true" if args.strict else "false",
                     "pixelation_method": "fine" if args.regional_pixelation else "whole",
                     "generation_provider": (
-                        "nanobanana" if args.generation_model == "nano-banana" else "image2"
+                        "nanobanana" if args.generation_model == "nano-banana" else "image2_5" if args.generation_model == "image-2.5" else "image2"
                     ),
                     "model_name": (
                         NANO_BANANA_MODEL
                         if args.generation_model == "nano-banana"
-                        else IMAGE_2_MODEL
+                        else "gpt-image-2.5-sunburst" if args.generation_model == "image-2.5" else IMAGE_2_MODEL
                     ),
                     "remove_bg_method": args.remove_bg_method,
                     "resolution": args.resolution,

@@ -136,3 +136,13 @@ For Frame Animation V2 removal batch size, quality levels, and per-batch credits
 Background removal accepts animated WebP/GIF with `--remove-bg-batch-size 1|4|8|16|all` (default `16`); HD defaults to General removal (`advanced`, 5 credits per batch); Budget removal (`standard`) costs 2. HD recommends batches of 4. Pixel defaults to General removal (`standard`), requires animation frames at most 256×256 (static images have no 256×256 restriction), and Complex removal (`advanced`) retains its separate frame tiers. See [Pixel and HD assets](references/pixel-and-hd-assets.md).
 
 Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.
+
+### 通用生成 Image 2.5
+
+`image-2.5-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
+质量仅支持 `standard/detailed/ultimate`，对应网页 普通/精细/极致 与 canonical `low/medium/high`。
+`--resolution 1K|2K` 默认 1K；`--aspect-ratio` 默认 1:1，支持 1:1、3:4、4:3、9:16、16:9。
+可重复 `--reference-image` 传参考图；失败或中断用 `image-2.5-poll --job-id ...` 恢复，勿重复提交。
+1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
+
+万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2，抠图和分区像素化沿用现有附加费。
