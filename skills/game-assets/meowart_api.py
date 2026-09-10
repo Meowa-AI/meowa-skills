@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.10.2"
+MEOWART_API_CLI_VERSION = "2026.09.10.3"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7203,7 +7203,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     meowa_animation_run_parser.set_defaults(remove_bg_method_explicit=False)
     meowa_animation_run_parser.add_argument(
-        "--remove-bg-batch-size", choices=["1", "4", "8", "16", "all"], default="16",
+        "--remove-bg-batch-size", choices=["4", "8", "16", "all"], default="16",
         help="Frames per removal (highest to lowest quality); each batch costs 5 credits",
     )
     meowa_animation_run_parser.add_argument(

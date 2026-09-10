@@ -125,7 +125,7 @@ The defaults mirror the web UI: 16 frames (2 seconds), Pixel Style, 480P, Detail
 
 Meowa animation with background removal returns two final animated WebPs: `video_path` (background removed) and `background_video_path` (background retained), with matching dimensions, frame count, and timing. Pixel outputs are both pixelated. With `none`, only `video_path` is returned.
 
-With standard background removal, `--remove-bg-batch-size` accepts `1`, `4`, `8`, `16` (default), or `all`: highest, high, medium, low, or lowest quality. Removal costs `ceil(output_frames / batch_size) × 5` credits; `all` costs 5. At 16 frames (2 seconds), batches of 4 cost 20 removal credits, added to generation credits. `none` costs zero removal credits and makes no removal calls. With `none`, the background defaults to green (`#00b140`) for later cleanup in the Meowa Background Removal Workshop; an explicit `--background-color` overrides this.
+With standard background removal, `--remove-bg-batch-size` accepts `4`, `8`, `16` (default), or `all`: high, medium, low, or lowest quality. Removal costs `ceil(output_frames / batch_size) × 5` credits; `all` costs 5. At 16 frames (2 seconds), batches of 4 cost 20 removal credits, added to generation credits. `none` costs zero removal credits and makes no removal calls. With `none`, the background defaults to green (`#00b140`) for later cleanup in the Meowa Background Removal Workshop; an explicit `--background-color` overrides this.
 
 
 Add `--last-image-file <last-frame.png>` for first-to-last-frame control. The two images must have identical dimensions. When a last frame is supplied, the runner ignores `--animation-mode loop` and submits `non_loop`, because the exact last frame is the endpoint.
