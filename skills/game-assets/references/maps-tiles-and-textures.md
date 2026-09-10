@@ -444,8 +444,8 @@ python3 skills/game-assets/meowart_api.py hex-isometric-gen-run \
 
 Use `hd-isometric-gen-run` and `hd-hex-isometric-gen-run` for smooth HD map tiles. Reference counts are hard request contracts:
 
-- Pixel isometric: `standard` requires 2 references; `edit` 1; `tetraploid` 3; `road` 2; `wall` 1.
-- Pixel hex-isometric: `standard` requires 2 references; `edit` 1; `tetraploid` 2–4; `heptaploid` 2–7.
+- Pixel isometric: `standard` requires 2 references; `edit` 1; `tetraploid` 1 large reference (visible width > 200 px) or 3 small references (visible width ≤ 200 px); `road` 2; `wall` 1.
+- Pixel hex-isometric: `standard` requires 2 references; `edit` 1; `tetraploid` accepts 1 medium reference or 2–4 small references; `heptaploid` accepts 1 large reference (>360 px visible width) or 2–7 smaller references. The web picker uses 2 same-size smaller references. Pixel hex reference widths allow building overhang: small ≤256 px, medium 257–360 px, large >360 px; small generation accepts only small references.
 - HD isometric `tetraploid` requires 2–4 references.
 - HD hex-isometric `tetraploid` accepts 1–4 downloaded references. Do not rely on implicit template defaults in the public workflow.
 
