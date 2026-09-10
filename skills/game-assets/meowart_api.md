@@ -117,3 +117,5 @@ python3 skills/game-assets/meowart_api.py <command> --help
 1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
 
 万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2，抠图和分区像素化沿用现有附加费。
+
+HD hex supports `--mode standard` (default), `tetraploid` (4 cells), and `heptaploid` (7 cells). Heptaploid produces one transparent tile; the web picker accepts 2–4 references and the API accepts 2–7. `tile_only` is available only in standard mode. Pricing uses the same generation model, speed, and quality inputs in all three modes.

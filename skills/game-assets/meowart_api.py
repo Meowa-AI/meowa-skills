@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.10.3"
+MEOWART_API_CLI_VERSION = "2026.09.10.4"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -6931,7 +6931,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(hd_hex_isometric_submit)
     add_map_workflow_args(
         hd_hex_isometric_submit,
-        modes=("standard", "tetraploid"),
+        modes=("standard", "tetraploid", "heptaploid"),
         include_template=True,
         include_hd_provider=True,
         similar_tiles_default=True,

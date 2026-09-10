@@ -368,6 +368,7 @@
       "command": "hd-hex-isometric-gen-run",
       "web_sources": ["types.ts:MapEditorSettings", "services/textureGenService.ts"],
       "parameters": {
+        "mode": {"flag": "--mode", "default": "standard", "choices": ["standard", "tetraploid", "heptaploid"], "request_field": "mode"},
         "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
         "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
         "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},

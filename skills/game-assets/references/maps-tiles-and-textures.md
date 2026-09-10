@@ -497,3 +497,5 @@ After generation, start `map-preview-server.py --mode side-scrolling --side-scro
 - Confirm side-scrolling layers align at the same canvas size and loop without a visible seam when looping was requested.
 - Preview pixel assets at integer zoom with nearest-neighbor sampling.
 - Deliver only files listed in `final_outputs.json`.
+
+HD hex supports `--mode standard` (default), `tetraploid` (4 cells), and `heptaploid` (7 cells). Heptaploid produces one transparent tile; the web picker accepts 2–4 references and the API accepts 2–7. `tile_only` is available only in standard mode. Pricing uses the same generation model, speed, and quality inputs in all three modes.
