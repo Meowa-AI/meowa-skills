@@ -52,7 +52,7 @@ These values mirror the production backend workflow constants and the production
 - In unscaled workflow coordinates, same-row centers are `599` pixels apart (`2×300−1`). The next row moves down by `354` pixels (`1.5×300−96`) and shifts right by `300` pixels. The downward offsets are `(300, 354)` and `(-299, 354)`.
 - The product map editor uses a `0.25×` smooth display scale. The resulting side length is `75`, same-row stride is `149.75`, row stride is `88.5`, and odd-row offset is `75`. The displayed downward offsets are `(75, 88.5)` and `(-74.75, 88.5)`.
 - Standard HD hex tiles occupy `1×1`. `tetraploid` occupies `2×2`. For an even anchor row, the occupied cell offsets are `(0,0)`, `(1,0)`, `(-1,1)`, and `(0,1)`; for an odd anchor row they are `(0,0)`, `(1,0)`, `(0,1)`, and `(1,1)`.
-- The backend contains an internal seven-hex layout, but the public `hd-hex-isometric-gen-run` Skill surface currently exposes only `standard` and `tetraploid`. Do not document or route users to the internal mode.
+- The backend contains an internal seven-hex layout and an Image2 path, but both are temporarily closed. The public `hd-hex-isometric-gen-run` Skill surface exposes only `standard` and `tetraploid` with Nano Banana.
 
 ### Shared HD rules
 
@@ -498,4 +498,4 @@ After generation, start `map-preview-server.py --mode side-scrolling --side-scro
 - Preview pixel assets at integer zoom with nearest-neighbor sampling.
 - Deliver only files listed in `final_outputs.json`.
 
-HD hex supports `--mode standard` (default), `tetraploid` (4 cells), and `heptaploid` (7 cells). Heptaploid produces one transparent tile; the web picker accepts 2–4 references and the API accepts 2–7. `tile_only` is available only in standard mode. Pricing uses the same generation model, speed, and quality inputs in all three modes.
+HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。

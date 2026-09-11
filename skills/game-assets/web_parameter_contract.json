@@ -19,6 +19,7 @@
         "components/SettingsPanel.tsx"
       ],
       "parameters": {
+        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard"], "request_field": "removeBgMethod"},
         "quality": {
           "flag": "--quality",
           "default": "standard",
@@ -72,7 +73,7 @@
         "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},
         "strict": {"flag": "--strict", "default": false, "request_field": "strict"},
         "regional_pixelation": {"flag": "--regional-pixelation", "default": false, "request_field": "pixelation_method"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
+        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "unavailable_choices": {"image-2.5": ["advanced"]}, "request_field": "remove_bg_method"}
       }
     },
     "remove_background": {
@@ -368,9 +369,8 @@
       "command": "hd-hex-isometric-gen-run",
       "web_sources": ["types.ts:MapEditorSettings", "services/textureGenService.ts"],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "standard", "choices": ["standard", "tetraploid", "heptaploid"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
+        "mode": {"flag": "--mode", "default": "standard", "choices": ["standard", "tetraploid"], "request_field": "mode"},
+        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana"], "request_field": "generation_provider"},
         "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
         "similar_tiles": {"flag": "--similar-tiles", "default": true, "request_field": "similar_tiles"},
         "tile_only": {"flag": "--tile-only", "default": false, "request_field": "tile_only"}

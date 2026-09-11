@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.10.4"
+MEOWART_API_CLI_VERSION = "2026.09.11.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3925,6 +3925,7 @@ def submit_general_image(
     quality: str = "standard",
     model: str = NANO_BANANA_MODEL,
     generation_speed: str = "normal",
+    remove_bg_method: str = "none",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3932,6 +3933,10 @@ def submit_general_image(
     if normalized_capability not in {"nano-banana", "image-2", "image-2.5"}:
         raise ValueError("capability must be nano-banana, image-2 or image-2.5")
 
+    if remove_bg_method not in ("none", "standard"):
+        raise ValueError("remove_bg_method must be none or standard")
+    if normalized_capability != "image-2.5" and remove_bg_method != "none":
+        raise ValueError("General background removal requires Image2.5")
     quality_map = {"standard": "low", "detailed": "medium", "ultimate": "high"}
     normalized_quality = str(quality or "standard").strip().lower()
     if normalized_quality not in quality_map:
@@ -3964,6 +3969,7 @@ def submit_general_image(
         "resolution": resolution,
         "aspectRatio": aspect_ratio,
         "requestBody": request_body,
+        **({"removeBgMethod": remove_bg_method} if normalized_capability == "image-2.5" else {}),
     }
     url = _normalize_base_url(api_base, GENERAL_IMAGE_ENDPOINT)
     response, response_payload = _request_json(
@@ -3991,6 +3997,7 @@ def run_general_image(
     quality: str = "standard",
     model: str = NANO_BANANA_MODEL,
     generation_speed: str = "normal",
+    remove_bg_method: str = "none",
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -4007,6 +4014,7 @@ def run_general_image(
         quality=quality,
         model=model,
         generation_speed=generation_speed,
+        remove_bg_method=remove_bg_method,
         timeout=timeout,
         verify=verify,
     )
@@ -5470,6 +5478,10 @@ def submit_map_workflow(
 ) -> dict[str, Any]:
     if workflow_id not in MAP_WORKFLOW_ENDPOINTS:
         raise ValueError(f"unsupported map workflow: {workflow_id}")
+    if workflow_id == "hd_hex_isometric_gen" and mode == "heptaploid":
+        raise ValueError("hd_hex_isometric_gen heptaploid mode is temporarily unavailable")
+    if workflow_id == "hd_hex_isometric_gen" and generation_model != "nano-banana":
+        raise ValueError("hd_hex_isometric_gen generation_model must be nano-banana")
 
     data: dict[str, str] = {
         "prompt": prompt,
@@ -5479,12 +5491,7 @@ def submit_map_workflow(
         "tile_only": "true" if tile_only and mode == "standard" else "false",
     }
     if workflow_id == "hd_hex_isometric_gen":
-        data["generation_provider"] = "nanobanana" if generation_model == "nano-banana" else "image2"
-        data["image2_quality"] = {
-            "standard": "low",
-            "detailed": "medium",
-            "ultimate": "high",
-        }[quality]
+        data["generation_provider"] = "nanobanana"
     if template:
         data["template"] = template
     if remove_bg_method:
@@ -5963,13 +5970,7 @@ def build_parser() -> argparse.ArgumentParser:
             command_parser.add_argument(
                 "--generation-model",
                 default="nano-banana",
-                choices=GENERATION_MODEL_CHOICES,
-            )
-            command_parser.add_argument(
-                "--quality",
-                default="standard",
-                choices=IMAGE2_QUALITY_CHOICES,
-                help="Image2 quality: Standard, Detailed, or Ultimate",
+                choices=("nano-banana",),
             )
         if include_remove_bg:
             command_parser.add_argument(
@@ -6130,6 +6131,8 @@ def build_parser() -> argparse.ArgumentParser:
             cloned_action.help = "Image quality: standard (default), detailed, ultimate"
         image_2_5_run._add_action(cloned_action)
     image_2_5_run.set_defaults(quality="standard")
+    image_2_5_run.add_argument("--remove-bg-method", choices=["none", "standard"], default="none",
+                             help="Optional free Image2.5 background removal; failure keeps the original background")
 
     image_2_poll = subparsers.add_parser(
         "image-2-poll",
@@ -6931,7 +6934,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(hd_hex_isometric_submit)
     add_map_workflow_args(
         hd_hex_isometric_submit,
-        modes=("standard", "tetraploid", "heptaploid"),
+        modes=("standard", "tetraploid"),
         include_template=True,
         include_hd_provider=True,
         similar_tiles_default=True,
@@ -7830,6 +7833,7 @@ def main() -> int:
                 quality=getattr(args, "quality", "standard"),
                 model=getattr(args, "model", NANO_BANANA_MODEL),
                 generation_speed=getattr(args, "generation_speed", "normal"),
+                remove_bg_method=getattr(args, "remove_bg_method", "none"),
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -7913,6 +7917,8 @@ def main() -> int:
                     raise ValueError("--regional-pixelation is available only in pixel mode")
                 if args.mode == "hd" and args.remove_bg_method == "advanced":
                     raise ValueError("HD image editing supports only none or standard background removal")
+                if args.generation_model == "image-2.5" and args.remove_bg_method == "advanced":
+                    raise ValueError("image-2.5 image editing supports only none or standard background removal")
                 endpoint = "/api/workflows/image_edit/run"
                 workflow_id = "image_edit"
                 slug_seed = args.prompt
