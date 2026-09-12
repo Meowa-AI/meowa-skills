@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.11.1"
+MEOWART_API_CLI_VERSION = "2026.09.12.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -560,8 +560,26 @@ def _save_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _format_json_for_display(payload: Any) -> str:
+def _format_json_for_display(payload: Any, *, workflow_id: str = "") -> str:
+    if workflow_id and isinstance(payload, dict):
+        payload = {**payload, "workflow_id": workflow_id}
     display_payload = _sanitize_response_for_local_storage(payload)
+    if workflow_id == "style_gen" and isinstance(payload, dict):
+        result = payload.get("result")
+        metadata = result.get("metadata") if isinstance(result, dict) else None
+        if isinstance(metadata, dict):
+            public_description: dict[str, str] = {}
+            for key in ("requirement_type", "requirement_detail"):
+                value = metadata.get(key)
+                if not isinstance(value, str):
+                    continue
+                sanitized = _sanitize_response_value_for_local_storage(
+                    value, key_path=f"result.metadata.{key}", workflow_id=workflow_id,
+                )
+                if sanitized is not _LOCAL_RESPONSE_OMIT:
+                    public_description[key] = sanitized
+            if public_description:
+                display_payload["result"]["metadata"] = public_description
     return json.dumps(display_payload, ensure_ascii=False, indent=2)
 
 
@@ -1628,6 +1646,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "remove_background": frozenset({"remove_bg_path", "transparent_path", "output_url", "result_url", "url"}),
     "seedance_generator": frozenset({"raw_video_path", "video_paths", "url"}),
     "side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
+    "style_gen": frozenset({"transparent_path", "animated_webp_path", "spritesheet_path", "url"}),
     "texture_gen": frozenset({"final_texture_path", "texture_path", "tiling_preview_path", "url"}),
     "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "url"}),
 }
@@ -8200,7 +8219,7 @@ def main() -> int:
                 workflow_id=workflow_id,
             )
             print(f"[INFO] saved_dir={output_dir}")
-            print(_format_json_for_display(final_payload))
+            print(_format_json_for_display(final_payload, workflow_id=workflow_id))
             return 0
 
         if args.command in {"pixel-gen-template-info", "large-pixel-template-info"}:
