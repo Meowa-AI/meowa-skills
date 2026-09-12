@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.12.1"
+MEOWART_API_CLI_VERSION = "2026.09.12.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -564,22 +564,6 @@ def _format_json_for_display(payload: Any, *, workflow_id: str = "") -> str:
     if workflow_id and isinstance(payload, dict):
         payload = {**payload, "workflow_id": workflow_id}
     display_payload = _sanitize_response_for_local_storage(payload)
-    if workflow_id == "style_gen" and isinstance(payload, dict):
-        result = payload.get("result")
-        metadata = result.get("metadata") if isinstance(result, dict) else None
-        if isinstance(metadata, dict):
-            public_description: dict[str, str] = {}
-            for key in ("requirement_type", "requirement_detail"):
-                value = metadata.get(key)
-                if not isinstance(value, str):
-                    continue
-                sanitized = _sanitize_response_value_for_local_storage(
-                    value, key_path=f"result.metadata.{key}", workflow_id=workflow_id,
-                )
-                if sanitized is not _LOCAL_RESPONSE_OMIT:
-                    public_description[key] = sanitized
-            if public_description:
-                display_payload["result"]["metadata"] = public_description
     return json.dumps(display_payload, ensure_ascii=False, indent=2)
 
 
@@ -1646,7 +1630,6 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "remove_background": frozenset({"remove_bg_path", "transparent_path", "output_url", "result_url", "url"}),
     "seedance_generator": frozenset({"raw_video_path", "video_paths", "url"}),
     "side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
-    "style_gen": frozenset({"transparent_path", "animated_webp_path", "spritesheet_path", "url"}),
     "texture_gen": frozenset({"final_texture_path", "texture_path", "tiling_preview_path", "url"}),
     "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "url"}),
 }
@@ -6985,18 +6968,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(music_poll)
     music_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
-    style_run = subparsers.add_parser("style-gen-run", help="Generate the public style preset asset")
-    add_shared_path_args(style_run)
-    style_run.add_argument("--prompt", required=True)
-    style_run.add_argument("--template", default="meowu-island", choices=["meowu-island"])
-    style_run.add_argument(
-        "--generation-model",
-        default="gpt-image-2-official",
-        choices=["nanobanana", "gpt-image-2", "gpt-image-2-official"],
-    )
-    style_run.add_argument("--variant", default="121", choices=["121", "112", "221"])
-    style_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
-
     pindou_run = subparsers.add_parser("pindou-run", help="Convert or generate a Pindou bead-art asset")
     add_shared_path_args(pindou_run)
     pindou_run.add_argument("--source-image", default="")
@@ -7340,7 +7311,6 @@ def build_parser() -> argparse.ArgumentParser:
         "hd-isometric-gen-run",
         "hd-hex-isometric-gen-run",
         "music-run",
-        "style-gen-run",
         "pindou-run",
         "spine-run",
         "spine-inspect",
@@ -7916,7 +7886,6 @@ def main() -> int:
             "isometric-tileset-run",
             "side-scrolling-map-run",
             "hd-side-scrolling-map-run",
-            "style-gen-run",
             "pindou-run",
         }
         if args.command in curated_commands:
@@ -8149,19 +8118,6 @@ def main() -> int:
                     "loop_background": "true" if args.loop_background else "false",
                     "loop_foreground": "true" if args.loop_foreground else "false",
                     "generation_speed": getattr(args, "generation_speed", "normal"),
-                }
-
-            elif args.command == "style-gen-run":
-                endpoint = "/api/workflows/style_gen/run"
-                workflow_id = "style_gen"
-                slug_seed = args.prompt
-                data = {
-                    "template": args.template,
-                    "model": args.generation_model,
-                    "requirement": args.prompt,
-                    "background_variant": args.variant,
-                    "reference_variant": args.variant,
-                    "generation_speed": args.generation_speed,
                 }
 
             elif args.command == "pindou-run":

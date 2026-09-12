@@ -1,6 +1,6 @@
 ---
 name: game-assets
-description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, style presets, textures, terrain tilesets, maps, video, sound effects, music, bundled Meowa CLI execution, or final game-project deliverable validation.
+description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets

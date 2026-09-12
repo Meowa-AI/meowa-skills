@@ -18,7 +18,6 @@ Use this module to select one primary public command. Prefer the most specialize
 | Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
 | Quickly upgrade one asset or create several similarly sized, style-consistent variants | `one-click-upgrade-prompts`, then `one-click-upgrade-run` | `ui-and-image-editing.md` |
 | Edit an animated GIF or WebP while preserving timing and layout | `animation-edit-run` | `ui-and-image-editing.md` |
-| Apply the public MeowU Island style preset | `style-gen-run` | `ui-and-image-editing.md` |
 | Convert an image to Pindou bead art or generate a sized HD bead-art design | `pindou-run` | `ui-and-image-editing.md` |
 | Reskin and export a built-in Spine character package | `spine-run` | `ui-and-image-editing.md` |
 | Inspect or reskin 1-40 parts in uploaded Spine 3.6-4.2 or experimental 4.3 | `spine-inspect`, then `spine-edit-run` | `ui-and-image-editing.md` |

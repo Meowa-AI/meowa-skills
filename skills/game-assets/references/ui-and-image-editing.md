@@ -39,7 +39,6 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
 | Edit existing animation frames | `animation-edit-run` | Restyle or modify an animated GIF or WebP | Preserve the source frame timing and layout |
-| Apply the public style preset | `style-gen-run` | Produce one styled game asset | Uses the preset, model, variant, and speed exposed by the web product |
 | Create Pindou bead art | `pindou-run` | Convert a pixel source at source size or generate an HD sized design | HD mode requires a supported target size |
 | Reskin a built-in Spine character | `spine-run` | Produce the public Spine-agent final package | Requires the project/thread message context used by the web workflow |
 | Reskin uploaded Spine parts | `spine-inspect`, `spine-edit-run` | Accept Spine 3.6-4.2, or experimental 4.3, and replace 1-40 selected Atlas parts | Every import becomes a Spine 4.2 runtime |
@@ -48,7 +47,6 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 
 Use this module after base-asset generation when the task is refinement rather than a new asset family. Send a finalized still asset to animation or video only after the edit is approved.
 
-Style Gen prints the generated asset name at `result.metadata.requirement_type` and its design description at `result.metadata.requirement_detail`; `job_name` identifies the run. It downloads the final transparent PNG and, when generated, the idle animation and spritesheet. The local `final_outputs.json` lists only the downloaded media.
 
 For Spine reskinning, choose the same template exposed by the web product. The default is the two-head-tall `character_template_2head_celestial_librarian`; `character_template_slim` remains the four-head-tall choice. The other two-head-tall choices are `character_template_2head_moon_jellyfish_cartographer`, `character_template_2head_clockwork_orchard_warden`, `character_template_2head_desert_glassblower_alchemist`, and `character_template_2head_deep_sea_choir_conductor`; the raw two-head base template is internal and is not a public choice. Generation defaults to Image2 at Detailed quality; `--generation-model` and `--quality` can override either choice. `--export-version` mirrors the web export selector and defaults to `4.2`; choose `3.8` to receive a package re-exported by Spine 3.8.75. The downgrade removes animated bone inheritance and may simplify or lose other 4.2-only features. The command returns only the selected final Spine package.
 

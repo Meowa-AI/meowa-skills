@@ -175,16 +175,6 @@
         "split_components": {"flag": "--split-components", "default": true, "request_field": "split_components"}
       }
     },
-    "style_gen": {
-      "command": "style-gen-run",
-      "web_sources": ["types.ts:StyleGenSettings", "components/SettingsPanel.tsx", "services/styleGenService.ts"],
-      "parameters": {
-        "template": {"flag": "--template", "default": "meowu-island", "choices": ["meowu-island"], "request_field": "template"},
-        "generation_model": {"flag": "--generation-model", "default": "gpt-image-2-official", "choices": ["nanobanana", "gpt-image-2", "gpt-image-2-official"], "request_field": "model"},
-        "variant": {"flag": "--variant", "default": "121", "choices": ["121", "112", "221"], "request_field": "background_variant/reference_variant"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"}
-      }
-    },
     "spine_agent": {
       "command": "spine-run",
       "web_sources": ["types.ts:SpineGenerationSettings", "components/SettingsPanel.tsx", "services/spineAgentService.ts"],
