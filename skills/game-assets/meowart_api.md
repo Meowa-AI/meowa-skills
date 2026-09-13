@@ -39,6 +39,13 @@ python3 skills/game-assets/meowart_api.py nano-banana-poll \
 
 ## 创建 Meowa API key
 
+免费积分在网页领取；服务端要求安全验证时，用户需先完成验证。`credits-balance` 只查询余额，`free-credits` 查询资格并返回积分中心链接；CLI 不代替用户完成人机验证。
+主流邮箱按账户资格领取注册、问卷和每日赠送。其他邮箱可以注册使用，免费额度为每天 20 积分、最多 5 次、累计 100 积分；以北京时间计日，每次赠送有效期 7 天，未领取的日期不消耗次数。问卷、活动和邀请不会增加这项额度。
+
+```bash
+python3 skills/game-assets/meowart_api.py free-credits
+```
+
 1. 登录 [Meowa API Keys](https://meowa.ai/#/api-keys)。
 2. 点击 `Create API Key`。
 3. 复制以 `ma_live_` 开头的 key，并仅保存在自己的本地环境中。

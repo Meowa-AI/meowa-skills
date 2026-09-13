@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.12.2"
+MEOWART_API_CLI_VERSION = "2026.09.13.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2049,6 +2049,18 @@ def _credits_balance_for_display(payload: dict[str, Any]) -> dict[str, Any]:
         "next_trial_credit_expires_at": payload.get("next_trial_credit_expires_at"),
         "next_subscription_credit_expires_at": payload.get("next_subscription_credit_expires_at"),
     }
+
+
+def get_free_credit_status(*, api_base: str, api_key: str, timeout: int = DEFAULT_TIMEOUT, verify: bool = True) -> dict[str, Any]:
+    response, payload = _request_json(method="GET", url=_normalize_base_url(api_base, "/api/credits/free-rewards/status"),
+        headers=_base_headers(api_key), timeout=timeout, verify=verify)
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    allowed = {"enabled", "tier", "installment_amount", "installment_count", "installment_total", "claims_completed",
+               "remaining_credits", "claimed_today", "available_rewards", "amounts", "next_claim_at"}
+    return {**{key: value for key, value in payload.items() if key in allowed},
+            "claim_url": "https://meowa.ai/canvas?free_credits=1",
+            "claim_instructions": "Sign in on the website and complete security verification to claim. Reading balances never grants credits."}
 
 
 def list_custom_workflows(
@@ -7092,6 +7104,7 @@ def build_parser() -> argparse.ArgumentParser:
     spine_reskin_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
 
     subparsers.add_parser("credits-balance", help="Get current credits balance")
+    subparsers.add_parser("free-credits", help="Read free-credit eligibility and open the website link to verify and claim")
 
     subparsers.add_parser(
         "custom-workflow-list",
@@ -7318,6 +7331,7 @@ def build_parser() -> argparse.ArgumentParser:
         "spine-replace-run",
         "spine-reskin-run",
         "credits-balance",
+        "free-credits",
         "custom-workflow-list",
         "custom-workflow-run",
         "animate-run",
@@ -9771,6 +9785,11 @@ def main() -> int:
                 effective_output_dir=str(effective_output_dir),
             )
             print(_format_public_json(_credits_balance_for_display(payload)))
+            return 0
+
+        if args.command == "free-credits":
+            print(_format_public_json(get_free_credit_status(api_base=args.api_base, api_key=args.api_key,
+                timeout=args.timeout, verify=verify)))
             return 0
 
         if args.command == "spine-inspect":

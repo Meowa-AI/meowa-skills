@@ -381,6 +381,17 @@
         "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
         "art_style": {"flag": "--art-style", "default": "2d_hd", "choices": ["2d_hd", "2d_cartoon", "2d_ink", "clay", "low_poly_3d", "steampunk", "anime_hd"], "request_field": "art_style"}
       }
+    },
+    "free_credits": {
+      "command": "free-credits",
+      "web_sources": [
+        "components/FreeRewardCard.tsx",
+        "services/freeRewardsService.ts"
+      ],
+      "parameters": {},
+      "browser_handoff": "https://meowa.ai/canvas?free_credits=1",
+      "read_endpoint": "/api/credits/free-rewards/status",
+      "claim_endpoint": "/api/credits/free-rewards/claim"
     }
   }
 }

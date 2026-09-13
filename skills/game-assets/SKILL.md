@@ -126,6 +126,8 @@ For game planning, follow [Game Designer](references/game-design.md). Its realti
 
 ## Keep the public boundary clean
 
+Use `free-credits` to read free-credit eligibility and return the website claim link. The user claims in the browser and completes security verification when required by the server. Balance/status reads never claim credits. Other-email accounts receive 20 credits per Beijing day for at most five claims, with no additional survey/campaign/referral grants; paid credits and refunds remain separate.
+
 - Guide users to configure Meowa account authentication locally when needed, but never request the key itself or expose credentials, raw provider identifiers, arbitrary model names, endpoints, sampling, internal-stage, or raw-request controls. A command may expose a curated product-level `--generation-model` enum when its capability module documents the choices and default.
 - Never overwrite source assets or return input references, internal templates, masks, metadata, debug artifacts, or intermediate files.
 - Return only declared final deliverables.
