@@ -4,12 +4,62 @@
   "features": {
     "general_nano_banana": {
       "command": "nano-banana-run",
-      "web_sources": ["types.ts:GenerationSettings", "components/SettingsPanel.tsx"],
+      "web_sources": [
+        "types.ts:GenerationSettings",
+        "components/SettingsPanel.tsx"
+      ],
       "parameters": {
-        "model": {"flag": "--model", "default": "gemini-3.1-flash-image", "choices": ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image", "gemini-3-pro-image"], "request_field": "model"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generationSpeed"},
-        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["512", "1K", "2K", "4K"], "request_field": "resolution"},
-        "aspect_ratio": {"flag": "--aspect-ratio", "default": "1:1", "choices": ["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"], "request_field": "aspectRatio"}
+        "model": {
+          "flag": "--model",
+          "default": "gemini-3.1-flash-image",
+          "choices": [
+            "gemini-3.1-flash-lite-image",
+            "gemini-3.1-flash-image",
+            "gemini-3-pro-image"
+          ],
+          "request_field": "model"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generationSpeed"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "512",
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "request_field": "resolution"
+        },
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "default": "1:1",
+          "choices": [
+            "1:1",
+            "3:4",
+            "4:3",
+            "2:3",
+            "3:2",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9",
+            "1:4",
+            "4:1",
+            "1:8",
+            "8:1"
+          ],
+          "request_field": "aspectRatio"
+        }
       }
     },
     "general_image2_5": {
@@ -19,7 +69,15 @@
         "components/SettingsPanel.tsx"
       ],
       "parameters": {
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard"], "request_field": "removeBgMethod"},
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "none",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "removeBgMethod"
+        },
         "quality": {
           "flag": "--quality",
           "default": "standard",
@@ -55,331 +113,1777 @@
     },
     "general_image2": {
       "command": "image-2-run",
-      "web_sources": ["types.ts:GenerationSettings", "components/SettingsPanel.tsx"],
+      "web_sources": [
+        "types.ts:GenerationSettings",
+        "components/SettingsPanel.tsx"
+      ],
       "parameters": {
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2Quality"},
-        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},
-        "aspect_ratio": {"flag": "--aspect-ratio", "default": "1:1", "choices": ["1:1", "3:4", "4:3", "9:16", "16:9"], "request_field": "aspectRatio"}
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2Quality"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "default": "1:1",
+          "choices": [
+            "1:1",
+            "3:4",
+            "4:3",
+            "9:16",
+            "16:9"
+          ],
+          "request_field": "aspectRatio"
+        }
       }
     },
     "image_edit": {
       "command": "image-edit-run",
-      "web_sources": ["types.ts:ImageEditOptions", "components/InfiniteCanvas.tsx", "services/imageEditService.ts"],
+      "web_sources": [
+        "types.ts:ImageEditOptions",
+        "components/InfiniteCanvas.tsx",
+        "services/imageEditService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2", "image-2.5"], "request_field": "generation_provider"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},
-        "strict": {"flag": "--strict", "default": false, "request_field": "strict"},
-        "regional_pixelation": {"flag": "--regional-pixelation", "default": false, "request_field": "pixelation_method"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "unavailable_choices": {"image-2.5": ["advanced"]}, "request_field": "remove_bg_method"}
+        "mode": {
+          "flag": "--mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "nano-banana",
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
+          "request_field": "generation_provider"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "strict": {
+          "flag": "--strict",
+          "default": false,
+          "request_field": "strict"
+        },
+        "regional_pixelation": {
+          "flag": "--regional-pixelation",
+          "default": false,
+          "request_field": "pixelation_method"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "unavailable_choices": {
+            "image-2.5": [
+              "advanced"
+            ]
+          },
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "remove_background": {
       "command": "remove-background-run",
-      "web_sources": ["types.ts:RemoveBackgroundOptions", "components/InfiniteCanvas.tsx", "components/Workspace.tsx"],
+      "web_sources": [
+        "types.ts:RemoveBackgroundOptions",
+        "components/InfiniteCanvas.tsx",
+        "components/Workspace.tsx"
+      ],
       "parameters": {
-        "preserve_translucency": {"flag": "--preserve-translucency", "default": false, "request_field": "preserve_translucency", "available_when": "Pixel removal"},
-        "mode": {"flag": "--mode", "default": "hd", "choices": ["pixel", "hd"], "request_field": "method"},
-        "quality": {"flag": "--quality", "default": "advanced", "conditional_default": {"pixel": "standard", "hd": "advanced"}, "choices": ["standard", "advanced"], "request_field": "remove_bg_method"},
-        "source_background_color": {"flag": "--source-background-color", "default": "#ffffff", "request_field": "source_background_color"},
-        "remove_bg_batch_size": {"flag": "--remove-bg-batch-size", "default": "16", "choices": ["1", "4", "8", "16", "all"], "request_field": "remove_bg_batch_size", "available_when": "animated input except Pixel advanced"}
+        "preserve_translucency": {
+          "flag": "--preserve-translucency",
+          "default": false,
+          "request_field": "preserve_translucency",
+          "available_when": "Pixel removal"
+        },
+        "mode": {
+          "flag": "--mode",
+          "default": "hd",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "method"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "advanced",
+          "conditional_default": {
+            "pixel": "standard",
+            "hd": "advanced"
+          },
+          "choices": [
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        },
+        "source_background_color": {
+          "flag": "--source-background-color",
+          "default": "#ffffff",
+          "request_field": "source_background_color"
+        },
+        "remove_bg_batch_size": {
+          "flag": "--remove-bg-batch-size",
+          "default": "16",
+          "choices": [
+            "1",
+            "4",
+            "8",
+            "16",
+            "all"
+          ],
+          "request_field": "remove_bg_batch_size",
+          "available_when": "animated input except Pixel advanced"
+        }
       }
     },
     "animation_edit": {
       "command": "animation-edit-run",
-      "web_sources": ["types.ts:FramesEditOptions", "components/InfiniteCanvas.tsx", "services/framesEditService.ts"],
+      "web_sources": [
+        "types.ts:FramesEditOptions",
+        "components/InfiniteCanvas.tsx",
+        "services/framesEditService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "advanced", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
+        "mode": {
+          "flag": "--mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "mode"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "advanced",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "one_click_upgrade": {
       "command": "one-click-upgrade-run",
-      "web_sources": ["components/InfiniteCanvas.tsx", "services/oneClickUpgradeService.ts"],
+      "web_sources": [
+        "components/InfiniteCanvas.tsx",
+        "services/oneClickUpgradeService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "", "conditional_default": {"pixel": "nano-banana", "hd": "image-2"}, "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "resolution": {"flag": "--resolution", "default": "", "conditional_default": {"pixel": "1K", "hd": "2K"}, "choices": ["1K", "2K"], "request_field": "resolution"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
+        "mode": {
+          "flag": "--mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "",
+          "conditional_default": {
+            "pixel": "nano-banana",
+            "hd": "image-2"
+          },
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "",
+          "conditional_default": {
+            "pixel": "1K",
+            "hd": "2K"
+          },
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "none",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "custom_size_pixel": {
       "command": "custom-size-pixel-gen-run",
-      "web_sources": ["types.ts:PixelGenerationSettings", "services/oneClickPixelateService.ts"],
+      "web_sources": [
+        "types.ts:PixelGenerationSettings",
+        "services/oneClickPixelateService.ts"
+      ],
       "parameters": {
-        "width": {"flag": "--width", "request_field": "width"},
-        "height": {"flag": "--height", "request_field": "height"},
-        "content_mode": {"flag": "--content-mode", "default": "portrait", "choices": ["portrait", "illustration", "asset_pack", "other"], "request_field": "content_mode"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"},
-        "fill_canvas": {"flag": "--fill-canvas", "default": true, "request_field": "fill_canvas"},
-        "strong_pixelation": {"flag": "--strong-pixelation", "default": false, "request_field": "strong_mode"}
+        "width": {
+          "flag": "--width",
+          "request_field": "width"
+        },
+        "height": {
+          "flag": "--height",
+          "request_field": "height"
+        },
+        "content_mode": {
+          "flag": "--content-mode",
+          "default": "portrait",
+          "choices": [
+            "portrait",
+            "illustration",
+            "asset_pack",
+            "other"
+          ],
+          "request_field": "content_mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "nano-banana",
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "none",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        },
+        "fill_canvas": {
+          "flag": "--fill-canvas",
+          "default": true,
+          "request_field": "fill_canvas"
+        },
+        "strong_pixelation": {
+          "flag": "--strong-pixelation",
+          "default": false,
+          "request_field": "strong_mode"
+        }
       }
     },
     "pixel_universal": {
       "command": "pixel-universal-gen-run",
-      "web_sources": ["types.ts:PixelGenerationSettings", "utils/pixelGenGeneral.ts", "services/pixelGenService.ts"],
+      "web_sources": [
+        "types.ts:PixelGenerationSettings",
+        "utils/pixelGenGeneral.ts",
+        "services/pixelGenService.ts"
+      ],
       "parameters": {
-        "aspect_ratio": {"flag": "--aspect-ratio", "default": "4:3", "choices": ["4:3", "3:4", "2:1", "1:2", "2:3", "3:2"], "request_field": "template_name/aspect_ratio"},
-        "view": {"flag": "--view", "default": "standard", "choices": ["standard", "top-down"], "request_field": "template_config.direction"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "template_config.generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard", "advanced"], "request_field": "template_config.remove_bg_method"}
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "default": "4:3",
+          "choices": [
+            "4:3",
+            "3:4",
+            "2:1",
+            "1:2",
+            "2:3",
+            "3:2"
+          ],
+          "request_field": "template_name/aspect_ratio"
+        },
+        "view": {
+          "flag": "--view",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "top-down"
+          ],
+          "request_field": "template_config.direction"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "template_config.generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "none",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "template_config.remove_bg_method"
+        }
       }
     },
     "pixel_preset": {
       "command": "pixel-gen-run",
-      "web_sources": ["types.ts:PixelGenerationSettings", "components/SettingsPanel.tsx", "services/pixelGenService.ts"],
+      "web_sources": [
+        "types.ts:PixelGenerationSettings",
+        "components/SettingsPanel.tsx",
+        "services/pixelGenService.ts"
+      ],
       "parameters": {
-        "direction": {"flag": "--direction", "default": "", "request_field": "template_config.direction"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "template_config.generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "advanced", "choices": ["none", "standard", "advanced"], "request_field": "template_config.remove_bg_method"}
+        "direction": {
+          "flag": "--direction",
+          "default": "",
+          "request_field": "template_config.direction"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "template_config.generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "advanced",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "template_config.remove_bg_method"
+        }
       }
     },
     "large_pixel_preset": {
       "command": "large-pixel-gen-run",
-      "web_sources": ["types.ts:PixelGenerationSettings", "components/SettingsPanel.tsx", "services/pixelGenService.ts"],
+      "web_sources": [
+        "types.ts:PixelGenerationSettings",
+        "components/SettingsPanel.tsx",
+        "services/pixelGenService.ts"
+      ],
       "parameters": {
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "template_config.generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard"], "request_field": "template_config.remove_bg_method"}
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "template_config.generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "none",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "template_config.remove_bg_method"
+        }
       }
     },
     "hd_preset": {
       "command": "hd-gen-run",
-      "web_sources": ["types.ts:PixelGenerationSettings", "components/SettingsPanel.tsx", "services/hdGenService.ts"],
+      "web_sources": [
+        "types.ts:PixelGenerationSettings",
+        "components/SettingsPanel.tsx",
+        "services/hdGenService.ts"
+      ],
       "parameters": {
-        "direction": {"flag": "--direction", "default": "", "request_field": "template_config.direction"},
-        "generation_model": {"flag": "--generation-model", "default": "image-2", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "quality_mode"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
+        "direction": {
+          "flag": "--direction",
+          "default": "",
+          "request_field": "template_config.direction"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2",
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "quality_mode"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "ui_agent": {
       "command": "ui-gen-run",
-      "web_sources": ["types.ts:UiAgentGenerationSettings", "components/SettingsPanel.tsx", "services/uiGenService.ts"],
+      "web_sources": [
+        "types.ts:UiAgentGenerationSettings",
+        "components/SettingsPanel.tsx",
+        "services/uiGenService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "generate", "choices": ["generate", "extract"], "request_field": "generation_mode"},
-        "generation_model": {"flag": "--generation-model", "default": "image-2", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "quality": {"flag": "--quality", "default": "detailed", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "resolution": {"flag": "--resolution", "default": "2K", "choices": ["1K", "2K"], "request_field": "resolution"},
-        "aspect_ratio": {"flag": "--aspect-ratio", "default": "1:1", "choices": ["4:3", "3:4", "16:9", "9:16", "1:1"], "request_field": "aspect_ratio"},
-        "background_color": {"flag": "--background-color", "default": "#cccccc", "choices": ["#000000", "#ffffff", "#cccccc", "#808080", "#333333"], "request_field": "background_color"},
-        "remove_background": {"flag": "--remove-background", "default": true, "request_field": "remove_background"},
-        "split_components": {"flag": "--split-components", "default": true, "request_field": "split_components"}
+        "mode": {
+          "flag": "--mode",
+          "default": "generate",
+          "choices": [
+            "generate",
+            "extract"
+          ],
+          "request_field": "generation_mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2",
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "detailed",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "2K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "default": "1:1",
+          "choices": [
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "request_field": "aspect_ratio"
+        },
+        "background_color": {
+          "flag": "--background-color",
+          "default": "#cccccc",
+          "choices": [
+            "#000000",
+            "#ffffff",
+            "#cccccc",
+            "#808080",
+            "#333333"
+          ],
+          "request_field": "background_color"
+        },
+        "remove_background": {
+          "flag": "--remove-background",
+          "default": true,
+          "request_field": "remove_background"
+        },
+        "split_components": {
+          "flag": "--split-components",
+          "default": true,
+          "request_field": "split_components"
+        }
       }
     },
     "spine_agent": {
       "command": "spine-run",
-      "web_sources": ["types.ts:SpineGenerationSettings", "components/SettingsPanel.tsx", "services/spineAgentService.ts"],
+      "web_sources": [
+        "types.ts:SpineGenerationSettings",
+        "components/SettingsPanel.tsx",
+        "services/spineAgentService.ts"
+      ],
       "parameters": {
-        "template_name": {"flag": "--template-name", "default": "character_template_2head_celestial_librarian", "choices": ["character_template_slim", "character_template_2head_celestial_librarian", "character_template_2head_moon_jellyfish_cartographer", "character_template_2head_clockwork_orchard_warden", "character_template_2head_desert_glassblower_alchemist", "character_template_2head_deep_sea_choir_conductor"], "request_field": "template_name"},
-        "generation_model": {"flag": "--generation-model", "default": "image-2", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "export_resolution": {"flag": "--export-resolution", "default": "2K", "choices": ["1K", "2K", "4K"], "request_field": "export_resolution"},
-        "export_version": {"flag": "--export-version", "default": "4.2", "choices": ["4.2", "3.8"], "request_field": "export_version"},
-        "quality": {"flag": "--quality", "default": "detailed", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
-        "weapon": {"flag": "--weapon", "default": "auto", "choices": ["auto", "yes", "no"], "request_field": "weapon_mode"},
-        "hair": {"flag": "--hair", "default": "auto", "choices": ["auto", "short_hair", "long_hair", "twin_tail", "single_ponytail"], "request_field": "hair_type"},
-        "outfit": {"flag": "--outfit", "default": "auto", "choices": ["auto", "pants", "short_skirt", "long_skirt"], "request_field": "outfit_type"}
+        "template_name": {
+          "flag": "--template-name",
+          "default": "character_template_2head_celestial_librarian",
+          "choices": [
+            "character_template_slim",
+            "character_template_2head_celestial_librarian",
+            "character_template_2head_moon_jellyfish_cartographer",
+            "character_template_2head_clockwork_orchard_warden",
+            "character_template_2head_desert_glassblower_alchemist",
+            "character_template_2head_deep_sea_choir_conductor"
+          ],
+          "request_field": "template_name"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2",
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "export_resolution": {
+          "flag": "--export-resolution",
+          "default": "2K",
+          "choices": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "request_field": "export_resolution"
+        },
+        "export_version": {
+          "flag": "--export-version",
+          "default": "4.2",
+          "choices": [
+            "4.2",
+            "3.8"
+          ],
+          "request_field": "export_version"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "detailed",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        },
+        "weapon": {
+          "flag": "--weapon",
+          "default": "auto",
+          "choices": [
+            "auto",
+            "yes",
+            "no"
+          ],
+          "request_field": "weapon_mode"
+        },
+        "hair": {
+          "flag": "--hair",
+          "default": "auto",
+          "choices": [
+            "auto",
+            "short_hair",
+            "long_hair",
+            "twin_tail",
+            "single_ponytail"
+          ],
+          "request_field": "hair_type"
+        },
+        "outfit": {
+          "flag": "--outfit",
+          "default": "auto",
+          "choices": [
+            "auto",
+            "pants",
+            "short_skirt",
+            "long_skirt"
+          ],
+          "request_field": "outfit_type"
+        }
       }
     },
     "spine_part_edit": {
       "command": "spine-edit-run",
-      "web_sources": ["components/spine-editor/SpineAtlasEditor.tsx", "components/InputArea.tsx", "components/SettingsPanel.tsx", "services/spineAgentService.ts"],
+      "web_sources": [
+        "components/spine-editor/SpineAtlasEditor.tsx",
+        "components/InputArea.tsx",
+        "components/SettingsPanel.tsx",
+        "services/spineAgentService.ts"
+      ],
       "parameters": {
-        "source_spine_package": {"flag": "--source-spine-package", "request_field": "spine_asset_id"},
-        "selected_parts": {"flag": "--selected-parts-json", "request_field": "selected_parts"},
-        "display_name": {"flag": "--display-name", "default": "Spine", "request_field": "display_name"},
-        "reference_image": {"flag": "--reference-image", "default": "", "request_field": "input_assets"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"}
+        "source_spine_package": {
+          "flag": "--source-spine-package",
+          "request_field": "spine_asset_id"
+        },
+        "selected_parts": {
+          "flag": "--selected-parts-json",
+          "request_field": "selected_parts"
+        },
+        "display_name": {
+          "flag": "--display-name",
+          "default": "Spine",
+          "request_field": "display_name"
+        },
+        "reference_image": {
+          "flag": "--reference-image",
+          "default": "",
+          "request_field": "input_assets"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "nano-banana",
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        }
       }
     },
     "spine_part_replace": {
       "command": "spine-replace-run",
-      "web_sources": ["components/spine-editor/SpineAtlasEditor.tsx", "services/spineAgentService.ts", "utils/spineAgentCredits.ts"],
+      "web_sources": [
+        "components/spine-editor/SpineAtlasEditor.tsx",
+        "services/spineAgentService.ts",
+        "utils/spineAgentCredits.ts"
+      ],
       "parameters": {
-        "source_spine_package": {"flag": "--source-spine-package", "request_field": "spine_asset_id"},
-        "selected_parts": {"flag": "--selected-parts-json", "request_field": "selected_parts"},
-        "replacement_image": {"flag": "--replacement-image", "request_field": "input_assets"},
-        "display_name": {"flag": "--display-name", "default": "Spine", "request_field": "display_name"},
-        "skin_name": {"flag": "--skin-name", "default": "", "request_field": "skin_name"},
-        "scale_percent": {"flag": "--scale-percent", "default": 100, "request_field": "scale_percent"},
-        "offset_x_percent": {"flag": "--offset-x-percent", "default": 0, "request_field": "offset_x_percent"},
-        "offset_y_percent": {"flag": "--offset-y-percent", "default": 0, "request_field": "offset_y_percent"},
-        "rotation_degrees": {"flag": "--rotation-degrees", "default": 0, "request_field": "rotation_degrees"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "none", "choices": ["none", "standard"], "request_field": "remove_bg_method"}
+        "source_spine_package": {
+          "flag": "--source-spine-package",
+          "request_field": "spine_asset_id"
+        },
+        "selected_parts": {
+          "flag": "--selected-parts-json",
+          "request_field": "selected_parts"
+        },
+        "replacement_image": {
+          "flag": "--replacement-image",
+          "request_field": "input_assets"
+        },
+        "display_name": {
+          "flag": "--display-name",
+          "default": "Spine",
+          "request_field": "display_name"
+        },
+        "skin_name": {
+          "flag": "--skin-name",
+          "default": "",
+          "request_field": "skin_name"
+        },
+        "scale_percent": {
+          "flag": "--scale-percent",
+          "default": 100,
+          "request_field": "scale_percent"
+        },
+        "offset_x_percent": {
+          "flag": "--offset-x-percent",
+          "default": 0,
+          "request_field": "offset_x_percent"
+        },
+        "offset_y_percent": {
+          "flag": "--offset-y-percent",
+          "default": 0,
+          "request_field": "offset_y_percent"
+        },
+        "rotation_degrees": {
+          "flag": "--rotation-degrees",
+          "default": 0,
+          "request_field": "rotation_degrees"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "none",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "spine_full_reskin": {
       "command": "spine-reskin-run",
-      "web_sources": ["components/spine-editor/SpineAtlasEditor.tsx", "services/spineAgentService.ts", "utils/spineAgentCredits.ts"],
+      "web_sources": [
+        "components/spine-editor/SpineAtlasEditor.tsx",
+        "services/spineAgentService.ts",
+        "utils/spineAgentCredits.ts"
+      ],
       "parameters": {
-        "source_spine_package": {"flag": "--source-spine-package", "request_field": "spine_asset_id"},
-        "display_name": {"flag": "--display-name", "default": "Spine", "request_field": "display_name"},
-        "skin_name": {"flag": "--skin-name", "default": "", "request_field": "skin_name"},
-        "reference_image": {"flag": "--reference-image", "default": "", "request_field": "input_assets"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana", "image-2"], "request_field": "generation_provider"},
-        "resolution": {"flag": "--resolution", "default": "2K", "choices": ["1K", "2K"], "request_field": "resolution"},
-        "quality": {"flag": "--quality", "default": "standard", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"}
+        "source_spine_package": {
+          "flag": "--source-spine-package",
+          "request_field": "spine_asset_id"
+        },
+        "display_name": {
+          "flag": "--display-name",
+          "default": "Spine",
+          "request_field": "display_name"
+        },
+        "skin_name": {
+          "flag": "--skin-name",
+          "default": "",
+          "request_field": "skin_name"
+        },
+        "reference_image": {
+          "flag": "--reference-image",
+          "default": "",
+          "request_field": "input_assets"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "nano-banana",
+          "choices": [
+            "nano-banana",
+            "image-2"
+          ],
+          "request_field": "generation_provider"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "2K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        }
       }
     },
     "pindou": {
       "command": "pindou-run",
-      "web_sources": ["types.ts:PixelGenFreesizeOptions", "components/InfiniteCanvas.tsx", "services/pixelGenFreesizeService.ts"],
+      "web_sources": [
+        "types.ts:PixelGenFreesizeOptions",
+        "components/InfiniteCanvas.tsx",
+        "services/pixelGenFreesizeService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "hd", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "size_mode": {"flag": "--size-mode", "default": "52", "choices": ["source", "52", "78", "104", "custom"], "request_field": "size_mode"},
-        "custom_size": {"flag": "--custom-size", "default": null, "request_field": "custom_size"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"}
+        "mode": {
+          "flag": "--mode",
+          "default": "hd",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "mode"
+        },
+        "size_mode": {
+          "flag": "--size-mode",
+          "default": "52",
+          "choices": [
+            "source",
+            "52",
+            "78",
+            "104",
+            "custom"
+          ],
+          "request_field": "size_mode"
+        },
+        "custom_size": {
+          "flag": "--custom-size",
+          "default": null,
+          "request_field": "custom_size"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        }
       }
     },
     "character_multi_view": {
       "command": "character-multi-view-run",
-      "web_sources": ["types.ts:CharacterMultiViewOptions", "components/InfiniteCanvas.tsx", "services/characterMultiViewService.ts"],
+      "web_sources": [
+        "types.ts:CharacterMultiViewOptions",
+        "components/InfiniteCanvas.tsx",
+        "services/characterMultiViewService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "hd", "choices": ["pixel", "hd"], "request_field": "pixel"},
-        "canvas_resolution": {"flag": "--canvas-resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "canvas_resolution"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "orientation": {"flag": "--orientation", "default": "纵版", "choices": ["横版", "纵版"], "request_field": "orientation"},
-        "action_description": {"flag": "--extra-constraint", "default": "", "request_field": "extra_constraint"}
+        "mode": {
+          "flag": "--mode",
+          "default": "hd",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "pixel"
+        },
+        "canvas_resolution": {
+          "flag": "--canvas-resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "canvas_resolution"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "orientation": {
+          "flag": "--orientation",
+          "default": "纵版",
+          "choices": [
+            "横版",
+            "纵版"
+          ],
+          "request_field": "orientation"
+        },
+        "action_description": {
+          "flag": "--extra-constraint",
+          "default": "",
+          "request_field": "extra_constraint"
+        }
       }
     },
     "self_loop": {
       "command": "self-loop-run",
-      "web_sources": ["types.ts:SelfLoopVariant", "components/InfiniteCanvas.tsx", "components/Workspace.tsx"],
+      "web_sources": [
+        "types.ts:SelfLoopVariant",
+        "components/InfiniteCanvas.tsx",
+        "components/Workspace.tsx"
+      ],
       "parameters": {
-        "variant": {"flag": "--variant", "default": "horizontal", "choices": ["horizontal", "vertical", "four-way"], "request_field": "mode/direction"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"}
+        "variant": {
+          "flag": "--variant",
+          "default": "horizontal",
+          "choices": [
+            "horizontal",
+            "vertical",
+            "four-way"
+          ],
+          "request_field": "mode/direction"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        }
       }
     },
     "animation_model": {
       "command": "animate-run",
-      "web_sources": ["types.ts:AnimationAgentSettings", "components/AnimateSourcePaddingSettings.tsx", "services/animateService.ts"],
+      "web_sources": [
+        "types.ts:AnimationAgentSettings",
+        "components/AnimateSourcePaddingSettings.tsx",
+        "services/animateService.ts"
+      ],
       "parameters": {
-        "animation_model": {"flag": "--animation-model", "default": "", "conditional_default": {"source_at_most_256x256": "pixel-engine-v1.1", "larger_source": "frame-engine-v1.1"}, "choices": ["pixel-engine-v1.1", "frame-engine-v1.1"], "request_field": "model"},
-        "output_frames": {"flag": "--output-frames", "default": 8, "choices": [4, 6, 8, 10, 12, 16], "request_field": "output_frames"},
-        "optimize_prompt": {"flag": "--optimize-prompt", "default": true, "request_field": "optimize_prompt"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "advanced", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
+        "animation_model": {
+          "flag": "--animation-model",
+          "default": "",
+          "conditional_default": {
+            "source_at_most_256x256": "pixel-engine-v1.1",
+            "larger_source": "frame-engine-v1.1"
+          },
+          "choices": [
+            "pixel-engine-v1.1",
+            "frame-engine-v1.1"
+          ],
+          "request_field": "model"
+        },
+        "output_frames": {
+          "flag": "--output-frames",
+          "default": 8,
+          "choices": [
+            4,
+            6,
+            8,
+            10,
+            12,
+            16
+          ],
+          "request_field": "output_frames"
+        },
+        "optimize_prompt": {
+          "flag": "--optimize-prompt",
+          "default": true,
+          "request_field": "optimize_prompt"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "advanced",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "animation_keyframes": {
       "command": "keyframes-run",
-      "web_sources": ["types.ts:AnimationAgentKeyframeControl", "components/SettingsPanel.tsx", "services/animateService.ts"],
+      "web_sources": [
+        "types.ts:AnimationAgentKeyframeControl",
+        "components/SettingsPanel.tsx",
+        "services/animateService.ts"
+      ],
       "parameters": {
-        "animation_model": {"flag": "--animation-model", "default": "", "conditional_default": {"keyframe_0_at_most_256x256": "pixel-engine-v1.1", "larger_keyframe_0": "frame-engine-v1.1"}, "choices": ["pixel-engine-v1.1", "frame-engine-v1.1"], "request_field": "model"},
-        "total_frames": {"flag": "--total-frames", "default": 8, "choices": [6, 8, 10, 12, 16, 20], "request_field": "total_frames"},
-        "keyframe_strength": {"flag": "--keyframe-strength", "default": [], "request_field": "frames[].strength"},
-        "optimize_prompt": {"flag": "--optimize-prompt", "default": true, "request_field": "optimize_prompt"}
+        "animation_model": {
+          "flag": "--animation-model",
+          "default": "",
+          "conditional_default": {
+            "keyframe_0_at_most_256x256": "pixel-engine-v1.1",
+            "larger_keyframe_0": "frame-engine-v1.1"
+          },
+          "choices": [
+            "pixel-engine-v1.1",
+            "frame-engine-v1.1"
+          ],
+          "request_field": "model"
+        },
+        "total_frames": {
+          "flag": "--total-frames",
+          "default": 8,
+          "choices": [
+            6,
+            8,
+            10,
+            12,
+            16,
+            20
+          ],
+          "request_field": "total_frames"
+        },
+        "keyframe_strength": {
+          "flag": "--keyframe-strength",
+          "default": [],
+          "request_field": "frames[].strength"
+        },
+        "optimize_prompt": {
+          "flag": "--optimize-prompt",
+          "default": true,
+          "request_field": "optimize_prompt"
+        }
       }
     },
     "frame_animation_new": {
       "command": "meowa-animation-run",
-      "web_sources": ["types.ts:AnimationAgentSettings", "components/SettingsPanel.tsx", "services/animateService.ts", "utils/meowaAnimation.ts"],
+      "web_sources": [
+        "types.ts:AnimationAgentSettings",
+        "components/SettingsPanel.tsx",
+        "services/animateService.ts",
+        "utils/meowaAnimation.ts"
+      ],
       "parameters": {
-        "style_mode": {"flag": "--style-mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "style_mode"},
-        "resolution": {"flag": "--resolution", "default": "480p", "choices": ["480p", "720p"], "unavailable_choices": {"pixel": ["720p"]}, "request_field": "resolution"},
-        "alpha_mode": {"flag": "--alpha-mode", "default": "sharp", "conditional_default": {"pixel": "sharp", "hd": "soft"}, "choices": ["soft", "sharp"], "request_field": "alpha_mode"},
-        "last_image_file": {"flag": "--last-image-file", "default": "", "request_field": "last_frame"},
-        "output_frames": {"flag": "--output-frames", "default": 16, "choices": [8, 16, 24, 32], "request_field": "duration_seconds"},
-        "quality_mode": {"flag": "--quality-mode", "default": "medium", "conditional_default": {"pixel": "medium", "hd": "standard"}, "choices": ["standard", "medium", "advanced"], "request_field": "quality_mode"},
-        "animation_mode": {"flag": "--animation-mode", "default": "loop", "choices": ["loop", "non_loop"], "request_field": "animation_mode"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "unavailable_choices": {"pixel": ["advanced"], "hd": ["advanced"]}, "request_field": "remove_bg_method"},
-        "remove_bg_batch_size": {"flag": "--remove-bg-batch-size", "default": "16", "choices": ["4", "8", "16", "all"], "available_when": {"remove_bg_method": ["standard"]}, "request_field": "remove_bg_batch_size"},
-        "background_color": {"flag": "--background-color", "default": "#c6c6c6", "conditional_default": {"none": "#00b140", "standard": "#c6c6c6"}, "pattern": "^#[0-9a-fA-F]{6}$", "request_field": "background_color"},
-        "optimize_prompt": {"flag": "--optimize-prompt", "default": true, "request_field": "action_timeline"},
-        "padding": {"flag": "--padding", "default": 0, "request_field": "source_padding"},
-        "padding_alignment": {"flag": "--padding-alignment", "default": "center", "choices": ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"], "request_field": "source_padding"}
+        "style_mode": {
+          "flag": "--style-mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "style_mode"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "480p",
+          "choices": [
+            "480p",
+            "720p"
+          ],
+          "unavailable_choices": {
+            "pixel": [
+              "720p"
+            ]
+          },
+          "request_field": "resolution"
+        },
+        "alpha_mode": {
+          "flag": "--alpha-mode",
+          "default": "sharp",
+          "conditional_default": {
+            "pixel": "sharp",
+            "hd": "soft"
+          },
+          "choices": [
+            "soft",
+            "sharp"
+          ],
+          "request_field": "alpha_mode"
+        },
+        "last_image_file": {
+          "flag": "--last-image-file",
+          "default": "",
+          "request_field": "last_frame"
+        },
+        "output_frames": {
+          "flag": "--output-frames",
+          "default": 16,
+          "choices": [
+            8,
+            16,
+            24,
+            32
+          ],
+          "request_field": "duration_seconds"
+        },
+        "quality_mode": {
+          "flag": "--quality-mode",
+          "default": "medium",
+          "conditional_default": {
+            "pixel": "medium",
+            "hd": "standard"
+          },
+          "choices": [
+            "standard",
+            "medium",
+            "advanced"
+          ],
+          "request_field": "quality_mode"
+        },
+        "animation_mode": {
+          "flag": "--animation-mode",
+          "default": "loop",
+          "choices": [
+            "loop",
+            "non_loop"
+          ],
+          "request_field": "animation_mode"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "unavailable_choices": {
+            "pixel": [
+              "advanced"
+            ],
+            "hd": [
+              "advanced"
+            ]
+          },
+          "request_field": "remove_bg_method"
+        },
+        "remove_bg_batch_size": {
+          "flag": "--remove-bg-batch-size",
+          "default": "16",
+          "choices": [
+            "4",
+            "8",
+            "16",
+            "all"
+          ],
+          "available_when": {
+            "remove_bg_method": [
+              "standard"
+            ]
+          },
+          "request_field": "remove_bg_batch_size"
+        },
+        "background_color": {
+          "flag": "--background-color",
+          "default": "#c6c6c6",
+          "conditional_default": {
+            "none": "#00b140",
+            "standard": "#c6c6c6"
+          },
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "request_field": "background_color"
+        },
+        "optimize_prompt": {
+          "flag": "--optimize-prompt",
+          "default": true,
+          "request_field": "action_timeline"
+        },
+        "padding": {
+          "flag": "--padding",
+          "default": 0,
+          "request_field": "source_padding"
+        },
+        "padding_alignment": {
+          "flag": "--padding-alignment",
+          "default": "center",
+          "choices": [
+            "top-left",
+            "top",
+            "top-right",
+            "left",
+            "center",
+            "right",
+            "bottom-left",
+            "bottom",
+            "bottom-right"
+          ],
+          "request_field": "source_padding"
+        }
       }
     },
     "video_model": {
       "command": "video-run",
-      "web_sources": ["types.ts:AnimationAgentSettings", "components/SettingsPanel.tsx", "services/animateService.ts"],
+      "web_sources": [
+        "types.ts:AnimationAgentSettings",
+        "components/SettingsPanel.tsx",
+        "services/animateService.ts"
+      ],
       "parameters": {
-        "motion_mode": {"flag": "--motion-mode", "default": "controlled", "choices": ["controlled", "complex"], "request_field": "model_name"},
-        "resolution": {"flag": "--resolution", "default": "480p", "choices": ["480p", "720p"], "request_field": "resolution"},
-        "frame_count": {"flag": "--frame-count", "default": 32, "choices": [32, 40, 48], "request_field": "frame_count"},
-        "pixel": {"flag": "--pixel", "default": false, "request_field": "pixel"}
+        "motion_mode": {
+          "flag": "--motion-mode",
+          "default": "controlled",
+          "choices": [
+            "controlled",
+            "complex"
+          ],
+          "request_field": "model_name"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "480p",
+          "choices": [
+            "480p",
+            "720p"
+          ],
+          "request_field": "resolution"
+        },
+        "frame_count": {
+          "flag": "--frame-count",
+          "default": 32,
+          "choices": [
+            32,
+            40,
+            48
+          ],
+          "request_field": "frame_count"
+        },
+        "pixel": {
+          "flag": "--pixel",
+          "default": false,
+          "request_field": "pixel"
+        }
       }
     },
     "sound_effect": {
       "command": "sound-run",
-      "web_sources": ["types.ts:SoundEffectGenerationSettings", "components/SettingsPanel.tsx", "services/soundEffectService.ts"],
+      "web_sources": [
+        "types.ts:SoundEffectGenerationSettings",
+        "components/SettingsPanel.tsx",
+        "services/soundEffectService.ts"
+      ],
       "parameters": {
-        "count": {"flag": "--count", "default": 4, "request_field": "count"},
-        "duration": {"flag": "--duration", "default": 2, "request_field": "duration"},
-        "loop": {"flag": "--loop", "default": false, "request_field": "loop"},
-        "temperature": {"flag": "--temperature", "default": 0.3, "request_field": "temperature"},
-        "normalize": {"flag": "--normalize", "default": true, "request_field": "normalize"}
+        "count": {
+          "flag": "--count",
+          "default": 4,
+          "request_field": "count"
+        },
+        "duration": {
+          "flag": "--duration",
+          "default": 2,
+          "request_field": "duration"
+        },
+        "loop": {
+          "flag": "--loop",
+          "default": false,
+          "request_field": "loop"
+        },
+        "temperature": {
+          "flag": "--temperature",
+          "default": 0.3,
+          "request_field": "temperature"
+        },
+        "normalize": {
+          "flag": "--normalize",
+          "default": true,
+          "request_field": "normalize"
+        }
       }
     },
     "music": {
       "command": "music-run",
-      "web_sources": ["types.ts:SoundEffectBgmOutputMode", "components/SettingsPanel.tsx", "services/soundEffectWorkflowConfig.ts", "services/soundEffectService.ts"],
+      "web_sources": [
+        "types.ts:SoundEffectBgmOutputMode",
+        "components/SettingsPanel.tsx",
+        "services/soundEffectWorkflowConfig.ts",
+        "services/soundEffectService.ts"
+      ],
       "parameters": {
-        "output_mode": {"flag": "--output-mode", "default": "pro", "choices": ["demo", "pro"], "request_field": "demo/audio_generate"}
+        "output_mode": {
+          "flag": "--output-mode",
+          "default": "pro",
+          "choices": [
+            "demo",
+            "pro"
+          ],
+          "request_field": "demo/audio_generate"
+        }
       }
     },
     "pixel_isometric": {
       "command": "isometric-gen-run",
-      "web_sources": ["types.ts:MapEditorSettings", "services/textureGenService.ts"],
+      "web_sources": [
+        "types.ts:MapEditorSettings",
+        "services/textureGenService.ts"
+      ],
       "parameters": {
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "similar_tiles": {"flag": "--similar-tiles", "default": false, "request_field": "similar_tiles"},
-        "tile_only": {"flag": "--tile-only", "default": false, "request_field": "tile_only"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard", "advanced"], "request_field": "remove_bg_method"}
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "similar_tiles": {
+          "flag": "--similar-tiles",
+          "default": false,
+          "request_field": "similar_tiles"
+        },
+        "tile_only": {
+          "flag": "--tile-only",
+          "default": false,
+          "request_field": "tile_only"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "pixel_hex_isometric": {
       "command": "hex-isometric-gen-run",
-      "web_sources": ["types.ts:MapEditorSettings", "services/textureGenService.ts"],
+      "web_sources": [
+        "types.ts:MapEditorSettings",
+        "services/textureGenService.ts"
+      ],
       "parameters": {
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "similar_tiles": {"flag": "--similar-tiles", "default": true, "request_field": "similar_tiles"},
-        "tile_only": {"flag": "--tile-only", "default": false, "request_field": "tile_only"}
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "similar_tiles": {
+          "flag": "--similar-tiles",
+          "default": true,
+          "request_field": "similar_tiles"
+        },
+        "tile_only": {
+          "flag": "--tile-only",
+          "default": false,
+          "request_field": "tile_only"
+        }
       }
     },
     "hd_isometric": {
       "command": "hd-isometric-gen-run",
-      "web_sources": ["types.ts:MapEditorSettings", "services/textureGenService.ts"],
+      "web_sources": [
+        "types.ts:MapEditorSettings",
+        "services/textureGenService.ts"
+      ],
       "parameters": {
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "similar_tiles": {"flag": "--similar-tiles", "default": true, "request_field": "similar_tiles"},
-        "tile_only": {"flag": "--tile-only", "default": false, "request_field": "tile_only"}
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "similar_tiles": {
+          "flag": "--similar-tiles",
+          "default": true,
+          "request_field": "similar_tiles"
+        },
+        "tile_only": {
+          "flag": "--tile-only",
+          "default": false,
+          "request_field": "tile_only"
+        }
       }
     },
     "hd_hex_isometric": {
       "command": "hd-hex-isometric-gen-run",
-      "web_sources": ["types.ts:MapEditorSettings", "services/textureGenService.ts"],
+      "web_sources": [
+        "types.ts:MapEditorSettings",
+        "services/textureGenService.ts"
+      ],
       "parameters": {
-        "mode": {"flag": "--mode", "default": "standard", "choices": ["standard", "tetraploid"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "nano-banana", "choices": ["nano-banana"], "request_field": "generation_provider"},
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "similar_tiles": {"flag": "--similar-tiles", "default": true, "request_field": "similar_tiles"},
-        "tile_only": {"flag": "--tile-only", "default": false, "request_field": "tile_only"}
+        "mode": {
+          "flag": "--mode",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "tetraploid"
+          ],
+          "request_field": "mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "nano-banana",
+          "choices": [
+            "nano-banana"
+          ],
+          "request_field": "generation_provider"
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "similar_tiles": {
+          "flag": "--similar-tiles",
+          "default": true,
+          "request_field": "similar_tiles"
+        },
+        "tile_only": {
+          "flag": "--tile-only",
+          "default": false,
+          "request_field": "tile_only"
+        }
       }
     },
     "side_scrolling_pixel": {
       "command": "side-scrolling-map-run",
-      "web_sources": ["types.ts:SideScrollingGenerationSettings", "services/sideScrollingService.ts"],
+      "web_sources": [
+        "types.ts:SideScrollingGenerationSettings",
+        "services/sideScrollingService.ts"
+      ],
       "parameters": {
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["standard", "advanced"], "request_field": "remove_bg_method"}
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "advanced"
+          ],
+          "request_field": "remove_bg_method"
+        }
       }
     },
     "side_scrolling_hd": {
       "command": "hd-side-scrolling-map-run",
-      "web_sources": ["types.ts:SideScrollingGenerationSettings", "services/sideScrollingService.ts"],
+      "web_sources": [
+        "types.ts:SideScrollingGenerationSettings",
+        "services/sideScrollingService.ts"
+      ],
       "parameters": {
-        "generation_speed": {"flag": "--generation-speed", "default": "normal", "choices": ["normal", "fast"], "request_field": "generation_speed"},
-        "art_style": {"flag": "--art-style", "default": "2d_hd", "choices": ["2d_hd", "2d_cartoon", "2d_ink", "clay", "low_poly_3d", "steampunk", "anime_hd"], "request_field": "art_style"}
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "request_field": "generation_speed"
+        },
+        "art_style": {
+          "flag": "--art-style",
+          "default": "2d_hd",
+          "choices": [
+            "2d_hd",
+            "2d_cartoon",
+            "2d_ink",
+            "clay",
+            "low_poly_3d",
+            "steampunk",
+            "anime_hd"
+          ],
+          "request_field": "art_style"
+        }
+      }
+    },
+    "video_reference_edit": {
+      "command": "meowa-animation-edit-run",
+      "web_sources": [
+        "components/AnimationEditPanel.tsx",
+        "services/animateService.ts"
+      ],
+      "parameters": {
+        "video_file": {
+          "flag": "--video-file",
+          "request_field": "reference_video"
+        },
+        "image_file": {
+          "flag": "--image-file",
+          "request_field": "reference_image",
+          "default": ""
+        },
+        "edit_intent": {
+          "flag": "--edit-intent",
+          "request_field": "edit_intent"
+        },
+        "video_description": {
+          "flag": "--video-description",
+          "request_field": "video_description",
+          "default": "",
+          "required_when": "generation; nonblank"
+        },
+        "image_description": {
+          "flag": "--image-description",
+          "request_field": "image_description",
+          "default": "",
+          "required_when": "generation with image_file; nonblank"
+        },
+        "background_color": {
+          "flag": "--background-color",
+          "request_field": "background_color",
+          "default": "#ffffff"
+        },
+        "style_mode": {
+          "flag": "--style-mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "style_mode"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "480p",
+          "choices": [
+            "480p",
+            "720p"
+          ],
+          "request_field": "resolution",
+          "notes": "Pixel mode requires 480p; HD supports 480p and 720p."
+        },
+        "alpha_mode": {
+          "flag": "--alpha-mode",
+          "default": "sharp",
+          "choices": [
+            "sharp",
+            "soft"
+          ],
+          "request_field": "alpha_mode",
+          "default_by_style_mode": {
+            "pixel": "sharp",
+            "hd": "soft"
+          }
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "remove_bg_method"
+        },
+        "remove_bg_batch_size": {
+          "flag": "--remove-bg-batch-size",
+          "default": "16",
+          "choices": [
+            "4",
+            "8",
+            "16",
+            "all"
+          ],
+          "request_field": "remove_bg_batch_size"
+        }
+      },
+      "reference_timing": {
+        "max_duration_seconds": 4,
+        "generation_fps": 24,
+        "output_fps": 8,
+        "source_duration_tiers": {
+          "2": 16,
+          "3": 24,
+          "4": 32
+        },
+        "generation_frames_by_output": {
+          "8": 56,
+          "16": 56,
+          "24": 73,
+          "32": 90
+        }
+      }
+    },
+    "video_reference_edit_prompts": {
+      "command": "meowa-animation-edit-prompts",
+      "web_sources": [
+        "components/AnimationEditPanel.tsx",
+        "services/animateService.ts"
+      ],
+      "parameters": {
+        "video_file": {
+          "flag": "--video-file",
+          "request_field": "reference_video"
+        },
+        "image_file": {
+          "flag": "--image-file",
+          "request_field": "reference_image",
+          "default": ""
+        },
+        "edit_intent": {
+          "flag": "--edit-intent",
+          "request_field": "edit_intent"
+        },
+        "video_description": {
+          "flag": "--video-description",
+          "request_field": "video_description",
+          "default": ""
+        },
+        "image_description": {
+          "flag": "--image-description",
+          "request_field": "image_description",
+          "default": ""
+        },
+        "output_language": {
+          "flag": "--output-language",
+          "default": "zh",
+          "choices": [
+            "zh",
+            "en"
+          ],
+          "request_field": "output_language"
+        },
+        "background_color": {
+          "flag": "--background-color",
+          "request_field": "background_color",
+          "default": "#ffffff"
+        },
+        "style_mode": {
+          "flag": "--style-mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "style_mode"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "480p",
+          "choices": [
+            "480p",
+            "720p"
+          ],
+          "request_field": "resolution",
+          "notes": "Pixel mode requires 480p; HD supports 480p and 720p."
+        },
+        "alpha_mode": {
+          "flag": "--alpha-mode",
+          "default": "sharp",
+          "choices": [
+            "sharp",
+            "soft"
+          ],
+          "request_field": "alpha_mode",
+          "default_by_style_mode": {
+            "pixel": "sharp",
+            "hd": "soft"
+          }
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "remove_bg_method"
+        },
+        "remove_bg_batch_size": {
+          "flag": "--remove-bg-batch-size",
+          "default": "16",
+          "choices": [
+            "4",
+            "8",
+            "16",
+            "all"
+          ],
+          "request_field": "remove_bg_batch_size"
+        }
+      },
+      "reference_timing": {
+        "max_duration_seconds": 4,
+        "generation_fps": 24,
+        "output_fps": 8,
+        "source_duration_tiers": {
+          "2": 16,
+          "3": 24,
+          "4": 32
+        },
+        "generation_frames_by_output": {
+          "8": 56,
+          "16": 56,
+          "24": 73,
+          "32": 90
+        }
       }
     },
     "free_credits": {

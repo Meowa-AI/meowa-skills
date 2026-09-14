@@ -213,3 +213,20 @@ Instead of a free-form prompt, action templates may be selected with both `--act
 - Confirm the camera does not drift unless the prompt explicitly requests it.
 - Confirm pixel animation remains crisp at integer zoom.
 - Deliver only files listed in `final_outputs.json`.
+
+## Animation Edit
+
+Use `meowa-animation-edit-prompts --video-file motion.webp --image-file appearance.png --edit-intent 'Replace the character appearance'`
+for the three reviewable fields (`edit_intent`, `video_description`, `image_description`). The image is optional;
+video is required (MP4 or animated GIF/WebP, at most 4 seconds and 32 MiB). `--output-language zh|en` defaults to `zh`.
+Then pass reviewed text to `meowa-animation-edit-run --video-file motion.webp --edit-intent '...' --video-description '...' --image-description '...'`,
+with the same optional `--image-file`. Descriptions start empty. Generation requires nonblank edit intent and video content, plus image content when an image is supplied. Polishing is manual and optional; review or fill the fields before running.
+The preset matches the Animation Edit web tab: Detailed quality, Pixel / 480p / standard removal (16-frame batch). Duration is automatic: source ≤2s → 16 final frames, 2–3s → 24, 3–4s → 32, at 8fps. Generation costs 15 credits for 2s or 20 for 3–4s; HD 720p adds 10. Standard removal adds 5 credits per batch (4/8/16/all).
+Reference and generated video use 56/73/90 frames at 24fps for the 2/3/4-second output tiers. Resampling retimes one complete action without repeating cycles. The shared 8/16/24/32 mapping remains 56/56/73/90; automatic selection has a two-second output minimum.
+Only final media is downloaded, using the existing animation job polling and artifact allowlist.
+
+Video-reference editing: both `meowa-animation-edit-prompts` and `meowa-animation-edit-run` accept `--background-color '#RRGGBB'` (default `#ffffff`). The same color fills transparent pixels in every reference-animation frame and the appearance image; opaque pixels are unchanged. Use the same color for polishing and generation. Background filling adds no credits.
+
+Video-reference modes: `--style-mode pixel|hd` (default pixel), `--resolution 480p|720p` (default 480p; 720p only HD), `--remove-bg-method none|standard` (default standard), `--remove-bg-batch-size 4|8|16|all` (default 16), `--alpha-mode sharp|soft` (default sharp; choose soft for HD translucent edges). Both references must have identical original dimensions. Pixel references must be at most 256 pixels per side. Stage1 keeps original resolution; generation uses nearest-neighbor integer scaling for Pixel or Lanczos scaling for HD, with the shared image-animation padding geometry. Generated Pixel frames use the same perfect-pixel and background-removal ordering as image animation. HD uses the same frame extraction and removal path.
+
+Image and video-reference animation share the same discount display: the struck-through original price is 15 credits above the actual calculated charge. The CSV `display_original_credits` column is display-only; API charges and refunds continue to use `total_credits`.

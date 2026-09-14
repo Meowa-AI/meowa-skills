@@ -128,3 +128,13 @@ python3 skills/game-assets/meowart_api.py <command> --help
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。
 
 Image2.5 通用生成支持 `--remove-bg-method none|standard`，默认 `none`，与网页去背景开关一致。开启后尝试原生透明 PNG，免费；失败则保留原背景、不后处理、不扣附加费。万能编辑选择 Image2.5 时同样免费，高级抠图不可用。重新打开项目或轮询原任务不会再次提交生成。
+
+### Animation Edit
+
+The Animation Edit tab has a required MP4/animated GIF/WebP reference and an optional static appearance image.
+`meowa-animation-edit-prompts --video-file motion.webp --edit-intent 'Replace the character' [--image-file panda.png]`
+returns three reviewable strings. Pass the reviewed `--edit-intent`, `--video-description` and `--image-description`
+to `meowa-animation-edit-run` with the same media. Descriptions start empty; generation requires edit intent and video content, plus image content with an image reference. Polishing is manual and optional.
+References are limited to 4 seconds. Output duration is selected automatically: up to 2 seconds → 16 frames, up to 3 seconds → 24 frames, up to 4 seconds → 32 frames. Generation uses 56/73/90 frames at 24fps; final media uses 8fps. Detailed quality, Pixel/480p and standard removal are defaults. Generation costs 15 credits for 2 seconds or 20 for 3–4 seconds; removal adds 5 per batch, and HD 720p adds 10. Only final media is downloaded.
+
+Video-reference editing: both `meowa-animation-edit-prompts` and `meowa-animation-edit-run` accept `--background-color '#RRGGBB'` (default `#ffffff`). The same color fills transparent pixels in every reference-animation frame and the appearance image; opaque pixels are unchanged. Use the same color for polishing and generation. Background filling adds no credits.

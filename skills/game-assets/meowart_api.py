@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.13.1"
+MEOWART_API_CLI_VERSION = "2026.09.14.5"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -5862,6 +5862,12 @@ class RemoveBackgroundQualityAction(argparse.Action):
         namespace._remove_bg_quality_explicit = True
 
 
+class AnimationEditAlphaAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        setattr(namespace, "_edit_alpha_explicit", True)
+
+
 class GameAssetsArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         arguments = list(sys.argv[1:] if args is None else args)
@@ -5869,6 +5875,9 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
         quality_explicit = vars(parsed).pop("_remove_bg_quality_explicit", False)
         if parsed.command in {"remove-background-submit", "remove-background-run"} and not quality_explicit:
             parsed.quality = "standard" if parsed.mode == "pixel" else "advanced"
+        edit_alpha_explicit = vars(parsed).pop("_edit_alpha_explicit", False)
+        if parsed.command in {"meowa-animation-edit-run", "meowa-animation-edit-prompts"} and not edit_alpha_explicit:
+            parsed.alpha_mode = "sharp" if parsed.style_mode == "pixel" else "soft"
         return parsed
 
 
@@ -7150,6 +7159,24 @@ def build_parser() -> argparse.ArgumentParser:
             animate_run_parser._add_action(action)
     add_shared_runtime_args(animate_run_parser)
 
+    for edit_command in ("meowa-animation-edit-run", "meowa-animation-edit-prompts"):
+        edit_parser = subparsers.add_parser(edit_command, help="Edit a motion reference or prepare reviewable edit text")
+        add_shared_path_args(edit_parser)
+        add_shared_runtime_args(edit_parser)
+        edit_parser.add_argument("--video-file", required=True)
+        edit_parser.add_argument("--image-file", default="")
+        edit_parser.add_argument("--edit-intent", required=True)
+        edit_parser.add_argument("--video-description", default="")
+        edit_parser.add_argument("--image-description", default="")
+        edit_parser.add_argument("--background-color", default="#ffffff", help="Fill transparent reference pixels with #RRGGBB; applies to both media inputs")
+        edit_parser.add_argument("--style-mode", choices=["pixel", "hd"], default="pixel")
+        edit_parser.add_argument("--resolution", choices=["480p", "720p"], default="480p", help="720p requires HD mode")
+        edit_parser.add_argument("--alpha-mode", choices=["sharp", "soft"], default="sharp", action=AnimationEditAlphaAction, help="Default sharp for Pixel, soft for HD")
+        edit_parser.add_argument("--remove-bg-method", choices=["none", "standard"], default="standard")
+        edit_parser.add_argument("--remove-bg-batch-size", choices=["4", "8", "16", "all"], default="16")
+        if edit_command == "meowa-animation-edit-prompts":
+            edit_parser.add_argument("--output-language", choices=["zh", "en"], default="zh")
+
     meowa_animation_run_parser = subparsers.add_parser(
         "meowa-animation-run",
         help="Create a frame animation with Meowa Animation",
@@ -7336,6 +7363,8 @@ def build_parser() -> argparse.ArgumentParser:
         "custom-workflow-run",
         "animate-run",
         "meowa-animation-run",
+        "meowa-animation-edit-run",
+        "meowa-animation-edit-prompts",
         "keyframes-run",
     }
     public_commands.update(
@@ -10052,6 +10081,43 @@ def main() -> int:
             )
             print(f"[INFO] saved_dir={output_dir}")
             print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command in {"meowa-animation-edit-run", "meowa-animation-edit-prompts"}:
+            data = {"edit_intent": args.edit_intent, "video_description": args.video_description,
+                    "image_description": args.image_description if args.image_file else "", "background_color": args.background_color}
+            if args.style_mode == "pixel" and args.resolution != "480p":
+                raise ValueError("Pixel mode requires 480p")
+            data.update(style_mode=args.style_mode, resolution=args.resolution, alpha_mode=args.alpha_mode,
+                        remove_bg_method=args.remove_bg_method, remove_bg_batch_size=args.remove_bg_batch_size)
+            polish = args.command == "meowa-animation-edit-prompts"
+            if not polish and (not args.edit_intent.strip() or not args.video_description.strip()
+                               or (args.image_file and not args.image_description.strip())):
+                raise ValueError("Fill edit intent and video content before generation; image content is also required with an image reference")
+            if polish:
+                data["output_language"] = args.output_language
+            response, body = _request_json(method="POST",
+                url=_normalize_base_url(args.api_base, "/api/workflows/meowa_animation/edit/" + ("prompts" if polish else "run")),
+                headers=_base_headers(args.api_key), data=data,
+                files={"reference_video": _upload_part(Path(args.video_file).expanduser().resolve(), label="reference video"),
+                    **({"reference_image": _upload_part(Path(args.image_file).expanduser().resolve(), label="appearance image")} if args.image_file else {})},
+                timeout=args.timeout, verify=verify)
+            if response.status_code >= 400:
+                raise RuntimeError(json.dumps(body, ensure_ascii=False))
+            if polish:
+                print(json.dumps({key: str(body[key]) for key in ("edit_intent", "video_description", "image_description")}, ensure_ascii=False, indent=2))
+                return 0
+            job_id = str(body.get("api_job_id") or body.get("job_id") or "")
+            if not job_id:
+                raise RuntimeError("Animation edit response missing job id; do not resubmit automatically")
+            print(f"[INFO] submitted api_job_id={job_id}")
+            final = wait_animate_job(api_base=args.api_base, api_key=args.api_key, api_job_id=job_id,
+                timeout=args.timeout, max_wait=args.max_wait, poll_interval=args.poll_interval, verify=verify)
+            output_dir, _ = _save_run_outputs(output_root=str(effective_output_dir), slug_seed=args.edit_intent,
+                submit_payload=body, final_payload=final, timeout=args.timeout, verify=verify,
+                api_key=args.api_key, no_download=args.no_download, workflow_id="meowa_animation")
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final))
             return 0
 
         if args.command == "meowa-animation-run":
