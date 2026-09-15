@@ -26,7 +26,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.14.5"
+MEOWART_API_CLI_VERSION = "2026.09.14.6"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7126,7 +7126,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(custom_workflow_run)
     custom_workflow_run.add_argument("--workflow-id", required=True)
     custom_workflow_run.add_argument("--template-id", required=True)
-    custom_workflow_run.add_argument("--params-json", required=True, help="JSON object; image-upload values are local file paths")
+    custom_workflow_run.add_argument("--params-json", required=True, help="JSON object using catalog fields and defaults; image-upload values are local file paths")
     custom_workflow_run.add_argument("--project-id", required=True)
     custom_workflow_run.add_argument("--thread-id", required=True)
 

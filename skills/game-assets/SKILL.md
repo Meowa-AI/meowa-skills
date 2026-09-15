@@ -156,3 +156,8 @@ HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image
 Image2.5 通用生成支持 `--remove-bg-method none|standard`，默认 `none`，与网页去背景开关一致。开启后尝试原生透明 PNG，免费；失败则保留原背景、不后处理、不扣附加费。万能编辑选择 Image2.5 时同样免费，高级抠图不可用。重新打开项目或轮询原任务不会再次提交生成。
 
 Video-reference animation accepts MP4 or animated GIF/WebP up to 4 seconds. Both edit commands select output duration from the source: ≤2s → 16 frames, ≤3s → 24, ≤4s → 32 at 8fps. Reference and generation are aligned to 56/73/90 frames at 24fps. See [Animation and video](references/animation-and-video.md) for shared pricing.
+
+修仙定制模板：先用 `custom-workflow-list` 确认账户授权，再用 `custom-workflow-run --workflow-id fixed_pixel_gen --template-id size_32x32|size_64x64|size_128x128 --params-json ...`。
+JSON 的 `generation_provider` 可选 `nanobanana`（默认）、`image2`、`image2_5`，与网页模型选择一致；省略时按服务端 schema 默认值提交。
+仅模型可切换：内部生成固定 1K、1:1，Nano Banana 固定普通模式，GPT Image2 固定精细，GPT Image2.5 固定极致；不接受质量、分辨率或路由参数。
+原有类型、风格、Padding 和额外要求按所选模板提供。GPT Image2.5 使用原生透明，20 积分；其他模型含高级抠图，30 积分。透明失败则任务失败，不追加抠图。
