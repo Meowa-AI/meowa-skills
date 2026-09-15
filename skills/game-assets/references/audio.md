@@ -7,12 +7,13 @@
 
 ## Purpose
 
-Use this module to create gameplay sound effects, coherent effect packs, variations of one effect, music direction, or rendered game music.
+Use this module to create gameplay sound effects, coherent effect packs, variations of one effect, music direction, rendered game music, or spoken character lines.
 
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
 | Create sound effects | `sound-run` | Produce one effect, a coherent pack, or variants | Pack and variant modes are mutually exclusive |
 | Draft or render music | `music-run` | Produce a demo or production track | Select the web product's `demo` or `pro` output mode |
+| Speak one line | `tts-run` | Produce one spoken audio clip from text | One line per job, up to 200 characters |
 
 Finalize gameplay timing, action, and loop intent before generating audio. Visual references may guide music mood, but they do not replace an explicit description of instrumentation, energy, and loop behavior.
 
@@ -64,6 +65,22 @@ python3 skills/game-assets/meowart_api.py music-run \
 ```
 
 Use `--output-mode demo` only when the user explicitly wants the web product's preview mode. Repeat `--reference-image` when visual references should influence mood or instrumentation.
+
+## Speech (TTS)
+
+Speak one character line:
+
+```bash
+python3 skills/game-assets/meowart_api.py tts-run \
+  --text "一闪一闪亮晶晶，满天都是小星星。" \
+  --voice "可爱的小女孩，明亮欢快" \
+  --language Chinese \
+  --output-dir <output-dir>
+```
+
+`--text` is the exact line to speak, counted after trimming, up to 200 characters; longer scripts must be split into one job per line. `--voice` is a natural-language voice description and defaults to `可爱的小女孩，明亮欢快`, the same default the web Speech tab opens with. `--language` defaults to `Auto` and accepts `Chinese`, `English`, `Japanese`, `Korean`, `French`, `German`, `Spanish`, `Portuguese`, `Russian`, or `Italian`.
+
+Speech jobs belong to a project. Pass `--project-id` (and optionally `--thread-id`) to reuse an existing project; omit it to create one titled by `--project-title`. Cost is 5 credits per 50 characters (5 / 10 / 15 / 20 credits for up to 50 / 100 / 150 / 200 characters). Recover an interrupted job with `tts-poll --job-id <job-id>`; recovery never resubmits or charges again.
 
 ## Validate
 

@@ -1467,6 +1467,44 @@
         }
       }
     },
+    "tts": {
+      "command": "tts-run",
+      "web_sources": [
+        "types.ts:SoundEffectTtsLanguage",
+        "components/SettingsPanel.tsx",
+        "services/soundEffectWorkflowConfig.ts",
+        "services/soundEffectService.ts"
+      ],
+      "parameters": {
+        "text": {
+          "flag": "--text",
+          "request_field": "text"
+        },
+        "voice": {
+          "flag": "--voice",
+          "default": "可爱的小女孩，明亮欢快",
+          "request_field": "voice_description"
+        },
+        "language": {
+          "flag": "--language",
+          "default": "Auto",
+          "choices": [
+            "Auto",
+            "Chinese",
+            "English",
+            "Japanese",
+            "Korean",
+            "French",
+            "German",
+            "Spanish",
+            "Portuguese",
+            "Russian",
+            "Italian"
+          ],
+          "request_field": "language"
+        }
+      }
+    },
     "pixel_isometric": {
       "command": "isometric-gen-run",
       "web_sources": [

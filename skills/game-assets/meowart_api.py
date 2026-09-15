@@ -14,6 +14,7 @@ import re
 import stat
 import sys
 import time
+import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
@@ -26,7 +27,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.14.6"
+MEOWART_API_CLI_VERSION = "2026.09.15.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -191,6 +192,16 @@ CHARACTER_MULTI_VIEW_POLL_COMMANDS = {
     "character-8-direction-poll",
     "character-eight-direction-poll",
 }
+MEOWA_TTS_ENDPOINT = "/api/workflows/meowa_tts/jobs"
+# Mirrors the web TTS tab: services/soundEffectWorkflowConfig.ts and
+# app/workflows/meowa_tts/{backend,pricing}.py. 5 credits per 50 characters, up to 200.
+MEOWA_TTS_MAX_TEXT_CHARACTERS = 200
+MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION = "可爱的小女孩，明亮欢快"
+MEOWA_TTS_DEFAULT_LANGUAGE = "Auto"
+MEOWA_TTS_LANGUAGE_CHOICES = [
+    "Auto", "Chinese", "English", "Japanese", "Korean", "French",
+    "German", "Spanish", "Portuguese", "Russian", "Italian",
+]
 UI_GEN_ENDPOINT = "/api/workflows/general_ui_gen/run"
 UI_GEN_SUBMIT_COMMANDS = {
     "ui-gen-submit",
@@ -1609,6 +1620,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
+    "meowa_tts": frozenset({"audio_path", "audio_paths", "url"}),
     "meowa_animation": frozenset({"video_path", "background_video_path", "url"}),
     "one_click_pixelate": frozenset({"output_path"}),
     "one_click_upgrade": frozenset({"output_paths"}),
@@ -5712,6 +5724,101 @@ def run_music_generator(
     return submit_payload, final_payload
 
 
+def submit_meowa_tts(
+    *,
+    api_base: str,
+    api_key: str,
+    text: str,
+    project_id: str,
+    thread_id: str = "",
+    voice_description: str = MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION,
+    language: str = MEOWA_TTS_DEFAULT_LANGUAGE,
+    client_operation_id: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    normalized_text = str(text or "").strip()
+    if not normalized_text:
+        raise ValueError("--text is required")
+    if len(normalized_text) > MEOWA_TTS_MAX_TEXT_CHARACTERS:
+        raise ValueError(
+            f"--text must not exceed {MEOWA_TTS_MAX_TEXT_CHARACTERS} characters "
+            f"(got {len(normalized_text)})"
+        )
+    normalized_voice = str(voice_description or "").strip()
+    if not normalized_voice:
+        raise ValueError("--voice must not be empty")
+    if language not in MEOWA_TTS_LANGUAGE_CHOICES:
+        raise ValueError(f"--language must be one of: {', '.join(MEOWA_TTS_LANGUAGE_CHOICES)}")
+    normalized_project_id = str(project_id or "").strip()
+    if not normalized_project_id:
+        raise ValueError("project_id is required")
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        operation_seed = f"{normalized_project_id}:{thread_id}:{normalized_text}:{normalized_voice}:{language}:{uuid.uuid4().hex}"
+        operation_id = f"tts:{hashlib.sha256(operation_seed.encode('utf-8')).hexdigest()[:32]}"
+    payload = {
+        "project_id": normalized_project_id,
+        "thread_id": str(thread_id or "").strip() or None,
+        "client_operation_id": operation_id,
+        "text": normalized_text,
+        "voice_description": normalized_voice,
+        "language": language,
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, MEOWA_TTS_ENDPOINT),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
+def run_meowa_tts(
+    *,
+    api_base: str,
+    api_key: str,
+    text: str,
+    project_id: str,
+    thread_id: str = "",
+    voice_description: str = MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION,
+    language: str = MEOWA_TTS_DEFAULT_LANGUAGE,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_meowa_tts(
+        api_base=api_base,
+        api_key=api_key,
+        text=text,
+        project_id=project_id,
+        thread_id=thread_id,
+        voice_description=voice_description,
+        language=language,
+        timeout=timeout,
+        verify=verify,
+    )
+    api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
+    if not api_job_id:
+        raise RuntimeError("tts submit response missing job_id")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload={"job_id": api_job_id},
+        label="tts",
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
+
+
 def poll_animate_job(
     *,
     api_base: str,
@@ -6989,6 +7096,27 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(music_poll)
     music_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
+    tts_run = subparsers.add_parser(
+        "tts-run",
+        help="Synthesize one spoken line (5 credits per 50 characters, up to 200 characters)",
+    )
+    add_shared_path_args(tts_run)
+    tts_run.add_argument("--text", required=True, help=f"Line to speak; up to {MEOWA_TTS_MAX_TEXT_CHARACTERS} characters")
+    tts_run.add_argument(
+        "--voice",
+        default=MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION,
+        help="Natural-language voice description, e.g. a hoarse, dignified elderly woman",
+    )
+    tts_run.add_argument("--language", default=MEOWA_TTS_DEFAULT_LANGUAGE, choices=MEOWA_TTS_LANGUAGE_CHOICES)
+    tts_run.add_argument("--project-id", default="", help="Existing project id; omit to create one")
+    tts_run.add_argument("--thread-id", default="", help="Optional thread id inside --project-id")
+    tts_run.add_argument("--project-title", default="Speech", help="Title for the auto-created project")
+    add_shared_runtime_args(tts_run)
+
+    tts_poll = subparsers.add_parser("tts-poll", help="Recover one speech job and download its final audio")
+    add_shared_path_args(tts_poll)
+    tts_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
     pindou_run = subparsers.add_parser("pindou-run", help="Convert or generate a Pindou bead-art asset")
     add_shared_path_args(pindou_run)
     pindou_run.add_argument("--source-image", default="")
@@ -7351,6 +7479,7 @@ def build_parser() -> argparse.ArgumentParser:
         "hd-isometric-gen-run",
         "hd-hex-isometric-gen-run",
         "music-run",
+        "tts-run",
         "pindou-run",
         "spine-run",
         "spine-inspect",
@@ -9778,6 +9907,109 @@ def main() -> int:
                     api_key=args.api_key,
                     no_download=args.no_download,
                     workflow_id="music_generator",
+                )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload={"api_job_id": args.api_job_id},
+                response_payload=payload,
+                downloads=downloads,
+                effective_output_dir=str(effective_poll_output_dir),
+            )
+            if downloads:
+                print(f"[INFO] saved_dir={effective_poll_output_dir}")
+            print(_format_json_for_display(payload))
+            return _command_exit_code(
+                0 if str(payload.get("status") or "").strip().lower() == "success" else 1
+            )
+
+        if args.command == "tts-run":
+            project_id = str(args.project_id or "").strip()
+            thread_id = str(args.thread_id or "").strip()
+            if thread_id and not project_id:
+                raise ValueError("--thread-id requires --project-id")
+            if not project_id:
+                project_id = _create_game_design_project(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    title=str(args.project_title or "Speech").strip() or "Speech",
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                print(f"[INFO] created project_id={project_id}")
+            slug_seed = args.text
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
+            request_payload = {
+                "text": args.text,
+                "voice_description": args.voice,
+                "language": args.language,
+                "project_id": project_id,
+                "thread_id": thread_id or None,
+            }
+            submit_payload, final_payload = run_meowa_tts(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                text=args.text,
+                project_id=project_id,
+                thread_id=thread_id,
+                voice_description=args.voice,
+                language=args.language,
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir),
+                slug_seed=slug_seed,
+                submit_payload=submit_payload,
+                final_payload=final_payload,
+                timeout=args.timeout,
+                verify=verify,
+                api_key=args.api_key,
+                no_download=args.no_download,
+                workflow_id="meowa_tts",
+            )
+            _write_meta(
+                run_dir=run_dir,
+                started_at=started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                args=args,
+                request_payload=request_payload,
+                response_payload={"submit": submit_payload, "final": final_payload},
+                downloads=downloads,
+                effective_output_dir=str(output_dir),
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command == "tts-poll":
+            payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload={"job_id": args.api_job_id},
+                label="tts",
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            downloads: list[dict[str, Any]] = []
+            effective_poll_output_dir = Path(str(effective_output_dir)).expanduser()
+            if str(payload.get("status") or "").strip().lower() == "success":
+                effective_poll_output_dir, downloads = _save_run_outputs(
+                    output_root=str(effective_output_dir),
+                    slug_seed=args.api_job_id,
+                    submit_payload={"api_job_id": args.api_job_id},
+                    final_payload=payload,
+                    timeout=args.timeout,
+                    verify=verify,
+                    api_key=args.api_key,
+                    no_download=args.no_download,
+                    workflow_id="meowa_tts",
                 )
             _write_meta(
                 run_dir=run_dir,

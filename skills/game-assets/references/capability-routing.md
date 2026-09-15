@@ -36,6 +36,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Turn a first frame, or first and last frames, into a short clip | `video-run` | `animation-and-video.md` |
 | Create one sound, a sound pack, or variants | `sound-run` | `audio.md` |
 | Draft music direction or render a track | `music-run` | `audio.md` |
+| Speak one character line from text | `tts-run` | `audio.md` |
 
 ## Selection rules
 

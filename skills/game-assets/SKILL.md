@@ -1,6 +1,6 @@
 ---
 name: game-assets
-description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, bundled Meowa CLI execution, or final game-project deliverable validation.
+description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS), bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets
@@ -11,7 +11,7 @@ Plan a game or create game-ready visual and audio assets. For game concepts, sys
 
 Determine these requirements before selecting a command:
 
-- Runtime asset type: sprite, prop, UI, texture, tileset, map layer, animation, video, sound, or music.
+- Runtime asset type: sprite, prop, UI, texture, tileset, map layer, animation, video, sound, music, or spoken line.
 - Art representation: pixel or HD.
 - Final dimensions, sprite-cell size, count, aspect ratio, transparency, and file format.
 - Deliverable structure: one asset, a variant pack, sprite sheet, directional set, layer set, animation, or reusable atlas.
@@ -86,7 +86,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 | [UI and image editing](references/ui-and-image-editing.md) | Generate UI sheets, create consistent upgrade variants, extract an aggregate UI sheet, and edit still images or animated frames | Refine or branch an existing visual asset without changing its media role |
 | [Maps, tiles, and textures](references/maps-tiles-and-textures.md) | Create repeatable materials, terrain atlases, isometric or hex tiles, and side-scrolling layers | Build environment assets from materials through map-ready outputs |
 | [Animation and video](references/animation-and-video.md) | Create seamless image loops, sprite animation, or short video clips | Consume a stable, finalized still asset |
-| [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, and rendered tracks | Add audio after gameplay timing and visual direction are known |
+| [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, rendered tracks, and spoken lines | Add audio after gameplay timing and visual direction are known |
 | [Running and outputs](references/running-and-outputs.md) | Execute safely, recover interrupted jobs, validate outputs, and hand off final files | Apply to every module |
 
 ## Combine modules deliberately
@@ -104,7 +104,7 @@ Use these common chains only when each downstream module accepts the preceding f
 - Isometric or hex environment tiles: inspect map-reference categories → select and download matching built-in references → preview the references when layout or style needs comparison → generate from those references → preview and assemble the final tiles by logical centers → validate the composed map. Do not start these tile generators from arbitrary images. Generate side-scrolling layers directly because that command does not accept downloaded map presets.
 - Side-scrolling environment: define the playable midground, distant background, and near-camera foreground separately → run `side-scrolling-map-run` for pixel layers or `hd-side-scrolling-map-run` for HD layers → open all three final layers in the bundled map preview → validate shared canvas alignment, parallax speed, layer offsets, and any requested horizontal loop.
 - UI: UI generation or extraction → still-image refinement. UI extraction currently returns one aggregate sheet, not separate component files.
-- Audio-visual asset: finalize timing and action first → create matching effects or music.
+- Audio-visual asset: finalize timing and action first → create matching effects, music, or spoken lines.
 
 Avoid unnecessary chains. Every generative step can change identity, scale, palette, edges, timing, and cost.
 
