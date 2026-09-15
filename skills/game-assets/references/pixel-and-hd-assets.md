@@ -239,6 +239,20 @@ python3 skills/game-assets/meowart_api.py character-multi-view-run \
 - The web-aligned default is HD mode. Pixel mode supports 1K or 2K; HD mode uses 2K.
 - Select the same `横版` or `纵版` orientation shown by the web editor. Pixel mode also exposes `normal` or `fast` generation speed.
 - Put pose, clothing, silhouette, or consistency requirements in `--extra-constraint`.
+- The generated left and right views are typically mirrored. That is fast for a still eight-direction sheet, but it is not physically consistent: asymmetric clothing, weapons, or handedness will flip.
+- This command is not a one-click unmirrored turnaround. When the user needs eight-direction views that obey physical left/right instead of mirroring, use Frame Animation V2 (`meowa-animation-run`) with the same Multi-view shortcut as the web UI:
+
+```bash
+python3 skills/game-assets/meowart_api.py meowa-animation-run \
+  --image-file <character.png> \
+  --prompt "人物保持姿势和外观不变，原地居中，原地缓慢旋转360°。" \
+  --output-frames 32 \
+  --animation-mode loop \
+  --optimize-prompt \
+  --output-dir <output-dir>
+```
+
+32 frames is 4 seconds. Keep loop on. Leave prompt optimization enabled so the backend can expand this into a timed action timeline. The result is a looping in-place 360° rotation; extract frames when still directional sprites are required. Other V2 defaults stay aligned with the web UI; read them in [Animation and video](animation-and-video.md).
 
 ## Background removal
 
