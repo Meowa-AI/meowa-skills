@@ -2694,6 +2694,7 @@ def save_game_design_outputs(
         if billing.get("serverFailureRefunded") is True:
             safe_billing["server_failure_refunded"] = True
         for public_key, api_key in (
+            ("monthly_free_plan_id", "monthlyFreePlanId"),
             ("monthly_free_period_start", "monthlyFreePeriodStart"),
             ("monthly_free_reset_at", "monthlyFreeResetAt"),
             ("monthly_reset_timezone", "monthlyResetTimezone"),
