@@ -36,9 +36,9 @@ python3 meowart_api.py game-design-poll \
 
 ## Billing
 
-- Every account receives 1,000,000 free Game Designer tokens per UTC calendar month, settled as a shared 60-credit allowance across all of the account's projects.
+- The monthly free Game Designer allowance follows the active subscription tier and is shared across all projects: Free 1,000,000 tokens (60 credits); Newcomer Special and Starter 2,000,000 (120); Creator 5,000,000 (300); Adventurer 10,000,000 (600); Archmage 25,000,000 (1,500). One-time credit packs do not change the tier. The allowance resets each UTC calendar month.
 - There is no initial credit reservation and no per-run maximum charge.
-- After the monthly allowance, usage is charged incrementally after each planning-model call: uncached input is 150 credits per million tokens, cached input is 15 per million, and output including reasoning is 900 per million. The cumulative per-job amount is rounded up to whole credits.
+- After the monthly allowance, usage is charged incrementally after each planning-model call: uncached input is 40 credits per million tokens, cached input is 4 per million, and output including reasoning is 240 per million. The cumulative per-job amount is rounded up to whole credits.
 - Before accepting a message and before each later planning round, the service applies the remaining monthly allowance, then checks the current balance against the uncovered estimate. A call proceeds only when that amount is covered.
 - The runner prints cumulative calculated credits, free credits applied, charged credits, monthly free credits remaining, and wallet credits remaining while polling. If the allowance and balance cannot cover the next estimated round, it reports the exact balance state and includes the recharge URL instead of starting another model call.
 - A server-side task failure fully refunds this run's planning-model token charges and restores its monthly allowance use. The final billing summary reports paid and free settlement separately.

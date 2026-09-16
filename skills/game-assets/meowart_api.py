@@ -27,7 +27,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.16.1"
+MEOWART_API_CLI_VERSION = "2026.09.16.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2692,6 +2692,7 @@ def save_game_design_outputs(
         if billing.get("serverFailureRefunded") is True:
             safe_billing["server_failure_refunded"] = True
         for public_key, api_key in (
+            ("monthly_free_plan_id", "monthlyFreePlanId"),
             ("monthly_free_period_start", "monthlyFreePeriodStart"),
             ("monthly_free_reset_at", "monthlyFreeResetAt"),
             ("monthly_reset_timezone", "monthlyResetTimezone"),
