@@ -1521,6 +1521,12 @@
             "Italian"
           ],
           "note": "tts-run --language is shared with voice cloning; without --reference-audio only canonical_choices are valid and ZH/EN/JA/ES map to Chinese/English/Japanese/Spanish."
+        },
+        "optimize_prompt": {
+          "flag": "--optimize-prompt",
+          "default": false,
+          "request_field": "text/voice_description",
+          "note": "Mirrors the web 'AI polish' button (manual click, so default false): POST /api/workflows/meowa_tts/prompts polishes punctuation in text and expands the voice hint, then the polished values are submitted as text and voice_description."
         }
       }
     },

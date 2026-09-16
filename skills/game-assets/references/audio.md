@@ -80,6 +80,16 @@ python3 skills/game-assets/meowart_api.py tts-run \
 
 `--text` is the exact line to speak, counted after trimming, up to 200 characters; longer scripts must be split into one job per line. `--voice` is a natural-language voice description and defaults to `可爱的小女孩，明亮欢快`, the same default the web Speech Generation tab opens with. `--language` defaults to `Chinese` and accepts `Auto`, `English`, `Japanese`, `Korean`, `French`, `German`, `Spanish`, `Portuguese`, `Russian`, or `Italian`.
 
+Add `--optimize-prompt` to mirror the web **AI polish** button (free, description mode only). It first adds natural punctuation and pauses to `--text` without changing any word, and expands a short `--voice` hint such as `女孩，可爱` into a full voice description (gender/age, pitch, pace, timbre, emotion, use), then synthesizes with the polished values. The speech model does not support inline emotion tags such as `[excited]`; emotion is expressed through the voice description instead.
+
+```bash
+python3 skills/game-assets/meowart_api.py tts-run \
+  --text "今天天气真不错我们一起出去玩吧" \
+  --voice "女孩，可爱" \
+  --optimize-prompt \
+  --output-dir <output-dir>
+```
+
 Speech jobs belong to a project. Pass `--project-id` (and optionally `--thread-id`) to reuse an existing project; omit it to create one titled by `--project-title`. Cost is 5 credits per 50 characters (5 / 10 / 15 / 20 credits for up to 50 / 100 / 150 / 200 characters). Recover an interrupted job with `tts-poll --job-id <job-id>`; recovery never resubmits or charges again.
 
 ### Clone a voice from reference audio

@@ -27,7 +27,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.16.1"
+MEOWART_API_CLI_VERSION = "2026.09.16.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -193,6 +193,8 @@ CHARACTER_MULTI_VIEW_POLL_COMMANDS = {
     "character-eight-direction-poll",
 }
 MEOWA_TTS_ENDPOINT = "/api/workflows/meowa_tts/jobs"
+# Web "AI polish" button: free, punctuation-only text polish plus an expanded voice description.
+MEOWA_TTS_PROMPT_ENDPOINT = "/api/workflows/meowa_tts/prompts"
 # Mirrors the web TTS tab: services/soundEffectWorkflowConfig.ts and
 # app/workflows/meowa_tts/{backend,pricing}.py. 5 credits per 50 characters, up to 200.
 MEOWA_TTS_MAX_TEXT_CHARACTERS = 200
@@ -5762,6 +5764,43 @@ def run_music_generator(
     return submit_payload, final_payload
 
 
+def prepare_meowa_tts_prompt(
+    *,
+    api_base: str,
+    api_key: str,
+    text: str,
+    voice_hint: str = "",
+    language: str = MEOWA_TTS_DEFAULT_LANGUAGE,
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    """Mirror the web AI polish button: returns {text, voice_description, language}."""
+    normalized_text = str(text or "").strip()
+    if not normalized_text:
+        raise ValueError("--text is required")
+    if language not in MEOWA_TTS_LANGUAGE_CHOICES:
+        raise ValueError(f"--language must be one of: {', '.join(MEOWA_TTS_LANGUAGE_CHOICES)}")
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, MEOWA_TTS_PROMPT_ENDPOINT),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body={
+            "text": normalized_text,
+            "voice_hint": str(voice_hint or "").strip(),
+            "language": language,
+        },
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    polished_text = str(body.get("text") or "").strip()
+    voice_description = str(body.get("voice_description") or "").strip()
+    if not polished_text or not voice_description:
+        raise RuntimeError("tts prompt polish response missing text or voice_description")
+    return {"text": polished_text, "voice_description": voice_description, "language": language}
+
+
 def submit_meowa_tts(
     *,
     api_base: str,
@@ -7284,6 +7323,18 @@ def build_parser() -> argparse.ArgumentParser:
             "(Chinese/English/Japanese/Spanish map to ZH/EN/JA/ES)"
         ),
     )
+    tts_run.set_defaults(optimize_prompt=False)
+    tts_run.add_argument(
+        "--optimize-prompt",
+        action="store_true",
+        dest="optimize_prompt",
+        help=(
+            "Web 'AI polish' (free, voice description mode only): add natural punctuation to --text "
+            "without changing its words, and expand a short --voice hint such as '女孩，可爱' into a full "
+            "voice description before synthesis"
+        ),
+    )
+    tts_run.add_argument("--no-optimize-prompt", action="store_false", dest="optimize_prompt", help=argparse.SUPPRESS)
     tts_run.add_argument("--project-id", default="", help="Existing project id; omit to create one")
     tts_run.add_argument("--thread-id", default="", help="Optional thread id inside --project-id")
     tts_run.add_argument("--project-title", default="Speech", help="Title for the auto-created project")
@@ -10111,6 +10162,23 @@ def main() -> int:
             language = resolve_meowa_tts_language(args.language, clone=clone_mode)
             if clone_mode and args.voice != MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION:
                 raise ValueError("--voice cannot be combined with --reference-audio; choose one voice source")
+            if clone_mode and args.optimize_prompt:
+                raise ValueError("--optimize-prompt only applies to voice description mode (without --reference-audio)")
+            tts_text = args.text
+            tts_voice = args.voice
+            if args.optimize_prompt:
+                polished = prepare_meowa_tts_prompt(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    text=tts_text,
+                    voice_hint=tts_voice,
+                    language=language,
+                    timeout=args.timeout,
+                    verify=verify,
+                )
+                tts_text, tts_voice = polished["text"], polished["voice_description"]
+                print(f"[INFO] polished_text={tts_text}")
+                print(f"[INFO] voice_description={tts_voice}")
             if not project_id:
                 project_id = _create_game_design_project(
                     api_base=args.api_base,
@@ -10145,19 +10213,20 @@ def main() -> int:
                 )
             else:
                 request_payload = {
-                    "text": args.text,
-                    "voice_description": args.voice,
+                    "text": tts_text,
+                    "voice_description": tts_voice,
                     "language": language,
                     "project_id": project_id,
                     "thread_id": thread_id or None,
+                    "optimize_prompt": args.optimize_prompt,
                 }
                 submit_payload, final_payload = run_meowa_tts(
                     api_base=args.api_base,
                     api_key=args.api_key,
-                    text=args.text,
+                    text=tts_text,
                     project_id=project_id,
                     thread_id=thread_id,
-                    voice_description=args.voice,
+                    voice_description=tts_voice,
                     language=language,
                     timeout=args.timeout,
                     max_wait=args.max_wait,
