@@ -1,6 +1,6 @@
 ---
 name: game-assets
-description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS), bundled Meowa CLI execution, or final game-project deliverable validation.
+description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS or voice clone), bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets
@@ -86,7 +86,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 | [UI and image editing](references/ui-and-image-editing.md) | Generate UI sheets, create consistent upgrade variants, extract an aggregate UI sheet, and edit still images or animated frames | Refine or branch an existing visual asset without changing its media role |
 | [Maps, tiles, and textures](references/maps-tiles-and-textures.md) | Create repeatable materials, terrain atlases, isometric or hex tiles, and side-scrolling layers | Build environment assets from materials through map-ready outputs |
 | [Animation and video](references/animation-and-video.md) | Create seamless image loops, sprite animation, or short video clips | Consume a stable, finalized still asset |
-| [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, rendered tracks, and spoken lines | Add audio after gameplay timing and visual direction are known |
+| [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, rendered tracks, and spoken lines (described or cloned voices) | Add audio after gameplay timing and visual direction are known |
 | [Running and outputs](references/running-and-outputs.md) | Execute safely, recover interrupted jobs, validate outputs, and hand off final files | Apply to every module |
 
 ## Combine modules deliberately

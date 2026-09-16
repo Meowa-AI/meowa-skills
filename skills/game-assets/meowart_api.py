@@ -27,7 +27,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.15.1"
+MEOWART_API_CLI_VERSION = "2026.09.16.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -197,11 +197,49 @@ MEOWA_TTS_ENDPOINT = "/api/workflows/meowa_tts/jobs"
 # app/workflows/meowa_tts/{backend,pricing}.py. 5 credits per 50 characters, up to 200.
 MEOWA_TTS_MAX_TEXT_CHARACTERS = 200
 MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION = "可爱的小女孩，明亮欢快"
-MEOWA_TTS_DEFAULT_LANGUAGE = "Auto"
+MEOWA_TTS_DEFAULT_LANGUAGE = "Chinese"
 MEOWA_TTS_LANGUAGE_CHOICES = [
     "Auto", "Chinese", "English", "Japanese", "Korean", "French",
     "German", "Spanish", "Portuguese", "Russian", "Italian",
 ]
+MEOWA_VOICE_CLONE_ENDPOINT = "/api/workflows/meowa_tts/clone/jobs"
+# Mirrors the web Voice Clone tab (soundEffectWorkflowConfig.ts voiceClone) and
+# app/workflows/meowa_tts/{backend,reference_audio}.py. Same character pricing as TTS.
+MEOWA_VOICE_CLONE_DEFAULT_LANGUAGE = "ZH"
+MEOWA_VOICE_CLONE_LANGUAGE_CHOICES = ["ZH", "EN", "JA", "ES", "AR"]
+MEOWA_VOICE_CLONE_MAX_REFERENCE_FILES = 5
+MEOWA_VOICE_CLONE_MAX_REFERENCE_BYTES = 25 * 1024 * 1024
+MEOWA_VOICE_CLONE_REFERENCE_SUFFIXES = frozenset(
+    {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".mp4"}
+)
+# `tts-run --language` accepts both product enums; each is translated to the
+# canonical value of the mode actually used (description names vs clone codes).
+MEOWA_TTS_LANGUAGE_TO_CLONE_CODE = {"Chinese": "ZH", "English": "EN", "Japanese": "JA", "Spanish": "ES"}
+MEOWA_TTS_ALL_LANGUAGE_CHOICES = [
+    *MEOWA_TTS_LANGUAGE_CHOICES,
+    *(code for code in MEOWA_VOICE_CLONE_LANGUAGE_CHOICES if code not in MEOWA_TTS_LANGUAGE_CHOICES),
+]
+
+
+def resolve_meowa_tts_language(language: str, *, clone: bool) -> str:
+    """Map a `tts-run --language` value onto the canonical enum of the chosen voice mode."""
+    value = str(language or "").strip()
+    if clone:
+        code = MEOWA_TTS_LANGUAGE_TO_CLONE_CODE.get(value, value)
+        if code not in MEOWA_VOICE_CLONE_LANGUAGE_CHOICES:
+            raise ValueError(
+                "--language with --reference-audio must be one of: "
+                + ", ".join(MEOWA_VOICE_CLONE_LANGUAGE_CHOICES)
+            )
+        return code
+    name = next((k for k, v in MEOWA_TTS_LANGUAGE_TO_CLONE_CODE.items() if v == value), value)
+    if name not in MEOWA_TTS_LANGUAGE_CHOICES:
+        raise ValueError(
+            "--language without --reference-audio must be one of: " + ", ".join(MEOWA_TTS_LANGUAGE_CHOICES)
+        )
+    return name
+
+
 UI_GEN_ENDPOINT = "/api/workflows/general_ui_gen/run"
 UI_GEN_SUBMIT_COMMANDS = {
     "ui-gen-submit",
@@ -5819,6 +5857,122 @@ def run_meowa_tts(
     return submit_payload, final_payload
 
 
+def submit_meowa_voice_clone(
+    *,
+    api_base: str,
+    api_key: str,
+    text: str,
+    reference_audios: list[str],
+    project_id: str,
+    thread_id: str = "",
+    language: str = MEOWA_VOICE_CLONE_DEFAULT_LANGUAGE,
+    client_operation_id: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    normalized_text = str(text or "").strip()
+    if not normalized_text:
+        raise ValueError("--text is required")
+    if len(normalized_text) > MEOWA_TTS_MAX_TEXT_CHARACTERS:
+        raise ValueError(
+            f"--text must not exceed {MEOWA_TTS_MAX_TEXT_CHARACTERS} characters "
+            f"(got {len(normalized_text)})"
+        )
+    if language not in MEOWA_VOICE_CLONE_LANGUAGE_CHOICES:
+        raise ValueError(f"--language must be one of: {', '.join(MEOWA_VOICE_CLONE_LANGUAGE_CHOICES)}")
+    clips = [str(value or "").strip() for value in reference_audios or [] if str(value or "").strip()]
+    if not clips:
+        raise ValueError("--reference-audio is required at least once")
+    if len(clips) > MEOWA_VOICE_CLONE_MAX_REFERENCE_FILES:
+        raise ValueError(
+            f"--reference-audio accepts at most {MEOWA_VOICE_CLONE_MAX_REFERENCE_FILES} clips"
+        )
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    for clip in clips:
+        clip_path = Path(clip).expanduser().resolve()
+        if clip_path.suffix.lower() not in MEOWA_VOICE_CLONE_REFERENCE_SUFFIXES:
+            raise ValueError(
+                "--reference-audio must be one of: "
+                + ", ".join(sorted(suffix.lstrip(".") for suffix in MEOWA_VOICE_CLONE_REFERENCE_SUFFIXES))
+            )
+        part = _upload_part(str(clip_path), label="reference audio")
+        if not part[1] or len(part[1]) > MEOWA_VOICE_CLONE_MAX_REFERENCE_BYTES:
+            raise ValueError(
+                "each --reference-audio clip must be 1 byte to "
+                f"{MEOWA_VOICE_CLONE_MAX_REFERENCE_BYTES // (1024 * 1024)} MB"
+            )
+        files.append(("reference_audios", part))
+    normalized_project_id = str(project_id or "").strip()
+    if not normalized_project_id:
+        raise ValueError("project_id is required")
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        operation_seed = f"{normalized_project_id}:{thread_id}:{normalized_text}:{language}:{uuid.uuid4().hex}"
+        operation_id = f"voice-clone:{hashlib.sha256(operation_seed.encode('utf-8')).hexdigest()[:32]}"
+    data: dict[str, Any] = {
+        "project_id": normalized_project_id,
+        "client_operation_id": operation_id,
+        "text": normalized_text,
+        "language": language,
+    }
+    normalized_thread_id = str(thread_id or "").strip()
+    if normalized_thread_id:
+        data["thread_id"] = normalized_thread_id
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, MEOWA_VOICE_CLONE_ENDPOINT),
+        headers=_base_headers(api_key),
+        data=data,
+        files=files,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
+def run_meowa_voice_clone(
+    *,
+    api_base: str,
+    api_key: str,
+    text: str,
+    reference_audios: list[str],
+    project_id: str,
+    thread_id: str = "",
+    language: str = MEOWA_VOICE_CLONE_DEFAULT_LANGUAGE,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_wait: int = DEFAULT_MAX_WAIT,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    verify: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    submit_payload = submit_meowa_voice_clone(
+        api_base=api_base,
+        api_key=api_key,
+        text=text,
+        reference_audios=reference_audios,
+        project_id=project_id,
+        thread_id=thread_id,
+        language=language,
+        timeout=timeout,
+        verify=verify,
+    )
+    api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
+    if not api_job_id:
+        raise RuntimeError("voice-clone submit response missing job_id")
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base,
+        api_key=api_key,
+        submit_payload={"job_id": api_job_id},
+        label="voice-clone",
+        timeout=timeout,
+        max_wait=max_wait,
+        poll_interval=poll_interval,
+        verify=verify,
+    )
+    return submit_payload, final_payload
+
+
 def poll_animate_job(
     *,
     api_base: str,
@@ -7098,16 +7252,38 @@ def build_parser() -> argparse.ArgumentParser:
 
     tts_run = subparsers.add_parser(
         "tts-run",
-        help="Synthesize one spoken line (5 credits per 50 characters, up to 200 characters)",
+        help=(
+            "Synthesize one spoken line from a voice description, or clone a voice from reference audio "
+            "(5 credits per 50 characters, up to 200 characters)"
+        ),
     )
     add_shared_path_args(tts_run)
     tts_run.add_argument("--text", required=True, help=f"Line to speak; up to {MEOWA_TTS_MAX_TEXT_CHARACTERS} characters")
     tts_run.add_argument(
         "--voice",
         default=MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION,
-        help="Natural-language voice description, e.g. a hoarse, dignified elderly woman",
+        help="Natural-language voice description, e.g. a hoarse, dignified elderly woman; ignored with --reference-audio",
     )
-    tts_run.add_argument("--language", default=MEOWA_TTS_DEFAULT_LANGUAGE, choices=MEOWA_TTS_LANGUAGE_CHOICES)
+    tts_run.add_argument(
+        "--reference-audio",
+        action="append",
+        default=[],
+        dest="reference_audios",
+        help=(
+            "Clone the voice from this clip instead of describing it; repeat up to "
+            f"{MEOWA_VOICE_CLONE_MAX_REFERENCE_FILES} times, clips are joined in order (1-300 s total)"
+        ),
+    )
+    tts_run.add_argument(
+        "--language",
+        default=MEOWA_TTS_DEFAULT_LANGUAGE,
+        choices=MEOWA_TTS_ALL_LANGUAGE_CHOICES,
+        help=(
+            f"Voice description mode accepts {', '.join(MEOWA_TTS_LANGUAGE_CHOICES)}; "
+            f"--reference-audio mode accepts {', '.join(MEOWA_VOICE_CLONE_LANGUAGE_CHOICES)} "
+            "(Chinese/English/Japanese/Spanish map to ZH/EN/JA/ES)"
+        ),
+    )
     tts_run.add_argument("--project-id", default="", help="Existing project id; omit to create one")
     tts_run.add_argument("--thread-id", default="", help="Optional thread id inside --project-id")
     tts_run.add_argument("--project-title", default="Speech", help="Title for the auto-created project")
@@ -9930,6 +10106,11 @@ def main() -> int:
             thread_id = str(args.thread_id or "").strip()
             if thread_id and not project_id:
                 raise ValueError("--thread-id requires --project-id")
+            reference_audios = [str(value or "").strip() for value in args.reference_audios if str(value or "").strip()]
+            clone_mode = bool(reference_audios)
+            language = resolve_meowa_tts_language(args.language, clone=clone_mode)
+            if clone_mode and args.voice != MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION:
+                raise ValueError("--voice cannot be combined with --reference-audio; choose one voice source")
             if not project_id:
                 project_id = _create_game_design_project(
                     api_base=args.api_base,
@@ -9941,26 +10122,48 @@ def main() -> int:
                 print(f"[INFO] created project_id={project_id}")
             slug_seed = args.text
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, slug_seed)}")
-            request_payload = {
-                "text": args.text,
-                "voice_description": args.voice,
-                "language": args.language,
-                "project_id": project_id,
-                "thread_id": thread_id or None,
-            }
-            submit_payload, final_payload = run_meowa_tts(
-                api_base=args.api_base,
-                api_key=args.api_key,
-                text=args.text,
-                project_id=project_id,
-                thread_id=thread_id,
-                voice_description=args.voice,
-                language=args.language,
-                timeout=args.timeout,
-                max_wait=args.max_wait,
-                poll_interval=args.poll_interval,
-                verify=verify,
-            )
+            if clone_mode:
+                request_payload = {
+                    "text": args.text,
+                    "language": language,
+                    "reference_audios": reference_audios,
+                    "project_id": project_id,
+                    "thread_id": thread_id or None,
+                }
+                submit_payload, final_payload = run_meowa_voice_clone(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    text=args.text,
+                    reference_audios=reference_audios,
+                    project_id=project_id,
+                    thread_id=thread_id,
+                    language=language,
+                    timeout=args.timeout,
+                    max_wait=args.max_wait,
+                    poll_interval=args.poll_interval,
+                    verify=verify,
+                )
+            else:
+                request_payload = {
+                    "text": args.text,
+                    "voice_description": args.voice,
+                    "language": language,
+                    "project_id": project_id,
+                    "thread_id": thread_id or None,
+                }
+                submit_payload, final_payload = run_meowa_tts(
+                    api_base=args.api_base,
+                    api_key=args.api_key,
+                    text=args.text,
+                    project_id=project_id,
+                    thread_id=thread_id,
+                    voice_description=args.voice,
+                    language=language,
+                    timeout=args.timeout,
+                    max_wait=args.max_wait,
+                    poll_interval=args.poll_interval,
+                    verify=verify,
+                )
             output_dir, downloads = _save_run_outputs(
                 output_root=str(effective_output_dir),
                 slug_seed=slug_seed,

@@ -1487,8 +1487,27 @@
         },
         "language": {
           "flag": "--language",
-          "default": "Auto",
+          "default": "Chinese",
           "choices": [
+            "Auto",
+            "Chinese",
+            "English",
+            "Japanese",
+            "Korean",
+            "French",
+            "German",
+            "Spanish",
+            "Portuguese",
+            "Russian",
+            "Italian",
+            "ZH",
+            "EN",
+            "JA",
+            "ES",
+            "AR"
+          ],
+          "request_field": "language",
+          "canonical_choices": [
             "Auto",
             "Chinese",
             "English",
@@ -1501,7 +1520,58 @@
             "Russian",
             "Italian"
           ],
-          "request_field": "language"
+          "note": "tts-run --language is shared with voice cloning; without --reference-audio only canonical_choices are valid and ZH/EN/JA/ES map to Chinese/English/Japanese/Spanish."
+        }
+      }
+    },
+    "voice_clone": {
+      "command": "tts-run",
+      "web_sources": [
+        "types.ts:SoundEffectVoiceCloneLanguage",
+        "components/SettingsPanel.tsx",
+        "services/soundEffectWorkflowConfig.ts",
+        "services/soundEffectService.ts"
+      ],
+      "parameters": {
+        "text": {
+          "flag": "--text",
+          "request_field": "text"
+        },
+        "reference_audio": {
+          "flag": "--reference-audio",
+          "request_field": "reference_audios"
+        },
+        "language": {
+          "flag": "--language",
+          "default": "Chinese",
+          "choices": [
+            "Auto",
+            "Chinese",
+            "English",
+            "Japanese",
+            "Korean",
+            "French",
+            "German",
+            "Spanish",
+            "Portuguese",
+            "Russian",
+            "Italian",
+            "ZH",
+            "EN",
+            "JA",
+            "ES",
+            "AR"
+          ],
+          "request_field": "language",
+          "canonical_default": "ZH",
+          "canonical_choices": [
+            "ZH",
+            "EN",
+            "JA",
+            "ES",
+            "AR"
+          ],
+          "note": "Same tts-run command with --reference-audio; Chinese/English/Japanese/Spanish map to ZH/EN/JA/ES, so the shared parser default Chinese submits the web default ZH."
         }
       }
     },

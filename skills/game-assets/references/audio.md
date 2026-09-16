@@ -13,7 +13,7 @@ Use this module to create gameplay sound effects, coherent effect packs, variati
 |---|---|---|---|
 | Create sound effects | `sound-run` | Produce one effect, a coherent pack, or variants | Pack and variant modes are mutually exclusive |
 | Draft or render music | `music-run` | Produce a demo or production track | Select the web product's `demo` or `pro` output mode |
-| Speak one line | `tts-run` | Produce one spoken audio clip from text | One line per job, up to 200 characters |
+| Speak one line | `tts-run` | Produce one spoken clip from a voice description, or clone a voice with `--reference-audio` | One line per job, up to 200 characters; up to 5 reference clips, 1-300 seconds joined |
 
 Finalize gameplay timing, action, and loop intent before generating audio. Visual references may guide music mood, but they do not replace an explicit description of instrumentation, energy, and loop behavior.
 
@@ -78,9 +78,24 @@ python3 skills/game-assets/meowart_api.py tts-run \
   --output-dir <output-dir>
 ```
 
-`--text` is the exact line to speak, counted after trimming, up to 200 characters; longer scripts must be split into one job per line. `--voice` is a natural-language voice description and defaults to `可爱的小女孩，明亮欢快`, the same default the web Speech tab opens with. `--language` defaults to `Auto` and accepts `Chinese`, `English`, `Japanese`, `Korean`, `French`, `German`, `Spanish`, `Portuguese`, `Russian`, or `Italian`.
+`--text` is the exact line to speak, counted after trimming, up to 200 characters; longer scripts must be split into one job per line. `--voice` is a natural-language voice description and defaults to `可爱的小女孩，明亮欢快`, the same default the web Speech Generation tab opens with. `--language` defaults to `Chinese` and accepts `Auto`, `English`, `Japanese`, `Korean`, `French`, `German`, `Spanish`, `Portuguese`, `Russian`, or `Italian`.
 
 Speech jobs belong to a project. Pass `--project-id` (and optionally `--thread-id`) to reuse an existing project; omit it to create one titled by `--project-title`. Cost is 5 credits per 50 characters (5 / 10 / 15 / 20 credits for up to 50 / 100 / 150 / 200 characters). Recover an interrupted job with `tts-poll --job-id <job-id>`; recovery never resubmits or charges again.
+
+### Clone a voice from reference audio
+
+Add `--reference-audio` to the same command to imitate an existing voice instead of describing one:
+
+```bash
+python3 skills/game-assets/meowart_api.py tts-run \
+  --text "一闪一闪亮晶晶，满天都是小星星。" \
+  --reference-audio ./voice/line-01.wav \
+  --reference-audio ./voice/line-02.mp3 \
+  --language ZH \
+  --output-dir <output-dir>
+```
+
+Repeat `--reference-audio` for up to 5 clips (`mp3`, `wav`, `m4a`, `aac`, `flac`, `ogg`, `opus`, `webm`, `mp4`, 25 MB each). Clips are joined in the given order into one reference track that must last 1 to 300 seconds; use clean speech of the target voice without music. In this mode `--voice` must be omitted, and `--language` accepts `ZH`, `EN`, `JA`, `ES`, or `AR` (`Chinese`, `English`, `Japanese`, and `Spanish` are accepted as aliases, so the default `Chinese` becomes `ZH`). Pricing, the 200-character limit, and `tts-poll` recovery are the same as description mode.
 
 ## Validate
 

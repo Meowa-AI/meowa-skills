@@ -37,6 +37,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Create one sound, a sound pack, or variants | `sound-run` | `audio.md` |
 | Draft music direction or render a track | `music-run` | `audio.md` |
 | Speak one character line from text | `tts-run` | `audio.md` |
+| Speak one line in a voice cloned from reference audio | `tts-run --reference-audio` | `audio.md` |
 
 ## Selection rules
 
