@@ -27,7 +27,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.16.3"
+MEOWART_API_CLI_VERSION = "2026.09.17.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7530,6 +7530,8 @@ def build_parser() -> argparse.ArgumentParser:
         edit_parser.add_argument("--alpha-mode", choices=["sharp", "soft"], default="sharp", action=AnimationEditAlphaAction, help="Default sharp for Pixel, soft for HD")
         edit_parser.add_argument("--remove-bg-method", choices=["none", "standard"], default="standard")
         edit_parser.add_argument("--remove-bg-batch-size", choices=["4", "8", "16", "all"], default="16")
+        edit_parser.add_argument("--primary-reference", choices=["video", "image"], default="video",
+            help="video: edit the reference video's character; image: the image character performs the video's action in place (requires --image-file)")
         if edit_command == "meowa-animation-edit-prompts":
             edit_parser.add_argument("--output-language", choices=["zh", "en"], default="zh")
 
@@ -10593,8 +10595,11 @@ def main() -> int:
                     "image_description": args.image_description if args.image_file else "", "background_color": args.background_color}
             if args.style_mode == "pixel" and args.resolution != "480p":
                 raise ValueError("Pixel mode requires 480p")
+            if args.primary_reference == "image" and not args.image_file:
+                raise ValueError("--primary-reference image requires --image-file")
             data.update(style_mode=args.style_mode, resolution=args.resolution, alpha_mode=args.alpha_mode,
-                        remove_bg_method=args.remove_bg_method, remove_bg_batch_size=args.remove_bg_batch_size)
+                        remove_bg_method=args.remove_bg_method, remove_bg_batch_size=args.remove_bg_batch_size,
+                        primary_reference=args.primary_reference)
             polish = args.command == "meowa-animation-edit-prompts"
             if not polish and (not args.edit_intent.strip() or not args.video_description.strip()
                                or (args.image_file and not args.image_description.strip())):

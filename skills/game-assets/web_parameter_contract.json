@@ -1867,6 +1867,16 @@
             "all"
           ],
           "request_field": "remove_bg_batch_size"
+        },
+        "primary_reference": {
+          "flag": "--primary-reference",
+          "default": "video",
+          "choices": [
+            "video",
+            "image"
+          ],
+          "request_field": "primary_reference",
+          "notes": "video: edit the video's character; image: the image character performs the video's action in place. image requires image_file."
         }
       },
       "reference_timing": {
@@ -1981,6 +1991,15 @@
             "all"
           ],
           "request_field": "remove_bg_batch_size"
+        },
+        "primary_reference": {
+          "flag": "--primary-reference",
+          "default": "video",
+          "choices": [
+            "video",
+            "image"
+          ],
+          "request_field": "primary_reference"
         }
       },
       "reference_timing": {
