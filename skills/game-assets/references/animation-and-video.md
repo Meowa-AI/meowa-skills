@@ -218,10 +218,10 @@ Instead of a free-form prompt, action templates may be selected with both `--act
 
 Use `meowa-animation-edit-prompts --video-file motion.webp --image-file appearance.png --edit-intent 'Replace the character appearance'`
 for the three reviewable fields (`edit_intent`, `video_description`, `image_description`). The image is optional;
-video is required (MP4 or animated GIF/WebP, at most 4 seconds and 32 MiB). `--output-language zh|en` defaults to `zh`.
+video is required (MP4 or animated GIF/WebP, at most 4.5 seconds and 32 MiB). `--output-language zh|en` defaults to `zh`.
 Then pass reviewed text to `meowa-animation-edit-run --video-file motion.webp --edit-intent '...' --video-description '...' --image-description '...'`,
 with the same optional `--image-file`. Descriptions start empty. Generation requires nonblank edit intent and video content, plus image content when an image is supplied. Polishing is manual and optional; review or fill the fields before running.
-The preset matches the Animation Edit web tab: Detailed quality, Pixel / 480p / standard removal (16-frame batch). Duration is automatic: source ≤2s → 16 final frames, 2–3s → 24, 3–4s → 32, at 8fps. Generation costs 15 credits for 2s or 20 for 3–4s; HD 720p adds 10. Standard removal adds 5 credits per batch (4/8/16/all).
+The preset matches the Animation Edit web tab: Detailed quality, Pixel / 480p / standard removal (16-frame batch). Duration is automatic: source ≤2s → 16 final frames, 2–3s → 24, 3–4.5s → 32, at 8fps. Sources between 4s and 4.5s stay on the 4-second tier so Meowa 32-frame outputs can be reused. Generation costs 15 credits for 2s or 20 for 3–4s; HD 720p adds 10. Standard removal adds 5 credits per batch (4/8/16/all).
 Reference and generated video use 56/73/90 frames at 24fps for the 2/3/4-second output tiers. Resampling retimes one complete action without repeating cycles. The shared 8/16/24/32 mapping remains 56/56/73/90; automatic selection has a two-second output minimum.
 Only final media is downloaded, using the existing animation job polling and artifact allowlist.
 

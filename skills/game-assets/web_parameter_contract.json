@@ -1870,7 +1870,7 @@
         }
       },
       "reference_timing": {
-        "max_duration_seconds": 4,
+        "max_duration_seconds": 4.5,
         "generation_fps": 24,
         "output_fps": 8,
         "source_duration_tiers": {
@@ -1984,7 +1984,7 @@
         }
       },
       "reference_timing": {
-        "max_duration_seconds": 4,
+        "max_duration_seconds": 4.5,
         "generation_fps": 24,
         "output_fps": 8,
         "source_duration_tiers": {
