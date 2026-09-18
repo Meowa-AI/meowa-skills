@@ -1578,6 +1578,16 @@
             "AR"
           ],
           "note": "Same tts-run command with --reference-audio; Chinese/English/Japanese/Spanish map to ZH/EN/JA/ES, so the shared parser default Chinese submits the web default ZH."
+        },
+        "emotion": {
+          "flag": "--emotion",
+          "default": "",
+          "request_field": "emotion"
+        },
+        "emotion_intensity": {
+          "flag": "--emotion-intensity",
+          "default": 0.5,
+          "request_field": "emotion_intensity"
         }
       }
     },

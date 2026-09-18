@@ -8,6 +8,7 @@ from datetime import date, datetime
 import hashlib
 import io
 import json
+import math
 import mimetypes
 import os
 import re
@@ -27,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.17.1"
+MEOWART_API_CLI_VERSION = "2026.09.18.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -196,7 +197,8 @@ MEOWA_TTS_ENDPOINT = "/api/workflows/meowa_tts/jobs"
 # Web "AI polish" button: free, punctuation-only text polish plus an expanded voice description.
 MEOWA_TTS_PROMPT_ENDPOINT = "/api/workflows/meowa_tts/prompts"
 # Mirrors the web TTS tab: services/soundEffectWorkflowConfig.ts and
-# app/workflows/meowa_tts/{backend,pricing}.py. 5 credits per 50 characters, up to 200.
+# app/workflows/meowa_tts/{backend,pricing}.py. 1 credit per 10 characters, 2 credit minimum;
+# English/EN billed per word, up to 200 characters.
 MEOWA_TTS_MAX_TEXT_CHARACTERS = 200
 MEOWA_TTS_DEFAULT_VOICE_DESCRIPTION = "可爱的小女孩，明亮欢快"
 MEOWA_TTS_DEFAULT_LANGUAGE = "Chinese"
@@ -209,6 +211,11 @@ MEOWA_VOICE_CLONE_ENDPOINT = "/api/workflows/meowa_tts/clone/jobs"
 # app/workflows/meowa_tts/{backend,reference_audio}.py. Same character pricing as TTS.
 MEOWA_VOICE_CLONE_DEFAULT_LANGUAGE = "ZH"
 MEOWA_VOICE_CLONE_LANGUAGE_CHOICES = ["ZH", "EN", "JA", "ES", "AR"]
+MEOWA_VOICE_CLONE_DEFAULT_EMOTION = ""
+MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY = 0.5
+MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MIN = 0.0
+MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MAX = 1.0
+MEOWA_VOICE_CLONE_MAX_EMOTION_CHARACTERS = 200
 MEOWA_VOICE_CLONE_MAX_REFERENCE_FILES = 5
 MEOWA_VOICE_CLONE_MAX_REFERENCE_BYTES = 25 * 1024 * 1024
 MEOWA_VOICE_CLONE_REFERENCE_SUFFIXES = frozenset(
@@ -240,6 +247,37 @@ def resolve_meowa_tts_language(language: str, *, clone: bool) -> str:
             "--language without --reference-audio must be one of: " + ", ".join(MEOWA_TTS_LANGUAGE_CHOICES)
         )
     return name
+
+
+def normalize_meowa_voice_clone_emotion(value: object) -> str:
+    emotion = str(value or "").strip()
+    if len(emotion) > MEOWA_VOICE_CLONE_MAX_EMOTION_CHARACTERS:
+        raise ValueError(
+            f"--emotion must not exceed {MEOWA_VOICE_CLONE_MAX_EMOTION_CHARACTERS} characters "
+            f"(got {len(emotion)})"
+        )
+    return emotion
+
+
+def normalize_meowa_voice_clone_emotion_intensity(value: object) -> float:
+    if value is None or str(value).strip() == "":
+        return MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY
+    try:
+        intensity = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("--emotion-intensity must be a number") from exc
+    if not math.isfinite(intensity):
+        raise ValueError("--emotion-intensity must be a number")
+    if intensity < MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MIN or intensity > MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MAX:
+        raise ValueError(
+            "--emotion-intensity must be between "
+            f"{MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MIN:g} and {MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MAX:g}"
+        )
+    return round(intensity, 2)
+
+
+def format_meowa_voice_clone_emotion_intensity(value: float) -> str:
+    return format(value, "g")
 
 
 UI_GEN_ENDPOINT = "/api/workflows/general_ui_gen/run"
@@ -5906,6 +5944,8 @@ def submit_meowa_voice_clone(
     project_id: str,
     thread_id: str = "",
     language: str = MEOWA_VOICE_CLONE_DEFAULT_LANGUAGE,
+    emotion: str = MEOWA_VOICE_CLONE_DEFAULT_EMOTION,
+    emotion_intensity: float = MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY,
     client_operation_id: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
@@ -5946,14 +5986,21 @@ def submit_meowa_voice_clone(
     if not normalized_project_id:
         raise ValueError("project_id is required")
     operation_id = str(client_operation_id or "").strip()
+    clone_emotion = normalize_meowa_voice_clone_emotion(emotion)
+    clone_emotion_intensity = normalize_meowa_voice_clone_emotion_intensity(emotion_intensity)
     if not operation_id:
-        operation_seed = f"{normalized_project_id}:{thread_id}:{normalized_text}:{language}:{uuid.uuid4().hex}"
+        operation_seed = (
+            f"{normalized_project_id}:{thread_id}:{normalized_text}:{language}:"
+            f"{clone_emotion}:{clone_emotion_intensity}:{uuid.uuid4().hex}"
+        )
         operation_id = f"voice-clone:{hashlib.sha256(operation_seed.encode('utf-8')).hexdigest()[:32]}"
     data: dict[str, Any] = {
         "project_id": normalized_project_id,
         "client_operation_id": operation_id,
         "text": normalized_text,
         "language": language,
+        "emotion": clone_emotion,
+        "emotion_intensity": format_meowa_voice_clone_emotion_intensity(clone_emotion_intensity),
     }
     normalized_thread_id = str(thread_id or "").strip()
     if normalized_thread_id:
@@ -5981,6 +6028,8 @@ def run_meowa_voice_clone(
     project_id: str,
     thread_id: str = "",
     language: str = MEOWA_VOICE_CLONE_DEFAULT_LANGUAGE,
+    emotion: str = MEOWA_VOICE_CLONE_DEFAULT_EMOTION,
+    emotion_intensity: float = MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -5994,6 +6043,8 @@ def run_meowa_voice_clone(
         project_id=project_id,
         thread_id=thread_id,
         language=language,
+        emotion=emotion,
+        emotion_intensity=emotion_intensity,
         timeout=timeout,
         verify=verify,
     )
@@ -7294,7 +7345,7 @@ def build_parser() -> argparse.ArgumentParser:
         "tts-run",
         help=(
             "Synthesize one spoken line from a voice description, or clone a voice from reference audio "
-            "(5 credits per 50 characters, up to 200 characters)"
+            "(1 credit per 10 characters, 2 credit minimum; English billed per word, up to 200 characters)"
         ),
     )
     add_shared_path_args(tts_run)
@@ -7322,6 +7373,24 @@ def build_parser() -> argparse.ArgumentParser:
             f"Voice description mode accepts {', '.join(MEOWA_TTS_LANGUAGE_CHOICES)}; "
             f"--reference-audio mode accepts {', '.join(MEOWA_VOICE_CLONE_LANGUAGE_CHOICES)} "
             "(Chinese/English/Japanese/Spanish map to ZH/EN/JA/ES)"
+        ),
+    )
+    tts_run.add_argument(
+        "--emotion",
+        default=MEOWA_VOICE_CLONE_DEFAULT_EMOTION,
+        help=(
+            "Optional clone-mode emotion prompt, e.g. happy or 开心; ignored without --reference-audio; "
+            f"up to {MEOWA_VOICE_CLONE_MAX_EMOTION_CHARACTERS} characters"
+        ),
+    )
+    tts_run.add_argument(
+        "--emotion-intensity",
+        type=float,
+        default=MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY,
+        help=(
+            "Clone-mode emotion strength from "
+            f"{MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MIN:g} to {MEOWA_VOICE_CLONE_EMOTION_INTENSITY_MAX:g}; "
+            f"default {MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY:g}"
         ),
     )
     tts_run.set_defaults(optimize_prompt=False)
@@ -10167,6 +10236,17 @@ def main() -> int:
                 raise ValueError("--voice cannot be combined with --reference-audio; choose one voice source")
             if clone_mode and args.optimize_prompt:
                 raise ValueError("--optimize-prompt only applies to voice description mode (without --reference-audio)")
+            if not clone_mode and (
+                args.emotion != MEOWA_VOICE_CLONE_DEFAULT_EMOTION
+                or args.emotion_intensity != MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY
+            ):
+                raise ValueError("--emotion and --emotion-intensity only apply with --reference-audio")
+            clone_emotion = normalize_meowa_voice_clone_emotion(args.emotion) if clone_mode else MEOWA_VOICE_CLONE_DEFAULT_EMOTION
+            clone_emotion_intensity = (
+                normalize_meowa_voice_clone_emotion_intensity(args.emotion_intensity)
+                if clone_mode
+                else MEOWA_VOICE_CLONE_DEFAULT_EMOTION_INTENSITY
+            )
             tts_text = args.text
             tts_voice = args.voice
             if args.optimize_prompt:
@@ -10197,6 +10277,8 @@ def main() -> int:
                 request_payload = {
                     "text": args.text,
                     "language": language,
+                    "emotion": clone_emotion,
+                    "emotion_intensity": clone_emotion_intensity,
                     "reference_audios": reference_audios,
                     "project_id": project_id,
                     "thread_id": thread_id or None,
@@ -10209,6 +10291,8 @@ def main() -> int:
                     project_id=project_id,
                     thread_id=thread_id,
                     language=language,
+                    emotion=clone_emotion,
+                    emotion_intensity=clone_emotion_intensity,
                     timeout=args.timeout,
                     max_wait=args.max_wait,
                     poll_interval=args.poll_interval,
