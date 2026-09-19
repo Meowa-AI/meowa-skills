@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.19.1"
+MEOWART_API_CLI_VERSION = "2026.09.19.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2033,6 +2033,7 @@ def build_animate_source_controls(
     padding_left: int,
     padding_right: int,
     requested_is_pixel: bool | None = None,
+    pixel_max_size: int = 256,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if Image is None:
         raise RuntimeError("Pillow is required for animation controls; run: python3 -m pip install Pillow")
@@ -2059,14 +2060,14 @@ def build_animate_source_controls(
         else image_format == "PNG" and width <= 256 and height <= 256
     )
     if color_count is not None and not is_pixel:
-        raise ValueError("color_count is available only for pixel animation inputs up to 256x256")
+        raise ValueError("color_count is available only for pixel animation mode")
 
     padded_width = width + padding_left + padding_right
     padded_height = height + padding_top + padding_down
-    if is_pixel and (padded_width > 256 or padded_height > 256):
+    if is_pixel and (padded_width > pixel_max_size or padded_height > pixel_max_size):
         raise ValueError(
             f"padded pixel animation canvas would be {padded_width}x{padded_height}; "
-            "pixel animation cannot exceed 256x256"
+            f"pixel animation cannot exceed {pixel_max_size}x{pixel_max_size}"
         )
     if is_pixel and max(width, height) <= 64 and max(padded_width, padded_height) > 128:
         print(
@@ -3460,6 +3461,7 @@ def submit_animate(
     output_format: str = "spritesheet",
     animation_type: str = "other",
     animation_model: str = "pixel-engine-v1.1",
+    intelligence: str = "standard",
     optimize_prompt: bool = True,
     remove_bg_method: str = "advanced",
     pixel_config: dict[str, Any] | None = None,
@@ -3468,11 +3470,15 @@ def submit_animate(
     verify: bool = True,
 ) -> dict[str, Any]:
     url = _normalize_base_url(api_base, "/api/animate")
+    render_mode = "pixel" if animation_model == "pixel-engine-v1.1" else "detailed"
+    request_model = "pixel-engine-v1.5" if intelligence == "advanced" else animation_model
     payload: dict[str, Any] = {
         "image": image_data_url,
         "prompt": prompt,
         "is_pixel": is_pixel,
-        "model": animation_model,
+        "model": request_model,
+        "render_mode": render_mode,
+        "intelligence": intelligence,
         "optimize_prompt": optimize_prompt,
         "output_frames": output_frames,
         "output_format": output_format,
@@ -7559,14 +7565,20 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(animate_submit_parser)
     animate_submit_parser.add_argument("--image-file", required=True)
     animate_submit_parser.add_argument("--prompt", default="")
-    animate_submit_parser.add_argument("--output-frames", type=int, default=8, choices=[4, 6, 8, 10, 12, 16])
+    animate_submit_parser.add_argument("--output-frames", type=int, default=8, choices=list(range(3, 17)))
     animate_submit_parser.add_argument("--output-format", default="spritesheet", choices=["webp", "gif", "spritesheet"])
     animate_submit_parser.add_argument("--animation-type", default="other")
     animate_submit_parser.add_argument(
         "--animation-model",
-        default="",
+        default="pixel-engine-v1.1",
         choices=["pixel-engine-v1.1", "frame-engine-v1.1"],
-        help="Animation model; defaults from the source dimensions like the web UI",
+        help="Animation image type: pixel-engine-v1.1 for Pixel or frame-engine-v1.1 for HD",
+    )
+    animate_submit_parser.add_argument(
+        "--intelligence",
+        default="standard",
+        choices=["standard", "advanced"],
+        help="Animation intelligence tier; advanced uses the newer generation model",
     )
     animate_submit_parser.set_defaults(optimize_prompt=True)
     animate_submit_parser.add_argument("--optimize-prompt", action="store_true", dest="optimize_prompt")
@@ -10858,18 +10870,11 @@ def main() -> int:
             return 0
 
         if args.command == "animate-submit":
-            selected_animation_model = getattr(args, "animation_model", "")
-            is_pixel = resolve_animate_is_pixel(
-                args.image_file,
-                requested_is_pixel=(
-                    selected_animation_model == "pixel-engine-v1.1"
-                    if selected_animation_model
-                    else None
-                ),
-            )
-            animation_model = selected_animation_model or (
-                "pixel-engine-v1.1" if is_pixel else "frame-engine-v1.1"
-            )
+            animation_model = args.animation_model
+            intelligence = args.intelligence
+            is_pixel = animation_model == "pixel-engine-v1.1"
+            if intelligence == "standard" and args.output_frames not in {4, 6, 8, 10, 12, 16}:
+                raise ValueError("standard intelligence supports output_frames 4, 6, 8, 10, 12, or 16")
             pixel_config, source_padding = build_animate_source_controls(
                 args.image_file,
                 color_count=args.color_count,
@@ -10878,6 +10883,7 @@ def main() -> int:
                 padding_left=args.padding_left,
                 padding_right=args.padding_right,
                 requested_is_pixel=is_pixel,
+                pixel_max_size=320 if intelligence == "advanced" else 256,
             )
             payload = submit_animate(
                 api_base=args.api_base,
@@ -10889,6 +10895,7 @@ def main() -> int:
                 output_format=args.output_format,
                 animation_type=args.animation_type,
                 animation_model=animation_model,
+                intelligence=intelligence,
                 optimize_prompt=args.optimize_prompt,
                 remove_bg_method=args.remove_bg_method,
                 pixel_config=pixel_config,
@@ -10911,18 +10918,11 @@ def main() -> int:
 
         if args.command == "animate-run":
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt or Path(args.image_file).stem)}")
-            selected_animation_model = getattr(args, "animation_model", "")
-            is_pixel = resolve_animate_is_pixel(
-                args.image_file,
-                requested_is_pixel=(
-                    selected_animation_model == "pixel-engine-v1.1"
-                    if selected_animation_model
-                    else None
-                ),
-            )
-            animation_model = selected_animation_model or (
-                "pixel-engine-v1.1" if is_pixel else "frame-engine-v1.1"
-            )
+            animation_model = args.animation_model
+            intelligence = args.intelligence
+            is_pixel = animation_model == "pixel-engine-v1.1"
+            if intelligence == "standard" and args.output_frames not in {4, 6, 8, 10, 12, 16}:
+                raise ValueError("standard intelligence supports output_frames 4, 6, 8, 10, 12, or 16")
             pixel_config, source_padding = build_animate_source_controls(
                 args.image_file,
                 color_count=args.color_count,
@@ -10931,6 +10931,7 @@ def main() -> int:
                 padding_left=args.padding_left,
                 padding_right=args.padding_right,
                 requested_is_pixel=is_pixel,
+                pixel_max_size=320 if intelligence == "advanced" else 256,
             )
             submit_payload = submit_animate(
                 api_base=args.api_base,
@@ -10942,6 +10943,7 @@ def main() -> int:
                 output_format=args.output_format,
                 animation_type=args.animation_type,
                 animation_model=animation_model,
+                intelligence=intelligence,
                 optimize_prompt=args.optimize_prompt,
                 remove_bg_method=args.remove_bg_method,
                 pixel_config=pixel_config,

@@ -1126,28 +1126,42 @@
       "parameters": {
         "animation_model": {
           "flag": "--animation-model",
-          "default": "",
-          "conditional_default": {
-            "source_at_most_256x256": "pixel-engine-v1.1",
-            "larger_source": "frame-engine-v1.1"
-          },
+          "default": "pixel-engine-v1.1",
           "choices": [
             "pixel-engine-v1.1",
             "frame-engine-v1.1"
           ],
-          "request_field": "model"
+          "request_field": "model/render_mode"
+        },
+        "intelligence": {
+          "flag": "--intelligence",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "advanced"
+          ],
+          "request_field": "intelligence"
         },
         "output_frames": {
           "flag": "--output-frames",
           "default": 8,
           "choices": [
+            3,
             4,
+            5,
             6,
+            7,
             8,
+            9,
             10,
+            11,
             12,
+            13,
+            14,
+            15,
             16
           ],
+          "available_when": "advanced supports every integer from 3 to 16; standard supports 4, 6, 8, 10, 12, or 16",
           "request_field": "output_frames"
         },
         "optimize_prompt": {
