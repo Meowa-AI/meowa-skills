@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.18.1"
+MEOWART_API_CLI_VERSION = "2026.09.19.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -96,7 +96,7 @@ VIDEO_MOTION_MODE_TO_MODEL = {
 MAP_PRESET_CATALOG_MAX_BYTES = 10 * 1024 * 1024
 TEXTURE_REFERENCE_CATALOG_MAX_BYTES = 2 * 1024 * 1024
 STANDARD_TEXTURE_SIZE = 64
-SPINE_PACKAGE_MAX_BYTES = 25 * 1024 * 1024
+SPINE_PACKAGE_MAX_BYTES = 50 * 1024 * 1024
 SPINE_PACKAGE_MAX_ENTRIES = 512
 SPINE_PACKAGE_MAX_UNCOMPRESSED_BYTES = 128 * 1024 * 1024
 SPINE_SKELETON_MAX_BYTES = 16 * 1024 * 1024
@@ -4499,7 +4499,7 @@ def _validate_spine_runtime_zip(
     expected_version_minor: str = "4.2",
 ) -> list[dict[str, Any]]:
     if not data or len(data) > SPINE_PACKAGE_MAX_BYTES:
-        raise ValueError("Spine package must be 25MB or smaller")
+        raise ValueError("Spine package must be 50MB or smaller")
     try:
         with zipfile.ZipFile(io.BytesIO(data), "r") as archive:
             infos = [info for info in archive.infolist() if not info.is_dir()]
