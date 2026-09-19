@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.19.2"
+MEOWART_API_CLI_VERSION = "2026.09.19.3"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2021,7 +2021,7 @@ def resolve_animate_is_pixel(
     except Exception as exc:
         raise ValueError(f"animation source must be a valid image: {path}") from exc
 
-    return image_format == "PNG" and width <= 256 and height <= 256
+    return image_format in {"PNG", "WEBP"} and width <= 256 and height <= 256
 
 
 def build_animate_source_controls(
@@ -2057,7 +2057,7 @@ def build_animate_source_controls(
     is_pixel = (
         requested_is_pixel
         if requested_is_pixel is not None
-        else image_format == "PNG" and width <= 256 and height <= 256
+        else image_format in {"PNG", "WEBP"} and width <= 256 and height <= 256
     )
     if color_count is not None and not is_pixel:
         raise ValueError("color_count is available only for pixel animation mode")
