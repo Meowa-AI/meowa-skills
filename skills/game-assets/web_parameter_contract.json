@@ -1250,11 +1250,13 @@
           "default": "480p",
           "choices": [
             "480p",
-            "720p"
+            "720p",
+            "1080p"
           ],
           "unavailable_choices": {
             "pixel": [
-              "720p"
+              "720p",
+              "1080p"
             ]
           },
           "request_field": "resolution"

@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.19.3"
+MEOWART_API_CLI_VERSION = "2026.09.20.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7636,8 +7636,8 @@ def build_parser() -> argparse.ArgumentParser:
     meowa_animation_run_parser.add_argument(
         "--resolution",
         default="480p",
-        choices=["480p", "720p"],
-        help="Output resolution; 720p is available only for HD and costs 10 extra credits",
+        choices=["480p", "720p", "1080p"],
+        help="HD supports 720p (+10 credits) and 1080p (Standard 30 / Detailed 35 generation credits)",
     )
     meowa_animation_run_parser.add_argument(
         "--alpha-mode",
@@ -10738,7 +10738,7 @@ def main() -> int:
             if quality_mode == "advanced":
                 raise ValueError("Ultimate quality is still in development")
             if args.style_mode == "pixel" and args.resolution != "480p":
-                raise ValueError("720p resolution is unavailable for pixel style mode")
+                raise ValueError(f"{args.resolution} resolution is unavailable for pixel style mode")
             alpha_mode = _resolve_meowa_animation_alpha_mode(
                 style_mode=args.style_mode,
                 alpha_mode=args.alpha_mode,
