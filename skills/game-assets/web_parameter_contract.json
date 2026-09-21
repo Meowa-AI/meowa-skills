@@ -1354,6 +1354,11 @@
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "standard",
+          "conditional_default": {
+            "480p": "standard",
+            "720p": "standard",
+            "1080p": "none"
+          },
           "choices": [
             "none",
             "standard",

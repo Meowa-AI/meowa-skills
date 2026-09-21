@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.21.4"
+MEOWART_API_CLI_VERSION = "2026.09.21.5"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7710,7 +7710,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="standard",
         choices=["none", "standard", "advanced"],
         action=_StoreExplicitArgument,
-        help="Background removal: none or standard (advanced is temporarily unavailable)",
+        help="Background removal: none or standard (advanced is temporarily unavailable); "
+        "defaults to none at 1080p, standard otherwise",
     )
     meowa_animation_run_parser.set_defaults(remove_bg_method_explicit=False)
     meowa_animation_run_parser.add_argument(
@@ -7879,11 +7880,15 @@ def _resolve_meowa_animation_remove_bg_method(
     style_mode: str,
     remove_bg_method: str,
     explicitly_selected: bool,
+    resolution: str = "480p",
 ) -> str:
     if remove_bg_method == "advanced":
         if explicitly_selected:
             raise ValueError("Advanced background removal is temporarily unavailable")
         return "standard"
+    # Web default: 1080p opens with a green-screen source and no paid removal.
+    if not explicitly_selected and resolution == "1080p":
+        return "none"
     return remove_bg_method
 
 
@@ -10787,6 +10792,7 @@ def main() -> int:
                 style_mode=args.style_mode,
                 remove_bg_method=args.remove_bg_method,
                 explicitly_selected=args.remove_bg_method_explicit,
+                resolution=args.resolution,
             )
             if remove_bg_method == "none" and not args.background_color_explicit:
                 args.background_color = "#00b140"
