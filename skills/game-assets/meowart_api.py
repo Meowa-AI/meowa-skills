@@ -10789,8 +10789,8 @@ def main() -> int:
                 with Image.open(last_image_path) as last_source:
                     if last_source.size != (source_width, source_height):
                         raise ValueError("animation first and last frames must have identical dimensions")
-            if args.style_mode == "pixel" and max(source_width, source_height) > 256:
-                raise ValueError("pixel animation source cannot exceed 256 pixels on its longest side")
+            if args.style_mode == "pixel" and max(source_width, source_height) > 320:
+                raise ValueError("pixel animation source cannot exceed 320 pixels on its longest side")
 
             duration_seconds = args.output_frames // 8
             animation_mode = "non_loop" if last_image_path else args.animation_mode
