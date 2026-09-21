@@ -767,7 +767,8 @@
           "default": "4.2",
           "choices": [
             "4.2",
-            "3.8"
+            "3.8.99",
+            "3.8.75"
           ],
           "request_field": "export_version"
         },
@@ -870,6 +871,16 @@
             "ultimate"
           ],
           "request_field": "image2_quality"
+        },
+        "export_version": {
+          "flag": "--export-version",
+          "default": "4.2",
+          "choices": [
+            "4.2",
+            "3.8.99",
+            "3.8.75"
+          ],
+          "request_field": "export_version"
         }
       }
     },
@@ -931,6 +942,16 @@
             "standard"
           ],
           "request_field": "remove_bg_method"
+        },
+        "export_version": {
+          "flag": "--export-version",
+          "default": "4.2",
+          "choices": [
+            "4.2",
+            "3.8.99",
+            "3.8.75"
+          ],
+          "request_field": "export_version"
         }
       }
     },
@@ -988,6 +1009,16 @@
             "ultimate"
           ],
           "request_field": "image2_quality"
+        },
+        "export_version": {
+          "flag": "--export-version",
+          "default": "4.2",
+          "choices": [
+            "4.2",
+            "3.8.99",
+            "3.8.75"
+          ],
+          "request_field": "export_version"
         }
       }
     },

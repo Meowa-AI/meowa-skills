@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.20.1"
+MEOWART_API_CLI_VERSION = "2026.09.21.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -4557,10 +4557,15 @@ def _validate_spine_runtime_zip(
                 )
                 version_match = re.search(version_pattern, skeleton_data[:4096])
                 spine_version = version_match.group(0).decode("ascii") if version_match else ""
-            if re.fullmatch(
-                rf"{re.escape(expected_version_minor)}\.\d+",
-                spine_version,
-            ) is None:
+            expected_matches = (
+                spine_version == expected_version_minor
+                if expected_version_minor.count(".") == 2
+                else re.fullmatch(
+                    rf"{re.escape(expected_version_minor)}\.\d+",
+                    spine_version,
+                ) is not None
+            )
+            if not expected_matches:
                 raise ValueError(
                     f"Spine package must use Spine {expected_version_minor} runtime data"
                 )
@@ -4903,8 +4908,8 @@ def save_spine_final_package(
     export_version: str = "4.2",
 ) -> tuple[Path, list[dict[str, Any]]]:
     normalized_export_version = str(export_version or "").strip()
-    if normalized_export_version not in {"4.2", "3.8"}:
-        raise ValueError("Spine export version must be 4.2 or 3.8")
+    if normalized_export_version not in {"4.2", "3.8.99", "3.8.75"}:
+        raise ValueError("Spine export version must be 4.2, 3.8.99, or 3.8.75")
     output_dir = _predict_saved_dir(output_root, slug_seed)
     downloads: list[dict[str, Any]] = []
     if not no_download:
@@ -4922,7 +4927,7 @@ def save_spine_final_package(
         if content_type != "application/zip":
             raise ValueError("Spine final package did not return application/zip")
         package_data = response.content
-        if normalized_export_version == "3.8":
+        if normalized_export_version != "4.2":
             export_url = _normalize_base_url(
                 api_base,
                 "/api/spine-agent/runtime-file",
@@ -4961,7 +4966,10 @@ def save_spine_final_package(
             expected_version_minor=normalized_export_version,
         )
         output_dir.mkdir(parents=True, exist_ok=True)
-        version_suffix = "" if normalized_export_version == "4.2" else "-spine-3.8"
+        version_suffix = (
+            "" if normalized_export_version == "4.2"
+            else f"-spine-{normalized_export_version}"
+        )
         target = output_dir / f"{_safe_slug(slug_seed)}{version_suffix}.zip"
         target.write_bytes(package_data)
         downloads.append({"type": "package", "path": str(target), "mime_type": content_type})
@@ -7457,7 +7465,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generation model; defaults to Image2",
     )
     spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
-    spine_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
+    spine_run.add_argument(
+        "--export-version",
+        default="4.2",
+        choices=["4.2", "3.8.99", "3.8.75"],
+    )
     spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
     spine_run.add_argument("--weapon", default="auto", choices=["auto", "yes", "no"])
     spine_run.add_argument(
@@ -7499,7 +7511,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     spine_edit_run.add_argument("--resolution", default="1K", choices=["1K", "2K"])
     spine_edit_run.add_argument("--quality", default="standard", choices=IMAGE2_QUALITY_CHOICES)
-    spine_edit_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
+    spine_edit_run.add_argument(
+        "--export-version",
+        default="4.2",
+        choices=["4.2", "3.8.99", "3.8.75"],
+    )
 
     spine_replace_run = subparsers.add_parser(
         "spine-replace-run",
@@ -7519,7 +7535,11 @@ def build_parser() -> argparse.ArgumentParser:
     spine_replace_run.add_argument("--offset-y-percent", type=_bounded_integer(-100, 100), default=0)
     spine_replace_run.add_argument("--rotation-degrees", type=_bounded_integer(-180, 180), default=0)
     spine_replace_run.add_argument("--remove-bg-method", default="none", choices=["none", "standard"])
-    spine_replace_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
+    spine_replace_run.add_argument(
+        "--export-version",
+        default="4.2",
+        choices=["4.2", "3.8.99", "3.8.75"],
+    )
 
     spine_reskin_run = subparsers.add_parser(
         "spine-reskin-run",
@@ -7541,7 +7561,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     spine_reskin_run.add_argument("--resolution", default="2K", choices=["1K", "2K"])
     spine_reskin_run.add_argument("--quality", default="standard", choices=IMAGE2_QUALITY_CHOICES)
-    spine_reskin_run.add_argument("--export-version", default="4.2", choices=["4.2", "3.8"])
+    spine_reskin_run.add_argument(
+        "--export-version",
+        default="4.2",
+        choices=["4.2", "3.8.99", "3.8.75"],
+    )
 
     subparsers.add_parser("credits-balance", help="Get current credits balance")
     subparsers.add_parser("free-credits", help="Read free-credit eligibility and open the website link to verify and claim")
