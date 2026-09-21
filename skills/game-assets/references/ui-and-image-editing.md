@@ -155,7 +155,7 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
 - Use pixel mode for pixel assets and HD mode for smooth artwork.
 - Use `--strict` only when pixel structure must remain exact.
 - Use `--regional-pixelation` for a multi-asset image whose detected regions need separate pixel-size handling. It is mutually exclusive with `--strict` and adds the same 2-credit product add-on shown on the web.
-- Omitted options follow the web editor's mode defaults: pixel editing uses Nano Banana at 1K, while HD editing uses Image2 at 2K. An explicit `--generation-model` or `--resolution` overrides that mode default.
+- Omitted options follow the web editor's mode defaults: pixel editing uses Nano Banana at 1K, while HD editing uses Image2.5 at 2K. An explicit `--generation-model` or `--resolution` overrides that mode default.
 - `--quality standard|detailed|ultimate` applies to Image-2. `--generation-speed normal|fast` applies to Nano Banana.
 - Pixel mode supports `none`, `standard`, and `advanced` background removal. HD edits keep their normal background unless the dedicated background-removal command is used afterward.
 

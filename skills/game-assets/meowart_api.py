@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.21.1"
+MEOWART_API_CLI_VERSION = "2026.09.21.4"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3738,8 +3738,8 @@ def submit_remove_background(
     normalized_source_color = str(source_background_color or "#ffffff").strip().lower()
     if not re.fullmatch(r"#[0-9a-f]{6}", normalized_source_color):
         raise ValueError("source_background_color must be a six-digit HEX color")
-    if remove_bg_batch_size not in {"1", "4", "8", "16", "all"}:
-        raise ValueError("remove_bg_batch_size must be one of: 1, 4, 8, 16, all")
+    if remove_bg_batch_size not in {"2", "4", "8", "16"}:
+        raise ValueError("remove_bg_batch_size must be one of: 2, 4, 8, 16")
     data = {
         "method": normalized_mode,
         "remove_bg_method": normalized_quality,
@@ -6234,6 +6234,12 @@ class AnimationEditAlphaAction(argparse.Action):
         setattr(namespace, "_edit_alpha_explicit", True)
 
 
+class ImageEditOptionAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        setattr(namespace, f"_image_edit_{self.dest}_explicit", True)
+
+
 class GameAssetsArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         arguments = list(sys.argv[1:] if args is None else args)
@@ -6244,6 +6250,13 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
         edit_alpha_explicit = vars(parsed).pop("_edit_alpha_explicit", False)
         if parsed.command in {"meowa-animation-edit-run", "meowa-animation-edit-prompts"} and not edit_alpha_explicit:
             parsed.alpha_mode = "sharp" if parsed.style_mode == "pixel" else "soft"
+        model_explicit = vars(parsed).pop("_image_edit_generation_model_explicit", False)
+        resolution_explicit = vars(parsed).pop("_image_edit_resolution_explicit", False)
+        if parsed.command == "image-edit-run" and parsed.mode == "hd":
+            if not model_explicit:
+                parsed.generation_model = "image-2.5"
+            if not resolution_explicit:
+                parsed.resolution = "2K"
         return parsed
 
 
@@ -6547,13 +6560,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--generation-model",
         default="nano-banana",
         choices=[*GENERATION_MODEL_CHOICES, "image-2.5"],
-        help="Generation model (default: Nano Banana, matching the web editor)",
+        help="Generation model (pixel default: Nano Banana; HD default: Image2.5)",
+        action=ImageEditOptionAction,
     )
     image_edit_run.add_argument(
         "--resolution",
         default="1K",
         choices=["1K", "2K"],
-        help="Output resolution (default: 1K, matching the web editor)",
+        help="Output resolution (pixel default: 1K; HD default: 2K)",
+        action=ImageEditOptionAction,
     )
     image_edit_run.add_argument(
         "--quality",
@@ -7032,7 +7047,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     remove_bg_submit = subparsers.add_parser("remove-background-submit", help="Submit a remove-background job")
     add_shared_path_args(remove_bg_submit)
-    remove_bg_submit.add_argument("--image-file", required=True)
+    remove_bg_submit.add_argument("--image-file", required=True, help="Image or MP4 input; GIF, WebP and MP4 return lossless WebP (no audio)")
     remove_bg_submit.add_argument("--mode", default="hd", choices=["pixel", "hd"], help="Source artwork type")
     remove_bg_submit.add_argument(
         "--quality",
@@ -7047,7 +7062,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Solid source background color used by Pixel advanced; defaults to white",
     )
 
-    remove_bg_submit.add_argument("--remove-bg-batch-size", default="16", choices=["1", "4", "8", "16", "all"], help="Frames per removal call; HD recommends 4; ignored for Pixel advanced")
+    remove_bg_submit.add_argument("--remove-bg-batch-size", default="16", choices=["2", "4", "8", "16"], help="Frames per removal call; HD recommends 4; ignored for Pixel advanced")
 
     remove_bg_submit.add_argument("--preserve-translucency", action=argparse.BooleanOptionalAction, default=False, help="Keep soft alpha in Pixel removal; HD always keeps soft alpha; no extra credits")
 

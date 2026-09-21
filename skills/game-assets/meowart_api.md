@@ -123,7 +123,7 @@ python3 skills/game-assets/meowart_api.py <command> --help
 可重复 `--reference-image` 传参考图；失败或中断用 `image-2.5-poll --job-id ...` 恢复，勿重复提交。
 1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
 
-万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
+通用生成默认使用 Image2.5（`image-2.5-run`）。万能编辑高清模式默认使用 Image2.5、2K；像素模式默认不变。万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
 
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。
 

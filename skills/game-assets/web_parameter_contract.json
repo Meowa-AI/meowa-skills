@@ -176,7 +176,11 @@
             "image-2",
             "image-2.5"
           ],
-          "request_field": "generation_provider"
+          "request_field": "generation_provider",
+          "defaults_by_mode": {
+            "pixel": "nano-banana",
+            "hd": "image-2.5"
+          }
         },
         "quality": {
           "flag": "--quality",
@@ -204,7 +208,11 @@
             "1K",
             "2K"
           ],
-          "request_field": "resolution"
+          "request_field": "resolution",
+          "defaults_by_mode": {
+            "pixel": "1K",
+            "hd": "2K"
+          }
         },
         "strict": {
           "flag": "--strict",
@@ -278,11 +286,10 @@
           "flag": "--remove-bg-batch-size",
           "default": "16",
           "choices": [
-            "1",
+            "2",
             "4",
             "8",
-            "16",
-            "all"
+            "16"
           ],
           "request_field": "remove_bg_batch_size",
           "available_when": "animated input except Pixel advanced"

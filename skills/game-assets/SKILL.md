@@ -137,9 +137,9 @@ For Frame Animation V2 removal batch size, quality levels, and per-batch credits
 
 Meowa Animation uses `--remove-bg-batch-size 4|8|16|all` (default `16`).
 
-Background removal accepts animated WebP/GIF with `--remove-bg-batch-size 1|4|8|16|all` (default `16`); HD defaults to General removal (`advanced`, 5 credits per batch); Budget removal (`standard`) costs 2. HD recommends batches of 4. Pixel defaults to General removal (`standard`), requires animation frames at most 256×256 (static images have no 256×256 restriction), and Complex removal (`advanced`) retains its separate frame tiers. See [Pixel and HD assets](references/pixel-and-hd-assets.md).
+Background removal returns lossless WebP for GIF, WebP and MP4 inputs (MP4 audio is omitted). It accepts animated WebP/GIF or MP4 with `--remove-bg-batch-size 2|4|8|16` (default `16`); HD defaults to General removal (`advanced`, 5 credits per batch); Budget removal (`standard`) costs 2. HD recommends batches of 4. Pixel defaults to General removal (`standard`), requires animation frames at most 256×256 (static images have no 256×256 restriction), and Complex removal (`advanced`) retains its separate frame tiers. See [Pixel and HD assets](references/pixel-and-hd-assets.md).
 
-Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.
+Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP outputs. HD always preserves soft alpha. This option does not change credits.
 
 ### 通用生成 Image 2.5
 
@@ -149,7 +149,7 @@ Pixel background removal supports `--preserve-translucency` (default off) for bo
 可重复 `--reference-image` 传参考图；失败或中断用 `image-2.5-poll --job-id ...` 恢复，勿重复提交。
 1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
 
-万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
+通用生成默认使用 Image2.5（`image-2.5-run`）。万能编辑高清模式默认使用 Image2.5、2K；像素模式默认不变。万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
 
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。
 
