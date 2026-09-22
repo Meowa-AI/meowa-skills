@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.21.5"
+MEOWART_API_CLI_VERSION = "2026.09.22.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -3572,6 +3572,7 @@ def submit_meowa_animation(
     remove_bg_method: str,
     remove_bg_batch_size: str = "16",
     background_color: str,
+    high_frame_rate: bool = False,
     source_padding: dict[str, Any],
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
@@ -3593,6 +3594,7 @@ def submit_meowa_animation(
             "remove_bg_method": remove_bg_method,
             "remove_bg_batch_size": remove_bg_batch_size,
             "background_color": background_color,
+            "high_frame_rate": "true" if high_frame_rate else "false",
             "source_padding": json.dumps(source_padding),
         },
         files={
@@ -7644,12 +7646,20 @@ def build_parser() -> argparse.ArgumentParser:
         edit_parser.add_argument("--edit-intent", required=True)
         edit_parser.add_argument("--video-description", default="")
         edit_parser.add_argument("--image-description", default="")
-        edit_parser.add_argument("--background-color", default="#ffffff", help="Fill transparent reference pixels with #RRGGBB; applies to both media inputs")
         edit_parser.add_argument("--style-mode", choices=["pixel", "hd"], default="pixel")
         edit_parser.add_argument("--resolution", choices=["480p", "720p"], default="480p", help="720p requires HD mode")
         edit_parser.add_argument("--alpha-mode", choices=["sharp", "soft"], default="sharp", action=AnimationEditAlphaAction, help="Default sharp for Pixel, soft for HD")
-        edit_parser.add_argument("--remove-bg-method", choices=["none", "standard"], default="standard")
-        edit_parser.add_argument("--remove-bg-batch-size", choices=["4", "8", "16", "all"], default="16")
+        edit_parser.add_argument("--remove-bg-method", choices=["none", "standard"], default="standard", action=_StoreExplicitArgument)
+        edit_parser.set_defaults(remove_bg_method_explicit=False)
+        edit_parser.add_argument("--remove-bg-batch-size", choices=["2", "4", "8", "16"], default="16")
+        edit_parser.add_argument(
+            "--high-frame-rate",
+            action="store_true",
+            default=False,
+            help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
+        )
+        edit_parser.add_argument("--background-color", default="#ffffff", action=_StoreExplicitArgument, help="Fill transparent reference pixels with #RRGGBB; applies to both media inputs")
+        edit_parser.set_defaults(background_color_explicit=False)
         edit_parser.add_argument("--primary-reference", choices=["video", "image"], default="video",
             help="video: edit the reference video's character; image: the image character performs the video's action in place (requires --image-file)")
         if edit_command == "meowa-animation-edit-prompts":
@@ -7715,12 +7725,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     meowa_animation_run_parser.set_defaults(remove_bg_method_explicit=False)
     meowa_animation_run_parser.add_argument(
-        "--remove-bg-batch-size", choices=["4", "8", "16", "all"], default="16",
+        "--remove-bg-batch-size", choices=["2", "4", "8", "16"], default="16",
         help="Frames per removal (highest to lowest quality); each batch costs 5 credits",
     )
     meowa_animation_run_parser.add_argument(
         "--background-color", default="#c6c6c6", action=_StoreExplicitArgument,
         help="Source background color; defaults to #00b140 when removal is none",
+    )
+    meowa_animation_run_parser.add_argument(
+        "--high-frame-rate",
+        action="store_true",
+        default=False,
+        help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
     )
     meowa_animation_run_parser.set_defaults(background_color_explicit=False)
     meowa_animation_run_parser.set_defaults(optimize_prompt=True)
@@ -7881,13 +7897,14 @@ def _resolve_meowa_animation_remove_bg_method(
     remove_bg_method: str,
     explicitly_selected: bool,
     resolution: str = "480p",
+    high_frame_rate: bool = False,
 ) -> str:
     if remove_bg_method == "advanced":
         if explicitly_selected:
             raise ValueError("Advanced background removal is temporarily unavailable")
         return "standard"
-    # Web default: 1080p opens with a green-screen source and no paid removal.
-    if not explicitly_selected and resolution == "1080p":
+    # Web default: 1080p and high frame rate open with a green-screen source and no paid removal.
+    if not explicitly_selected and (high_frame_rate or resolution == "1080p"):
         return "none"
     return remove_bg_method
 
@@ -10731,14 +10748,21 @@ def main() -> int:
             return 0
 
         if args.command in {"meowa-animation-edit-run", "meowa-animation-edit-prompts"}:
+            remove_bg_method = args.remove_bg_method
+            background_color = args.background_color
+            if args.high_frame_rate and not args.remove_bg_method_explicit:
+                remove_bg_method = "none"
+            if args.high_frame_rate and remove_bg_method == "none" and not args.background_color_explicit:
+                background_color = "#00b140"
             data = {"edit_intent": args.edit_intent, "video_description": args.video_description,
-                    "image_description": args.image_description if args.image_file else "", "background_color": args.background_color}
+                    "image_description": args.image_description if args.image_file else "", "background_color": background_color,
+                    "high_frame_rate": "true" if args.high_frame_rate else "false"}
             if args.style_mode == "pixel" and args.resolution != "480p":
                 raise ValueError("Pixel mode requires 480p")
             if args.primary_reference == "image" and not args.image_file:
                 raise ValueError("--primary-reference image requires --image-file")
             data.update(style_mode=args.style_mode, resolution=args.resolution, alpha_mode=args.alpha_mode,
-                        remove_bg_method=args.remove_bg_method, remove_bg_batch_size=args.remove_bg_batch_size,
+                        remove_bg_method=remove_bg_method, remove_bg_batch_size=args.remove_bg_batch_size,
                         primary_reference=args.primary_reference)
             polish = args.command == "meowa-animation-edit-prompts"
             if not polish and (not args.edit_intent.strip() or not args.video_description.strip()
@@ -10793,6 +10817,7 @@ def main() -> int:
                 remove_bg_method=args.remove_bg_method,
                 explicitly_selected=args.remove_bg_method_explicit,
                 resolution=args.resolution,
+                high_frame_rate=args.high_frame_rate,
             )
             if remove_bg_method == "none" and not args.background_color_explicit:
                 args.background_color = "#00b140"
@@ -10860,6 +10885,7 @@ def main() -> int:
                 remove_bg_method=remove_bg_method,
                 remove_bg_batch_size=args.remove_bg_batch_size,
                 background_color=args.background_color,
+                high_frame_rate=args.high_frame_rate,
                 source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,

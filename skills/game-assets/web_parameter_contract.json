@@ -1378,10 +1378,10 @@
           "flag": "--remove-bg-batch-size",
           "default": "16",
           "choices": [
+            "2",
             "4",
             "8",
-            "16",
-            "all"
+            "16"
           ],
           "available_when": {
             "remove_bg_method": [
@@ -1389,6 +1389,11 @@
             ]
           },
           "request_field": "remove_bg_batch_size"
+        },
+        "high_frame_rate": {
+          "flag": "--high-frame-rate",
+          "default": false,
+          "request_field": "high_frame_rate"
         },
         "background_color": {
           "flag": "--background-color",
@@ -1930,12 +1935,17 @@
           "flag": "--remove-bg-batch-size",
           "default": "16",
           "choices": [
+            "2",
             "4",
             "8",
-            "16",
-            "all"
+            "16"
           ],
           "request_field": "remove_bg_batch_size"
+        },
+        "high_frame_rate": {
+          "flag": "--high-frame-rate",
+          "default": false,
+          "request_field": "high_frame_rate"
         },
         "primary_reference": {
           "flag": "--primary-reference",
@@ -2054,12 +2064,17 @@
           "flag": "--remove-bg-batch-size",
           "default": "16",
           "choices": [
+            "2",
             "4",
             "8",
-            "16",
-            "all"
+            "16"
           ],
           "request_field": "remove_bg_batch_size"
+        },
+        "high_frame_rate": {
+          "flag": "--high-frame-rate",
+          "default": false,
+          "request_field": "high_frame_rate"
         },
         "primary_reference": {
           "flag": "--primary-reference",
