@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.22.1"
+MEOWART_API_CLI_VERSION = "2026.09.22.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7674,7 +7674,7 @@ def build_parser() -> argparse.ArgumentParser:
     meowa_animation_run_parser.add_argument(
         "--last-image-file",
         default="",
-        help="Optional exact last frame; when set, loop mode is ignored",
+        help="Optional exact last frame; when set, loop mode is ignored and an omitted --output-frames defaults to 24 (3 s)",
     )
     meowa_animation_run_parser.add_argument("--prompt", required=True)
     meowa_animation_run_parser.add_argument(
@@ -7701,7 +7701,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=16,
         choices=[8, 16, 24, 32],
+        action=_StoreExplicitArgument,
+        help="8/16/24/32 frames = 1-4 s; defaults to 24 when --last-image-file is set",
     )
+    meowa_animation_run_parser.set_defaults(output_frames_explicit=False)
     meowa_animation_run_parser.add_argument(
         "--quality-mode",
         default="medium",
@@ -7918,6 +7921,21 @@ def _resolve_meowa_animation_quality_mode(
     if explicitly_selected:
         return quality_mode
     return "standard" if style_mode == "hd" else "medium"
+
+
+MEOWA_ANIMATION_LAST_FRAME_OUTPUT_FRAMES = 24
+
+
+# Mirrors the web UI: a first/last-frame pair defaults to 3 s because 2 s tends to freeze.
+def _resolve_meowa_animation_output_frames(
+    *,
+    output_frames: int,
+    explicitly_selected: bool,
+    has_last_frame: bool,
+) -> int:
+    if explicitly_selected or not has_last_frame:
+        return output_frames
+    return MEOWA_ANIMATION_LAST_FRAME_OUTPUT_FRAMES
 
 
 def _resolve_meowa_animation_alpha_mode(
@@ -10838,7 +10856,12 @@ def main() -> int:
             if args.style_mode == "pixel" and max(source_width, source_height) > 320:
                 raise ValueError("pixel animation source cannot exceed 320 pixels on its longest side")
 
-            duration_seconds = args.output_frames // 8
+            output_frames = _resolve_meowa_animation_output_frames(
+                output_frames=args.output_frames,
+                explicitly_selected=args.output_frames_explicit,
+                has_last_frame=last_image_path is not None,
+            )
+            duration_seconds = output_frames // 8
             animation_mode = "non_loop" if last_image_path else args.animation_mode
             source_padding = {
                 "enabled": True,
@@ -10926,7 +10949,7 @@ def main() -> int:
                     "prompt": args.prompt,
                     "style_mode": args.style_mode,
                     "alpha_mode": alpha_mode,
-                    "output_frames": args.output_frames,
+                    "output_frames": output_frames,
                     "quality_mode": args.quality_mode,
                     "animation_mode": args.animation_mode,
                     "remove_bg_method": args.remove_bg_method,

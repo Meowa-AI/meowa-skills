@@ -1320,6 +1320,9 @@
         "output_frames": {
           "flag": "--output-frames",
           "default": 16,
+          "conditional_default": {
+            "last_image_file": 24
+          },
           "choices": [
             8,
             16,
