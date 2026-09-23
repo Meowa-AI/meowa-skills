@@ -661,13 +661,19 @@
           "default": "image-2",
           "choices": [
             "nano-banana",
-            "image-2"
+            "image-2",
+            "image-2.5"
           ],
           "request_field": "generation_provider"
         },
         "quality": {
           "flag": "--quality",
           "default": "detailed",
+          "conditional_default": {
+            "nano-banana": "detailed",
+            "image-2": "detailed",
+            "image-2.5": "standard"
+          },
           "choices": [
             "standard",
             "detailed",

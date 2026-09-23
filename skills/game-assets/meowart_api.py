@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.22.2"
+MEOWART_API_CLI_VERSION = "2026.09.23.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -84,6 +84,7 @@ NANO_BANANA_MODELS = (
     "gemini-3-pro-image",
 )
 GENERATION_MODEL_CHOICES = ("nano-banana", "image-2")
+UI_GENERATION_MODEL_CHOICES = (*GENERATION_MODEL_CHOICES, "image-2.5")
 GENERATION_SPEED_CHOICES = ("normal", "fast")
 IMAGE2_QUALITY_CHOICES = ("standard", "detailed", "ultimate")
 SPINE_AGENT_DEFAULT_TEMPLATE_NAME = (
@@ -5481,8 +5482,10 @@ def submit_ui_generator(
     normalized_remove_bg_method = str(remove_bg_method or "standard").strip().lower()
     if normalized_remove_bg_method not in {"none", "standard", "advanced"}:
         raise ValueError("remove_bg_method must be one of: none, standard, advanced")
-    if generation_model not in GENERATION_MODEL_CHOICES:
-        raise ValueError("generation_model must be one of: nano-banana, image-2")
+    if generation_model not in UI_GENERATION_MODEL_CHOICES:
+        raise ValueError("generation_model must be one of: nano-banana, image-2, image-2.5")
+    if generation_model == "image-2.5" and normalized_remove_bg_method == "advanced":
+        raise ValueError("Image 2.5 background removal supports only none or standard")
     if generation_speed not in GENERATION_SPEED_CHOICES:
         raise ValueError("generation_speed must be one of: normal, fast")
     effective_remove_bg_method = normalized_remove_bg_method if remove_background else "none"
@@ -5491,7 +5494,13 @@ def submit_ui_generator(
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
         "image2_quality": quality_map[normalized_quality],
-        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "generation_provider": (
+            "nanobanana"
+            if generation_model == "nano-banana"
+            else "image2_5"
+            if generation_model == "image-2.5"
+            else "image2"
+        ),
         "generation_speed": generation_speed,
         "background_color": background_color,
         "remove_background": "true" if remove_background else "false",
@@ -6259,6 +6268,9 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
                 parsed.generation_model = "image-2.5"
             if not resolution_explicit:
                 parsed.resolution = "2K"
+        ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
+        if parsed.command in (UI_GEN_SUBMIT_COMMANDS | UI_GEN_RUN_COMMANDS) and parsed.generation_model == "image-2.5" and not ui_quality_explicit:
+            parsed.quality = "standard"
         return parsed
 
 
@@ -7213,12 +7225,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--quality",
         default="detailed",
         choices=["standard", "detailed", "ultimate"],
+        action=_StoreExplicitArgument,
         help="Output quality: Standard, Detailed, or Ultimate",
     )
     ui_submit.add_argument(
         "--generation-model",
         default="image-2",
-        choices=GENERATION_MODEL_CHOICES,
+        choices=UI_GENERATION_MODEL_CHOICES,
     )
     ui_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     ui_submit.add_argument(
@@ -7241,6 +7254,7 @@ def build_parser() -> argparse.ArgumentParser:
     ui_submit.set_defaults(
         template="hd_retro_rpg",
         generation_provider="image2",
+        quality_explicit=False,
         project_id=None,
         thread_id=None,
     )
