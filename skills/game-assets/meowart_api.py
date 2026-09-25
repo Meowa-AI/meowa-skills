@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.23.1"
+MEOWART_API_CLI_VERSION = "2026.09.25.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -4820,6 +4820,52 @@ def submit_spine_part_replace(
     return body
 
 
+def submit_spine_frame_cleanup(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    thread_id: str,
+    package_path: str,
+    client_operation_id: str = "",
+    display_name: str = "Spine",
+    skin_name: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> dict[str, Any]:
+    uploaded = upload_project_spine_package(
+        api_base=api_base,
+        api_key=api_key,
+        project_id=project_id,
+        package_path=package_path,
+        timeout=timeout,
+        verify=verify,
+    )
+    operation_id = str(client_operation_id or "").strip()
+    if not operation_id:
+        seed = f"{project_id}:{thread_id}:{uploaded['asset_id']}:frame-cleanup"
+        operation_id = f"spine-cleanup:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]}"
+    payload = {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "client_operation_id": operation_id,
+        "spine_asset_id": uploaded["asset_id"],
+        "display_name": display_name,
+        "skin_name": str(skin_name or "").strip() or None,
+    }
+    response, body = _request_json(
+        method="POST",
+        url=_normalize_base_url(api_base, "/api/spine-agent/frame-cleanup/jobs"),
+        headers={**_base_headers(api_key), "Content-Type": "application/json"},
+        json_body=payload,
+        timeout=timeout,
+        verify=verify,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(body))
+    return body
+
+
 def submit_spine_full_reskin(
     *,
     api_base: str,
@@ -7572,6 +7618,23 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["4.2", "3.8.99", "3.8.75"],
     )
 
+    spine_cleanup_run = subparsers.add_parser(
+        "spine-cleanup-run",
+        help="Remove editor frames and labels from an uploaded Spine atlas",
+    )
+    add_shared_path_args(spine_cleanup_run)
+    spine_cleanup_run.add_argument("--source-spine-package", required=True)
+    spine_cleanup_run.add_argument("--project-id", required=True)
+    spine_cleanup_run.add_argument("--thread-id", required=True)
+    spine_cleanup_run.add_argument("--client-operation-id", default="")
+    spine_cleanup_run.add_argument("--display-name", default="Spine")
+    spine_cleanup_run.add_argument("--skin-name", default="")
+    spine_cleanup_run.add_argument(
+        "--export-version",
+        default="4.2",
+        choices=["4.2", "3.8.99", "3.8.75"],
+    )
+
     spine_reskin_run = subparsers.add_parser(
         "spine-reskin-run",
         help="Reskin every textured module in an uploaded Spine package",
@@ -7869,6 +7932,7 @@ def build_parser() -> argparse.ArgumentParser:
         "spine-inspect",
         "spine-edit-run",
         "spine-replace-run",
+        "spine-cleanup-run",
         "spine-reskin-run",
         "credits-balance",
         "free-credits",
@@ -10626,6 +10690,56 @@ def main() -> int:
             ).strip()
             if not job_id:
                 raise SkillCompatibilityError("Spine replacement response is missing its Job ID")
+            output_dir, _downloads = save_spine_final_package(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                job_id=job_id,
+                output_root=str(effective_output_dir),
+                slug_seed=args.display_name,
+                timeout=args.timeout,
+                verify=verify,
+                no_download=args.no_download,
+                export_version=args.export_version,
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_json_for_display(final_payload))
+            return 0
+
+        if args.command == "spine-cleanup-run":
+            print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.display_name)}")
+            submit_payload = submit_spine_frame_cleanup(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                package_path=args.source_spine_package,
+                client_operation_id=args.client_operation_id,
+                display_name=args.display_name,
+                skin_name=args.skin_name,
+                timeout=args.timeout,
+                verify=verify,
+            )
+            final_payload = wait_submitted_workflow_job(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                submit_payload=submit_payload,
+                label="Spine frame cleanup",
+                timeout=args.timeout,
+                max_wait=args.max_wait,
+                poll_interval=args.poll_interval,
+                verify=verify,
+            )
+            if str(final_payload.get("status") or "").strip().lower() != "success":
+                print(_format_json_for_display(final_payload))
+                return _command_exit_code(1)
+            job_id = str(
+                final_payload.get("api_job_id")
+                or final_payload.get("job_id")
+                or submit_payload.get("job_id")
+                or ""
+            ).strip()
+            if not job_id:
+                raise SkillCompatibilityError("Spine cleanup response is missing its Job ID")
             output_dir, _downloads = save_spine_final_package(
                 api_base=args.api_base,
                 api_key=args.api_key,

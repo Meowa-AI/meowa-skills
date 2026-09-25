@@ -968,6 +968,39 @@
         }
       }
     },
+    "spine_frame_cleanup": {
+      "command": "spine-cleanup-run",
+      "web_sources": [
+        "components/spine-editor/SpineAtlasEditor.tsx",
+        "services/spineAgentService.ts"
+      ],
+      "parameters": {
+        "source_spine_package": {
+          "flag": "--source-spine-package",
+          "request_field": "spine_asset_id"
+        },
+        "display_name": {
+          "flag": "--display-name",
+          "default": "Spine",
+          "request_field": "display_name"
+        },
+        "skin_name": {
+          "flag": "--skin-name",
+          "default": "",
+          "request_field": "skin_name"
+        },
+        "export_version": {
+          "flag": "--export-version",
+          "default": "4.2",
+          "choices": [
+            "4.2",
+            "3.8.99",
+            "3.8.75"
+          ],
+          "request_field": "export_version"
+        }
+      }
+    },
     "spine_full_reskin": {
       "command": "spine-reskin-run",
       "web_sources": [
