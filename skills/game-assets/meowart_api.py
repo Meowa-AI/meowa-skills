@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.25.1"
+MEOWART_API_CLI_VERSION = "2026.09.26.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2432,6 +2432,145 @@ def _create_game_design_thread(
     if not thread_id:
         raise SkillCompatibilityError("agent thread create response is missing id")
     return thread_id
+
+
+def _create_spine_project_context(
+    *,
+    api_base: str,
+    api_key: str,
+    timeout: int,
+    verify: bool,
+) -> tuple[str, str]:
+    payload = _game_design_api_request(
+        method="POST",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint="/api/projects",
+        timeout=timeout,
+        verify=verify,
+        json_body={"title": "Spine Agent", "projectTitleSource": "manual"},
+    )
+    project_id = str(payload.get("id") or "").strip()
+    thread_id = str(payload.get("activeThreadId") or "").strip()
+    if not thread_id:
+        threads = payload.get("threads")
+        if isinstance(threads, list):
+            thread_id = next(
+                (
+                    str(item.get("id") or "").strip()
+                    for item in threads
+                    if isinstance(item, dict) and str(item.get("id") or "").strip()
+                ),
+                "",
+            )
+    if not project_id or not thread_id:
+        raise SkillCompatibilityError("project create response is missing Spine project context")
+    return project_id, thread_id
+
+
+def _create_spine_thread(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    timeout: int,
+    verify: bool,
+) -> str:
+    payload = _game_design_api_request(
+        method="POST",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint=f"/api/projects/{quote(project_id, safe='')}/threads",
+        timeout=timeout,
+        verify=verify,
+        json_body={"title": "Spine Agent", "kind": "global"},
+    )
+    thread_id = str(payload.get("id") or "").strip()
+    if not thread_id:
+        raise SkillCompatibilityError("thread create response is missing id")
+    return thread_id
+
+
+def _create_spine_source_message(
+    *,
+    api_base: str,
+    api_key: str,
+    project_id: str,
+    thread_id: str,
+    prompt: str,
+    timeout: int,
+    verify: bool,
+) -> str:
+    cleaned_prompt = str(prompt or "").strip()
+    client_id = f"skill_spine_{uuid.uuid4().hex}"
+    payload = _game_design_api_request(
+        method="POST",
+        api_base=api_base,
+        api_key=api_key,
+        endpoint=(
+            f"/api/projects/{quote(project_id, safe='')}/threads/"
+            f"{quote(thread_id, safe='')}/messages"
+        ),
+        timeout=timeout,
+        verify=verify,
+        json_body={
+            "clientId": client_id,
+            "idempotencyKey": client_id,
+            "role": "user",
+            "parts": [{"type": "text", "content": cleaned_prompt}],
+            "status": "completed",
+        },
+    )
+    message_id = str(payload.get("id") or "").strip()
+    if not message_id:
+        raise SkillCompatibilityError("message create response is missing id")
+    return message_id
+
+
+def prepare_spine_submission_context(
+    *,
+    api_base: str,
+    api_key: str,
+    prompt: str,
+    project_id: str = "",
+    thread_id: str = "",
+    source_message_id: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    verify: bool = True,
+) -> tuple[str, str, str]:
+    resolved_project_id = str(project_id or "").strip()
+    resolved_thread_id = str(thread_id or "").strip()
+    resolved_message_id = str(source_message_id or "").strip()
+    if resolved_thread_id and not resolved_project_id:
+        raise ValueError("--thread-id requires --project-id")
+    if resolved_message_id and (not resolved_project_id or not resolved_thread_id):
+        raise ValueError("--source-message-id requires --project-id and --thread-id")
+    if not resolved_project_id:
+        resolved_project_id, resolved_thread_id = _create_spine_project_context(
+            api_base=api_base,
+            api_key=api_key,
+            timeout=timeout,
+            verify=verify,
+        )
+    elif not resolved_thread_id:
+        resolved_thread_id = _create_spine_thread(
+            api_base=api_base,
+            api_key=api_key,
+            project_id=resolved_project_id,
+            timeout=timeout,
+            verify=verify,
+        )
+    if not resolved_message_id:
+        resolved_message_id = _create_spine_source_message(
+            api_base=api_base,
+            api_key=api_key,
+            project_id=resolved_project_id,
+            thread_id=resolved_thread_id,
+            prompt=prompt,
+            timeout=timeout,
+            verify=verify,
+        )
+    return resolved_project_id, resolved_thread_id, resolved_message_id
 
 
 def submit_game_design_message(
@@ -7531,9 +7670,9 @@ def build_parser() -> argparse.ArgumentParser:
             "character_template_2head_deep_sea_choir_conductor",
         ],
     )
-    spine_run.add_argument("--project-id", required=True)
-    spine_run.add_argument("--thread-id", required=True)
-    spine_run.add_argument("--source-message-id", required=True)
+    spine_run.add_argument("--project-id", default="", help="Existing project id; omit to create one")
+    spine_run.add_argument("--thread-id", default="", help="Existing thread id; omit to create one")
+    spine_run.add_argument("--source-message-id", default="", help=argparse.SUPPRESS)
     spine_run.add_argument("--client-operation-id", default="")
     spine_run.add_argument(
         "--generation-model",
@@ -10812,13 +10951,23 @@ def main() -> int:
 
         if args.command == "spine-run":
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
+            project_id, thread_id, source_message_id = prepare_spine_submission_context(
+                api_base=args.api_base,
+                api_key=args.api_key,
+                prompt=args.prompt,
+                project_id=args.project_id,
+                thread_id=args.thread_id,
+                source_message_id=args.source_message_id,
+                timeout=args.timeout,
+                verify=verify,
+            )
             request_payload = {
                 "prompt": args.prompt,
                 "character_reference": args.character_reference,
                 "template_name": args.template_name,
-                "project_id": args.project_id,
-                "thread_id": args.thread_id,
-                "source_message_id": args.source_message_id,
+                "project_id": project_id,
+                "thread_id": thread_id,
+                "source_message_id": source_message_id,
                 "client_operation_id": args.client_operation_id,
                 "generation_model": args.generation_model,
                 "export_resolution": args.export_resolution,
@@ -10832,9 +10981,9 @@ def main() -> int:
                 api_base=args.api_base,
                 api_key=args.api_key,
                 prompt=args.prompt,
-                project_id=args.project_id,
-                thread_id=args.thread_id,
-                source_message_id=args.source_message_id,
+                project_id=project_id,
+                thread_id=thread_id,
+                source_message_id=source_message_id,
                 client_operation_id=args.client_operation_id,
                 character_reference=args.character_reference,
                 template_name=args.template_name,
