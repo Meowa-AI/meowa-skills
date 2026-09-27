@@ -658,7 +658,7 @@
         },
         "generation_model": {
           "flag": "--generation-model",
-          "default": "image-2",
+          "default": "image-2.5",
           "choices": [
             "nano-banana",
             "image-2",
@@ -668,7 +668,7 @@
         },
         "quality": {
           "flag": "--quality",
-          "default": "detailed",
+          "default": "standard",
           "conditional_default": {
             "nano-banana": "detailed",
             "image-2": "detailed",

@@ -69,8 +69,8 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
   --mode generate \
   --resolution 2K \
   --aspect-ratio 4:3 \
-  --quality detailed \
-  --generation-model image-2 \
+  --quality standard \
+  --generation-model image-2.5 \
   --generation-speed normal \
   --background-color '#cccccc' \
   --remove-bg-method standard \
@@ -86,7 +86,7 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
   --reference-image <ui-sheet.png> \
   --resolution 2K \
   --aspect-ratio 4:3 \
-  --quality detailed \
+  --quality standard \
   --remove-bg-method standard \
   --output-dir <output-dir>
 ```
@@ -96,7 +96,7 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
 - Supported aspect ratios are 4:3, 3:4, 16:9, 9:16, and 1:1.
 - Treat `1K` and `2K` as service resolution tiers, not promises of one universal pixel dimension; inspect the saved image for its actual dimensions.
 - Use `standard` for quick drafts, `detailed` for normal production work, and `ultimate` for a final asset whose small text or dense ornament needs the highest fidelity.
-- Select `--generation-model nano-banana`, `image-2`, or `image-2.5`; use `--generation-speed` for the Nano Banana path. Image 2.5 defaults to `--quality standard`, charges 1/5/10 credits at 1K or 2/10/20 at 2K plus 2 credits per reference, and provides native standard background removal at no extra cost; `advanced` is unavailable. Background removal and component splitting are enabled by default and can be disabled with `--no-remove-background` and `--no-split-components`.
+- The default model is `image-2.5` with `--quality standard`. Select `--generation-model nano-banana` or `image-2` to switch models; Image 2 defaults to `--quality detailed`. Use `--generation-speed` for the Nano Banana path. Image 2.5 charges 1/5/10 credits at 1K or 2/10/20 at 2K plus 2 credits per reference, and provides native standard background removal at no extra cost; `advanced` is unavailable. Background removal and component splitting are enabled by default and can be disabled with `--no-remove-background` and `--no-split-components`.
 - Use `standard` background removal for simple, high-contrast edges and `advanced` for transparency around detailed or visually complex edges.
 - Describe the whole UI system: genre, hierarchy, palette, materials, states, and required components.
 - Generation is not limited to interface graphics. Describe an ordinary asset batch or sprite sheet when that is the desired output.

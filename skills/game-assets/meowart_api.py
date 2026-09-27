@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.26.1"
+MEOWART_API_CLI_VERSION = "2026.09.27.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -5648,10 +5648,10 @@ def submit_ui_generator(
     reference_images: list[str] | None = None,
     resolution: str = "2K",
     aspect_ratio: str = "1:1",
-    quality: str = "detailed",
+    quality: str = "standard",
     remove_bg_method: str = "standard",
     generation_mode: str = "generate",
-    generation_model: str = "image-2",
+    generation_model: str = "image-2.5",
     generation_speed: str = "normal",
     background_color: str = "#cccccc",
     remove_background: bool = True,
@@ -5661,7 +5661,7 @@ def submit_ui_generator(
 ) -> dict[str, Any]:
     normalized_generation_mode = _normalize_ui_generation_mode(generation_mode)
     quality_map = {"standard": "low", "detailed": "medium", "ultimate": "high"}
-    normalized_quality = str(quality or "detailed").strip().lower()
+    normalized_quality = str(quality or "standard").strip().lower()
     if normalized_quality not in quality_map:
         raise ValueError("quality must be one of: standard, detailed, ultimate")
     normalized_remove_bg_method = str(remove_bg_method or "standard").strip().lower()
@@ -5722,10 +5722,10 @@ def run_ui_generator(
     reference_images: list[str] | None = None,
     resolution: str = "2K",
     aspect_ratio: str = "1:1",
-    quality: str = "detailed",
+    quality: str = "standard",
     remove_bg_method: str = "standard",
     generation_mode: str = "generate",
-    generation_model: str = "image-2",
+    generation_model: str = "image-2.5",
     generation_speed: str = "normal",
     background_color: str = "#cccccc",
     remove_background: bool = True,
@@ -6454,8 +6454,8 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             if not resolution_explicit:
                 parsed.resolution = "2K"
         ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
-        if parsed.command in (UI_GEN_SUBMIT_COMMANDS | UI_GEN_RUN_COMMANDS) and parsed.generation_model == "image-2.5" and not ui_quality_explicit:
-            parsed.quality = "standard"
+        if parsed.command in (UI_GEN_SUBMIT_COMMANDS | UI_GEN_RUN_COMMANDS) and not ui_quality_explicit:
+            parsed.quality = "standard" if parsed.generation_model == "image-2.5" else "detailed"
         return parsed
 
 
@@ -7408,14 +7408,14 @@ def build_parser() -> argparse.ArgumentParser:
     ui_submit.add_argument("--aspect-ratio", default="1:1", choices=["4:3", "3:4", "16:9", "9:16", "1:1"])
     ui_submit.add_argument(
         "--quality",
-        default="detailed",
+        default="standard",
         choices=["standard", "detailed", "ultimate"],
         action=_StoreExplicitArgument,
         help="Output quality: Standard, Detailed, or Ultimate",
     )
     ui_submit.add_argument(
         "--generation-model",
-        default="image-2",
+        default="image-2.5",
         choices=UI_GENERATION_MODEL_CHOICES,
     )
     ui_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
@@ -7438,7 +7438,7 @@ def build_parser() -> argparse.ArgumentParser:
     ui_submit.add_argument("--no-split-components", action="store_false", dest="split_components")
     ui_submit.set_defaults(
         template="hd_retro_rpg",
-        generation_provider="image2",
+        generation_provider="image2_5",
         quality_explicit=False,
         project_id=None,
         thread_id=None,
