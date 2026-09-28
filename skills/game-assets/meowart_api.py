@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.27.1"
+MEOWART_API_CLI_VERSION = "2026.09.28.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7901,8 +7901,8 @@ def build_parser() -> argparse.ArgumentParser:
     meowa_animation_run_parser.add_argument(
         "--resolution",
         default="480p",
-        choices=["480p", "720p", "1080p"],
-        help="Pixel and HD support 480p, 720p (+10 credits), and 1080p (Standard 30 / Detailed 35 generation credits)",
+        choices=["480p", "720p", "1080p", "1080p_full"],
+        help="Pixel and HD: 480p, 720p, 1080p fast (30/35 credits), or 1080p_full original pipeline (40/45 credits)",
     )
     meowa_animation_run_parser.add_argument(
         "--alpha-mode",
@@ -8124,7 +8124,7 @@ def _resolve_meowa_animation_remove_bg_method(
             raise ValueError("Advanced background removal is temporarily unavailable")
         return "standard"
     # Web default: 1080p and high frame rate open with a green-screen source and no paid removal.
-    if not explicitly_selected and (high_frame_rate or resolution == "1080p"):
+    if not explicitly_selected and (high_frame_rate or resolution in {"1080p", "1080p_full"}):
         return "none"
     return remove_bg_method
 

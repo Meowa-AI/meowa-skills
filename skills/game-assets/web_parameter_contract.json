@@ -1328,7 +1328,8 @@
           "choices": [
             "480p",
             "720p",
-            "1080p"
+            "1080p",
+            "1080p_full"
           ],
           "request_field": "resolution"
         },
@@ -1393,7 +1394,8 @@
           "conditional_default": {
             "480p": "standard",
             "720p": "standard",
-            "1080p": "none"
+            "1080p": "none",
+            "1080p_full": "none"
           },
           "choices": [
             "none",
