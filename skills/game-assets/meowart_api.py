@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.28.1"
+MEOWART_API_CLI_VERSION = "2026.09.29.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -1694,7 +1694,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "hd_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "hd_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "hd_side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
-    "image_edit": frozenset({"edited_path", "remove_bg_path", "url"}),
+    "image_edit": frozenset({"output_paths", "edited_path", "remove_bg_path", "url"}),
     "image_expander": frozenset({"target_tile_paths", "url"}),
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
@@ -6755,6 +6755,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Pixelate separately detected asset regions in multi-asset images",
     )
+    image_edit_run.add_argument("--multi-pixelation", action="store_true", help="Return three pixelation results at no extra charge")
+    image_edit_run.add_argument("--no-multi-pixelation", action="store_true", help="Disable the regional pixelation default for multiple results")
     image_edit_run.add_argument(
         "--generation-model",
         default="nano-banana",
@@ -8682,6 +8684,10 @@ def main() -> int:
                     raise ValueError("--strict is available only in pixel mode")
                 if args.regional_pixelation and args.mode != "pixel":
                     raise ValueError("--regional-pixelation is available only in pixel mode")
+                if args.multi_pixelation and args.mode != "pixel":
+                    raise ValueError("--multi-pixelation is available only in pixel mode")
+                if args.multi_pixelation and args.no_multi_pixelation:
+                    raise ValueError("--multi-pixelation and --no-multi-pixelation are mutually exclusive")
                 if args.mode == "hd" and args.remove_bg_method == "advanced":
                     raise ValueError("HD image editing supports only none or standard background removal")
                 if args.generation_model == "image-2.5" and args.remove_bg_method == "advanced":
@@ -8694,6 +8700,7 @@ def main() -> int:
                     "mode": args.mode,
                     "strict": "true" if args.strict else "false",
                     "pixelation_method": "fine" if args.regional_pixelation else "whole",
+                    "multi_pixelation": "true" if args.multi_pixelation or (args.regional_pixelation and not args.no_multi_pixelation) else "false",
                     "generation_provider": (
                         "nanobanana" if args.generation_model == "nano-banana" else "image2_5" if args.generation_model == "image-2.5" else "image2"
                     ),

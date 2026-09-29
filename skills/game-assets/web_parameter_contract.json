@@ -224,6 +224,11 @@
           "default": false,
           "request_field": "pixelation_method"
         },
+        "multi_pixelation": {
+          "flag": "--multi-pixelation",
+          "default": false,
+          "request_field": "multi_pixelation"
+        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "standard",
