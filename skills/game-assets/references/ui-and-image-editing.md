@@ -38,6 +38,7 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Generate or extract UI and asset sheets | `ui-gen-run` | Produce one transparent aggregate sheet plus component segmentation data | Does not return separate cropped component media files |
 | Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
+| Clone an asset sheet | `asset-clone-run` | Generate 1, 4, 9, 16, 25, or 36 same-style assets in one grid | Returns complete sheets without splitting cells |
 | Edit existing animation frames | `animation-edit-run` | Restyle or modify an animated GIF or WebP | Preserve the source frame timing and layout |
 | Create Pindou bead art | `pindou-run` | Convert a pixel source at source size or generate an HD sized design | HD mode requires a supported target size |
 | Reskin a built-in Spine character | `spine-run` | Produce the public Spine-agent final package | Automatically creates recoverable project/thread context when omitted |
@@ -140,6 +141,10 @@ python3 skills/game-assets/meowart_api.py one-click-upgrade-run \
 - Open every result and compare style, approximate subject size, anchor, silhouette, transparency, and actual canvas dimensions.
 
 ## Edit still images
+
+Use `asset-clone-run --reference-image <source.png> --clone-count 4 --prompt "A sword, a dagger, a red gem" --output-dir <output-dir>` for a complete 2×2 sheet. Repeat `--reference-image` for more references. Inputs must share dimensions; when they do not, specify `--cell-width`, `--cell-height`, and `--fit-mode pad|crop` for centered correction without scaling. Pixel and HD both default to Image2.5, 1K, and Detailed quality with standard background removal. Pixel mode enables regional quantization and three complete pixelation variants. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal. Use `--quality standard|detailed|ultimate` for Image2.5. Canvas selection follows Universal Edit. Pixel scale must be at least 2; HD scale must be at least 0.5. Oversize references are rejected before composition or charging.
+
+Use `asset-clone-prompt --prompt "参考图 1 的布局，生成一些不同外观的道具，保持美术风格一致。 红色的宝石"` to polish a prompt without generating an image. Pass the returned prompt to `asset-clone-run --prompt <polished-prompt> --skip-prompt-optimization` to use it verbatim. Without that flag, generation optimizes the prompt. The default prompt is `参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。`.
 
 ```bash
 python3 skills/game-assets/meowart_api.py image-edit-run \
