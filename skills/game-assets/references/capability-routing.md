@@ -16,6 +16,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Convert existing art into crisp pixel art | `pixelate-run` | `pixel-and-hd-assets.md` |
 | Generate a UI sheet, HUD, menu, buttons, icons, or extract UI components | `ui-gen-run` | `ui-and-image-editing.md` |
 | Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
+| Clone same-style assets into one grid sheet | `asset-clone-run` | `ui-and-image-editing.md` |
 | Quickly upgrade one asset or create several similarly sized, style-consistent variants | `one-click-upgrade-prompts`, then `one-click-upgrade-run` | `ui-and-image-editing.md` |
 | Edit an animated GIF or WebP while preserving timing and layout | `animation-edit-run` | `ui-and-image-editing.md` |
 | Convert an image to Pindou bead art or generate a sized HD bead-art design | `pindou-run` | `ui-and-image-editing.md` |

@@ -86,6 +86,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 | [Game Designer](references/game-design.md) | Research and develop a game concept into persistent Markdown design documents | Use for planning, critique, mechanics, balance, content, or game-design research |
 | [Pixel and HD assets](references/pixel-and-hd-assets.md) | Create base assets and directional characters; perform background removal or pixel conversion | Feed finalized still assets into editing or animation |
 | [UI and image editing](references/ui-and-image-editing.md) | Generate UI sheets, create consistent upgrade variants, extract an aggregate UI sheet, and edit still images or animated frames | Refine or branch an existing visual asset without changing its media role |
+| [Asset cloning](references/ui-and-image-editing.md) | Polish a clone prompt or clone 1, 4, 9, 16, 25, or 36 same-style assets into a complete grid sheet | Keep the sheet intact for user-selected splitting |
 | [Maps, tiles, and textures](references/maps-tiles-and-textures.md) | Create repeatable materials, terrain atlases, isometric or hex tiles, and side-scrolling layers | Build environment assets from materials through map-ready outputs |
 | [Animation and video](references/animation-and-video.md) | Create seamless image loops, sprite animation, or short video clips | Consume a stable, finalized still asset |
 | [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, rendered tracks, and spoken lines (described or cloned voices) | Add audio after gameplay timing and visual direction are known |
@@ -164,3 +165,5 @@ Video-reference animation accepts MP4 or animated GIF/WebP up to 4.5 seconds. Bo
 JSON 的 `generation_provider` 可选 `nanobanana`（默认）、`image2`、`image2_5`，与网页模型选择一致；省略时按服务端 schema 默认值提交。
 仅模型可切换：内部生成固定 1K、1:1，Nano Banana 固定普通模式，GPT Image2 固定精细，GPT Image2.5 固定极致；不接受质量、分辨率或路由参数。
 原有类型、风格、Padding 和额外要求按所选模板提供。GPT Image2.5 使用原生透明，20 积分；其他模型含高级抠图，30 积分。透明失败则任务失败，不追加抠图。
+
+Asset cloning (`asset-clone-run`) defaults to Image2.5, 1K, and Detailed quality in both pixel and HD modes. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal.

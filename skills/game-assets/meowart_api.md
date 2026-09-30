@@ -124,6 +124,10 @@ python3 skills/game-assets/meowart_api.py <command> --help
 1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
 
 通用生成默认使用 Image2.5（`image-2.5-run`）。万能编辑高清模式默认使用 Image2.5、2K；像素模式默认不变。万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
+
+素材克隆使用 `asset-clone-run` 和 `/api/workflows/asset_clone/run`。`--clone-count` 可选 1、4、9、16、25、36，返回完整网格图而不自动切分。多张参考图必须同尺寸；尺寸不一致时使用 `--cell-width`、`--cell-height` 和 `--fit-mode pad|crop` 居中处理，不缩放。像素模式默认分区量化与多重像素化，像素缩放比例低于 2、高清缩放比例低于 0.5 时提交前拒绝。像素和高清模式均默认 Image2.5、1K、精细画质；Nano Banana 固定普通画质，默认不去背景；Image2.5 默认去背景。背景选项只有 `none` / `standard`。
+
+`asset-clone-prompt --prompt "..."` 使用同一个 API 的 `prompt_only=true` 单独润色提示词，不生成图片。将返回的提示词传给 `asset-clone-run --prompt "..." --skip-prompt-optimization` 可直接使用；不带该标志时生成阶段会运行提示词优化。默认提示词为「参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。」
 万能编辑 `--multi-pixelation` 返回三张像素化结果，不额外收费。`--regional-pixelation` 默认启用多重像素化，可用 `--no-multi-pixelation` 单独关闭；不分区时也可单独开启。
 
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。

@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.29.1"
+MEOWART_API_CLI_VERSION = "2026.09.30.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -1695,6 +1695,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "hd_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "hd_side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
     "image_edit": frozenset({"output_paths", "edited_path", "remove_bg_path", "url"}),
+    "asset_clone": frozenset({"output_paths"}),
     "image_expander": frozenset({"target_tile_paths", "url"}),
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
@@ -6453,6 +6454,9 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
                 parsed.generation_model = "image-2.5"
             if not resolution_explicit:
                 parsed.resolution = "2K"
+        remove_bg_explicit = vars(parsed).pop("_image_edit_remove_bg_method_explicit", False)
+        if parsed.command == "asset-clone-run" and not remove_bg_explicit:
+            parsed.remove_bg_method = "none" if parsed.generation_model == "nano-banana" else "standard"
         ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
         if parsed.command in (UI_GEN_SUBMIT_COMMANDS | UI_GEN_RUN_COMMANDS) and not ui_quality_explicit:
             parsed.quality = "standard" if parsed.generation_model == "image-2.5" else "detailed"
@@ -6784,6 +6788,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     image_edit_run.set_defaults(aspect_ratio="auto")
     image_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
+
+    asset_clone_run = subparsers.add_parser("asset-clone-run", help="Clone a sheet of consistent game-art assets")
+    add_shared_path_args(asset_clone_run)
+    asset_clone_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 36 times")
+    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。", help="Shared requirements and asset descriptions")
+    asset_clone_run.add_argument("--skip-prompt-optimization", action="store_true", help="Use the supplied prompt without AI optimization")
+    asset_clone_run.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36])
+    asset_clone_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
+    asset_clone_run.add_argument("--generation-model", default="image-2.5", choices=["nano-banana", "image-2.5"], action=ImageEditOptionAction)
+    asset_clone_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
+    asset_clone_run.add_argument("--resolution", default="1K", choices=["1K", "2K"], action=ImageEditOptionAction)
+    asset_clone_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard"], action=ImageEditOptionAction)
+    asset_clone_run.add_argument("--cell-width", type=int, help="Target cell width when reference sizes differ")
+    asset_clone_run.add_argument("--cell-height", type=int, help="Target cell height when reference sizes differ")
+    asset_clone_run.add_argument("--fit-mode", default="pad", choices=["pad", "crop"], help="Center pad or crop; never scale")
+    asset_clone_prompt = subparsers.add_parser("asset-clone-prompt", help="Polish an asset clone prompt without generating images")
+    add_shared_path_args(asset_clone_prompt)
+    asset_clone_prompt.add_argument("--prompt", default="参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。")
 
     animation_edit_run = subparsers.add_parser("animation-edit-run", help="Edit an animated GIF or WebP")
     add_shared_path_args(animation_edit_run)
@@ -8037,6 +8059,8 @@ def build_parser() -> argparse.ArgumentParser:
         "image-2-run",
         "image-2.5-run",
         "image-edit-run",
+        "asset-clone-run",
+        "asset-clone-prompt",
         "animation-edit-run",
         "one-click-upgrade-prompts",
         "one-click-upgrade-run",
@@ -8657,8 +8681,27 @@ def main() -> int:
                 0 if str(payload.get("status") or "").strip().lower() == "success" else 1
             )
 
+        if args.command == "asset-clone-prompt":
+            prompt_url = _normalize_base_url(args.api_base, "/api/workflows/asset_clone/run")
+            response = _request_with_skill_version_compatibility(
+                url=prompt_url,
+                headers=_base_headers(args.api_key),
+                send=lambda request_headers: requests.post(
+                    prompt_url, headers=request_headers,
+                    data={"prompt": args.prompt, "prompt_only": "true"},
+                    timeout=args.timeout, verify=verify,
+                ),
+            )
+            response.raise_for_status()
+            polished = response.json().get("prompt")
+            if not isinstance(polished, str) or not polished.strip():
+                raise ValueError("asset clone prompt response is empty")
+            print(_format_public_json({"prompt": polished}))
+            return 0
+
         curated_commands = {
             "image-edit-run",
+            "asset-clone-run",
             "animation-edit-run",
             "custom-size-pixel-gen-run",
             "one-click-upgrade-run",
@@ -8719,6 +8762,31 @@ def main() -> int:
                     }[args.quality],
                     "generation_speed": args.generation_speed,
                 }
+                files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
+
+            elif args.command == "asset-clone-run":
+                references = list(args.reference_image or [])
+                if not 1 <= len(references) <= 36:
+                    raise ValueError("asset clone requires 1 to 36 reference images")
+                if (args.cell_width is None) != (args.cell_height is None):
+                    raise ValueError("--cell-width and --cell-height must be supplied together")
+                if args.cell_width is not None and (args.cell_width < 1 or args.cell_height < 1):
+                    raise ValueError("cell dimensions must be positive")
+                endpoint = "/api/workflows/asset_clone/run"
+                workflow_id = "asset_clone"
+                slug_seed = args.prompt or "asset-clone"
+                data = {
+                    "prompt": args.prompt,
+                    "skip_prompt_optimization": "true" if args.skip_prompt_optimization else "false",
+                    "clone_count": str(args.clone_count),
+                    "mode": args.mode,
+                    "generation_provider": "nanobanana" if args.generation_model == "nano-banana" else "image2_5",
+                    "image2_quality": "low" if args.generation_model == "nano-banana" else {"standard": "low", "detailed": "medium", "ultimate": "high"}[args.quality],
+                    "resolution": args.resolution,
+                    "remove_bg_method": args.remove_bg_method,
+                }
+                if args.cell_width is not None:
+                    data.update({"cell_width": str(args.cell_width), "cell_height": str(args.cell_height), "fit_mode": args.fit_mode})
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
 
             elif args.command == "custom-size-pixel-gen-run":
