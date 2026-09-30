@@ -2155,7 +2155,8 @@
       "parameters": {},
       "browser_handoff": "https://meowa.ai/canvas?free_credits=1",
       "read_endpoint": "/api/credits/free-rewards/status",
-      "claim_endpoint": "/api/credits/free-rewards/claim"
+      "claim_endpoint": "/api/credits/free-rewards/claim",
+      "claim_modes": ["auto", "manual", "unavailable"]
     }
   }
 }

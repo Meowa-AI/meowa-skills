@@ -128,7 +128,7 @@ For game planning, follow [Game Designer](references/game-design.md). Its realti
 
 ## Keep the public boundary clean
 
-Use `free-credits` to read free-credit eligibility and return the website claim link. The user claims in the browser and completes security verification when required by the server. Balance/status reads never claim credits. Other-email accounts receive 20 credits per Beijing day for at most five claims, with no additional survey/campaign/referral grants; paid credits and refunds remain separate.
+Use `free-credits` to read free-credit eligibility and return the website claim link. The user claims in the browser and completes security verification when required by the server. Status reads do not grant credits. Ordinary accounts receive 10 daily credits automatically on login or balance reads, expiring at the next Beijing midnight. Free-benefit risk accounts manually claim 20 credits per Beijing day, at most five claims, with no additional survey/campaign/referral grants. Valid payments exempt accounts from free-benefit risk; full refunds or chargebacks remove that exemption when no other valid payment remains. Account bans still apply.
 
 - Guide users to configure Meowa account authentication locally when needed, but never request the key itself or expose credentials, raw provider identifiers, arbitrary model names, endpoints, sampling, internal-stage, or raw-request controls. A command may expose a curated product-level `--generation-model` enum when its capability module documents the choices and default.
 - Never overwrite source assets or return input references, internal templates, masks, metadata, debug artifacts, or intermediate files.

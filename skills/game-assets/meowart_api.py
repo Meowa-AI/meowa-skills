@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.29.1"
+MEOWART_API_CLI_VERSION = "2026.09.30.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -2149,10 +2149,11 @@ def get_free_credit_status(*, api_base: str, api_key: str, timeout: int = DEFAUL
     if response.status_code >= 400:
         raise RuntimeError(_format_json_for_display(payload))
     allowed = {"enabled", "tier", "installment_amount", "installment_count", "installment_total", "claims_completed",
-               "remaining_credits", "claimed_today", "available_rewards", "amounts", "next_claim_at"}
+               "remaining_credits", "claimed_today", "available_rewards", "amounts", "next_claim_at",
+               "claim_mode", "verification_required"}
     return {**{key: value for key, value in payload.items() if key in allowed},
             "claim_url": "https://meowa.ai/canvas?free_credits=1",
-            "claim_instructions": "Sign in on the website and complete security verification to claim. Reading balances never grants credits."}
+            "claim_instructions": "Ordinary accounts receive daily credits automatically when reading their balance. For manual claims, sign in on the website and complete security verification. This status query does not grant credits."}
 
 
 def list_custom_workflows(
