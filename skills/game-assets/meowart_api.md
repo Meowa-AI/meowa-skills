@@ -4,6 +4,8 @@
 
 ## 安装
 
+只使用本地工具无需安装依赖或配置 API key：例如 `python3 <skill-dir>/scripts/split-components.py sheet.png --output-dir components`。本地 tools 统一放在 `scripts/`，参数和限制见 [local-tools.md](references/local-tools.md)。下面的依赖用于 API runner。
+
 在 Skill 仓库根目录安装 runner 依赖：
 
 ```bash

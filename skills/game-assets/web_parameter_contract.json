@@ -1,6 +1,22 @@
 {
   "schema_version": 1,
   "policy": "Public Skill product parameters mirror the selectable web product parameters. Secrets, endpoints, project identity, recovery controls, and debug/provider internals are excluded.",
+  "local_tools": {
+    "complex_pattern_split": {
+      "script": "scripts/split-components.py",
+      "web_sources": ["services/imageComponentSplitService.ts:analyzeImageComponents", "components/Workspace.tsx:splitImageComponentsToCanvas"],
+      "parameters": {
+        "alpha_threshold": {"flag": "--alpha-threshold", "default": 8},
+        "background_tolerance": {"flag": "--background-tolerance", "default": 8},
+        "connectivity": {"flag": "--connectivity", "default": 8, "choices": [4, 8]},
+        "min_component_area": {"flag": "--min-component-area", "default": 16},
+        "padding_px": {"flag": "--padding-px", "default": 0},
+        "merge_contained_fragments": {"flag": "--no-merge-contained-fragments", "default": true},
+        "fragment_max_area": {"flag": "--fragment-max-area", "default": 256},
+        "fragment_max_area_ratio": {"flag": "--fragment-max-area-ratio", "default": 0.02}
+      }
+    }
+  },
   "features": {
     "general_nano_banana": {
       "command": "nano-banana-run",

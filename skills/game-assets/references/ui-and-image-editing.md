@@ -36,6 +36,7 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
 | Generate or extract UI and asset sheets | `ui-gen-run` | Produce one transparent aggregate sheet plus component segmentation data | Does not return separate cropped component media files |
+| Split an existing complex-pattern PNG locally | `scripts/split-components.py` | Produce individual transparent PNG crops and placement data without an API | Requires separated shapes on transparency or a solid background; see [local tools](local-tools.md) |
 | Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
 | Clone an asset sheet | `asset-clone-run` | Generate 1, 4, 9, 16, 25, or 36 same-style assets in one grid | Returns complete sheets without splitting cells |

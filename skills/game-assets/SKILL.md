@@ -92,6 +92,15 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 | [Audio](references/audio.md) | Create sound effects, coherent sound packs, music direction, rendered tracks, and spoken lines (described or cloned voices) | Add audio after gameplay timing and visual direction are known |
 | [Running and outputs](references/running-and-outputs.md) | Execute safely, recover interrupted jobs, validate outputs, and hand off final files | Apply to every module |
 
+## Local tools
+
+Local tools live in `scripts/`; invoke them directly with `python3`, independently of `meowart_api.py` and account authentication. Keep the complete Skill folder when installing or updating it. Each tool exposes `--help`.
+
+- **Complex-pattern splitting:** `python3 <skill-dir>/scripts/split-components.py <sheet.png> --output-dir <new-directory>` separates disconnected shapes into transparent PNGs and writes their original placement in `final_outputs.json`. It uses only the Python standard library. Read [local tools](references/local-tools.md) for options and PNG limits.
+- **Map previews:** `scripts/build-map-preview.py` and `scripts/map-preview-server.py`; see [Maps, tiles, and textures](references/maps-tiles-and-textures.md).
+
+For local splitting, use the local-tool instructions directly; API authentication, submission, and polling steps below do not apply.
+
 ## Combine modules deliberately
 
 Use these common chains only when each downstream module accepts the preceding file:
