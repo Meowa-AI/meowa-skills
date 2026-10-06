@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.09.30.3"
+MEOWART_API_CLI_VERSION = "2026.10.06.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -7927,7 +7927,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--resolution",
         default="480p",
         choices=["480p", "720p", "1080p", "1080p_full"],
-        help="Pixel and HD: 480p, 720p, 1080p fast (30/35 credits), or 1080p_full original pipeline (40/45 credits)",
+        help="Pixel and HD: 480p, 720p, 1080p fast (30/35 credits at 1–2s, 35/40 at 3–4s), or 1080p_full original pipeline (40/45 at 1–2s, 45/50 at 3–4s)",
     )
     meowa_animation_run_parser.add_argument(
         "--alpha-mode",

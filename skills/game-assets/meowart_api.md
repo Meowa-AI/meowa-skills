@@ -136,7 +136,7 @@ Image2.5 通用生成支持 `--remove-bg-method none|standard`，默认 `none`�
 
 ### Animation Edit
 
-`meowa-animation-run --resolution 1080p` keeps the 1080P Fast route (30/35 generation credits for Standard/Detailed). `--resolution 1080p_full` selects the original 480P/720P model and prompt format at 1080P with 20/30 steps (40/45 generation credits). Both options default to no background removal; 480P/720P remain unchanged.
+`meowa-animation-run --resolution 1080p` keeps the 1080P Fast route (30/35 generation credits for Standard/Detailed at 1–2 seconds (35/40 at 3–4 seconds)). `--resolution 1080p_full` selects the original 480P/720P model and prompt format at 1080P with 20/30 steps (40/45 generation credits at 1–2 seconds; 45/50 at 3–4 seconds). Both options default to no background removal; 480P/720P remain unchanged.
 
 The Animation Edit tab has a required MP4/animated GIF/WebP reference and an optional static appearance image.
 `meowa-animation-edit-prompts --video-file motion.webp --edit-intent 'Replace the character' [--image-file panda.png]`
