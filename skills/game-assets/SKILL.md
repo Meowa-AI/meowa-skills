@@ -7,6 +7,8 @@ description: Plan games and create, edit, upgrade, animate, and prepare producti
 
 Plan a game or create game-ready visual and audio assets. For game concepts, systems, balance, market research, or structured design documents, use the Game Designer module. For assets, establish the final asset contract first, choose the smallest suitable capability, and combine modules only when the downstream command accepts the upstream output.
 
+For HD frame animation V2, `--auto-scale-to-input` (default off, no extra credits) restores the final animation to the input dimensions with smooth scaling and retains the original animation as a second output. With background removal, only the final transparent animation is resized.
+
 ## Establish the asset contract
 
 Determine these requirements before selecting a command:

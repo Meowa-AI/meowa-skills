@@ -1507,6 +1507,16 @@
             "bottom-right"
           ],
           "request_field": "source_padding"
+        },
+        "auto_scale_to_input": {
+          "flag": "--auto-scale-to-input",
+          "default": false,
+          "available_when": {
+            "style_mode": [
+              "hd"
+            ]
+          },
+          "request_field": "auto_scale_to_input"
         }
       }
     },
@@ -2033,6 +2043,16 @@
           ],
           "request_field": "primary_reference",
           "notes": "video: edit the video's character; image: the image character performs the video's action in place. image requires image_file."
+        },
+        "auto_scale_to_input": {
+          "flag": "--auto-scale-to-input",
+          "default": false,
+          "available_when": {
+            "style_mode": [
+              "hd"
+            ]
+          },
+          "request_field": "auto_scale_to_input"
         }
       },
       "reference_timing": {
@@ -2161,6 +2181,16 @@
             "image"
           ],
           "request_field": "primary_reference"
+        },
+        "auto_scale_to_input": {
+          "flag": "--auto-scale-to-input",
+          "default": false,
+          "available_when": {
+            "style_mode": [
+              "hd"
+            ]
+          },
+          "request_field": "auto_scale_to_input"
         }
       },
       "reference_timing": {
