@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.08.1"
+MEOWART_API_CLI_VERSION = "2026.10.08.2"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -6447,6 +6447,20 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         arguments = list(sys.argv[1:] if args is None else args)
         parsed = super().parse_args(arguments, namespace)
+        if parsed.command == "general-image-run":
+            commands = next(action for action in self._actions if isinstance(action, argparse._SubParsersAction)).choices
+            selected = commands[f"{parsed.generation_model}-run"]
+            available = {action.dest: action for action in selected._actions}
+            for action in commands[parsed.command]._actions:
+                if action.dest in {"help", "generation_model"}:
+                    continue
+                explicit = any(arg.split("=", 1)[0] in action.option_strings for arg in arguments)
+                model_action = available.get(action.dest)
+                if model_action is None:
+                    if explicit:
+                        self.error(f"{action.option_strings[0]} is unavailable for {parsed.generation_model}")
+                elif model_action.choices and getattr(parsed, action.dest) not in model_action.choices:
+                    self.error(f"{action.option_strings[0]} for {parsed.generation_model} must be one of: {', '.join(model_action.choices)}")
         quality_explicit = vars(parsed).pop("_remove_bg_quality_explicit", False)
         if parsed.command in {"remove-background-submit", "remove-background-run"} and not quality_explicit:
             parsed.quality = "standard" if parsed.mode == "pixel" else "advanced"
@@ -6662,7 +6676,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     nano_banana_run = subparsers.add_parser(
         "nano-banana-run",
-        help="Create a general HD image with Nano Banana",
+        help="Compatibility alias for general-image-run --generation-model nano-banana",
     )
     add_shared_path_args(nano_banana_run)
     nano_banana_run.add_argument("--prompt", required=True, help="Describe the requested image or asset sheet")
@@ -6704,7 +6718,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     image_2_run = subparsers.add_parser(
         "image-2-run",
-        help="Create a general HD image with Image-2",
+        help="Compatibility alias for general-image-run --generation-model image-2",
     )
     add_shared_path_args(image_2_run)
     image_2_run.add_argument("--prompt", required=True, help="Describe the requested image or asset sheet")
@@ -6735,7 +6749,7 @@ def build_parser() -> argparse.ArgumentParser:
             "rerun with Detailed after the prompt is approved"
         ),
     )
-    image_2_5_run = subparsers.add_parser("image-2.5-run", help="Create a general image with Image 2.5 Sunburst")
+    image_2_5_run = subparsers.add_parser("image-2.5-run", help="Compatibility alias for general-image-run --generation-model image-2.5")
     for action in image_2_run._actions[1:]:
         cloned_action = copy.copy(action)
         if cloned_action.dest == "quality":
@@ -6745,13 +6759,40 @@ def build_parser() -> argparse.ArgumentParser:
     image_2_5_run.add_argument("--remove-bg-method", choices=["none", "standard"], default="none",
                              help="Optional free Image2.5 background removal; failure keeps the original background")
 
-    image_2_poll = subparsers.add_parser(
-        "image-2-poll",
-        aliases=["image-2.5-poll"],
-        help="Recover one Image-2 job and download its final outputs",
+    general_image_run = subparsers.add_parser(
+        "general-image-run",
+        help="General generation in HD or pixel style with prompt and references",
+        description="General generation (通用生成); no asset template is imposed.",
+        epilog=("Replaces image-2.5-run, image-2-run, and nano-banana-run; these remain compatible aliases "
+                "for --generation-model image-2.5, image-2, and nano-banana respectively. "
+                "Recover an interrupted job with general-image-poll --job-id <id>; never resubmit it."),
+        allow_abbrev=False,
     )
-    add_shared_path_args(image_2_poll)
-    image_2_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+    general_image_run.add_argument("--generation-model", default="image-2.5",
+                                   choices=["image-2.5", "image-2", "nano-banana"],
+                                   help="Image generation model; default Image2.5")
+    for action in nano_banana_run._actions[1:]:
+        cloned_action = copy.copy(action)
+        if action.dest in {"model", "generation_speed"}:
+            cloned_action.help = f"Nano Banana only. {action.help or ''}".strip()
+        elif action.dest in {"resolution", "aspect_ratio"}:
+            supported = next(item.choices for item in image_2_run._actions if item.dest == action.dest)
+            cloned_action.help = f"{action.help}; Image2/Image2.5: {', '.join(supported)}"
+        general_image_run._add_action(cloned_action)
+    for action in image_2_5_run._actions:
+        if action.dest in {"quality", "remove_bg_method"}:
+            cloned_action = copy.copy(action)
+            cloned_action.help = ("Image2/Image2.5 only; Standard/Detailed/Ultimate" if action.dest == "quality"
+                                  else "Image2.5 only; free native background removal, default none")
+            general_image_run._add_action(cloned_action)
+
+    general_image_poll = subparsers.add_parser(
+        "general-image-poll",
+        aliases=["image-2-poll", "image-2.5-poll"],
+        help="Recover general generation; image-2-poll and image-2.5-poll remain compatible",
+    )
+    add_shared_path_args(general_image_poll)
+    general_image_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
     image_edit_run = subparsers.add_parser("image-edit-run", help="Edit one or more game-art images")
     add_shared_path_args(image_edit_run)
@@ -8065,6 +8106,7 @@ def build_parser() -> argparse.ArgumentParser:
         "map-reference-download",
         "texture-reference-search",
         "texture-reference-download",
+        "general-image-run",
         "nano-banana-run",
         "image-2-run",
         "image-2.5-run",
@@ -8623,8 +8665,8 @@ def main() -> int:
             print(_format_public_json(public_search_payload))
             return 0
 
-        if args.command in {"nano-banana-run", "image-2-run", "image-2.5-run"}:
-            capability = args.command.removesuffix("-run")
+        if args.command in {"general-image-run", "nano-banana-run", "image-2-run", "image-2.5-run"}:
+            capability = args.generation_model if args.command == "general-image-run" else args.command.removesuffix("-run")
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
             submit_payload, final_payload = run_general_image(
                 api_base=args.api_base,
@@ -8658,8 +8700,8 @@ def main() -> int:
             print(_format_json_for_display(final_payload))
             return 0
 
-        if args.command in {"nano-banana-poll", "image-2-poll", "image-2.5-poll"}:
-            capability = "nano-banana" if args.command == "nano-banana-poll" else "image-2"
+        if args.command in {"general-image-poll", "nano-banana-poll", "image-2-poll", "image-2.5-poll"}:
+            capability = "general-image" if args.command == "general-image-poll" else "nano-banana" if args.command == "nano-banana-poll" else "image-2"
             payload = wait_submitted_workflow_job(
                 api_base=args.api_base,
                 api_key=args.api_key,

@@ -196,10 +196,12 @@ python3 skills/game-assets/meowart_api.py animation-edit-run \
 
 ### 通用生成 Image 2.5
 
-`image-2.5-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
+通用生成使用 `general-image-run --generation-model image-2.5|image-2|nano-banana`；默认 Image2.5，旧命令继续兼容。模型选项与条件参数见 [生成指南](pixel-and-hd-assets.md#general-generation-hd-or-pixel-style)。
+
+`general-image-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
 质量仅支持 `standard/detailed/ultimate`，对应网页 普通/精细/极致 与 canonical `low/medium/high`。
 `--resolution 1K|2K` 默认 1K；`--aspect-ratio` 默认 1:1，支持 1:1、3:4、4:3、9:16、16:9。
-可重复 `--reference-image` 传参考图；失败或中断用 `image-2.5-poll --job-id ...` 恢复，勿重复提交。
+可重复 `--reference-image` 传参考图；失败或中断用 `general-image-poll --job-id ...` 恢复，勿重复提交。
 1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
 
 万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。

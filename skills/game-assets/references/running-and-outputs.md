@@ -35,7 +35,7 @@ the old version. Update from the official `Meowa-AI/meowa-skills` repository and
 `skills/game-assets` directory into the Codex skills directory before retrying. Do not replace only
 one file. If a paid job already has an ID, inspect top-level `--help` for the available `*-poll`
 recovery command after the update; never resubmit it merely because the old runner could not
-download the result. General HD image jobs use `nano-banana-poll` or `image-2-poll`. A legacy server
+download the result. General image jobs use `general-image-poll`; legacy polling commands remain supported. A legacy server
 may still return `skill_upgrade_required`; follow the same recovery procedure.
 
 ## Authentication
@@ -79,10 +79,10 @@ The runner does not save submission responses, job responses, provider responses
 
 ## Polling and recovery
 
-Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Top-level `--help` lists the available recovery commands. Use the relevant `*-poll` command with the original job identifier; `nano-banana-poll` and `image-2-poll` recover their corresponding general HD image jobs. Recovery waits through transient connection failures, never submits a replacement job, and downloads every declared final output after success.
+Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Top-level `--help` lists the available recovery commands. Use the relevant `*-poll` command with the original job identifier; `general-image-poll` recovers general image jobs for all three models. Recovery waits through transient connection failures, never submits a replacement job, and downloads every declared final output after success.
 
 ```bash
-python3 skills/game-assets/meowart_api.py nano-banana-poll \
+python3 skills/game-assets/meowart_api.py general-image-poll \
   --job-id <original-job-id> \
   --output-dir <output-dir>
 ```

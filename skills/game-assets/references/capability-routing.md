@@ -1,6 +1,6 @@
 # Capability routing
 
-Use this module to select one primary public command. Prefer the most specialized capability that directly produces the requested deliverable; do not build a multi-step chain merely because several commands appear related.
+Use this module to select one primary public command. Prefer a specialized capability when its style and output contract fit the request; otherwise use general generation. Do not build a multi-step chain merely because several commands appear related.
 
 | User intent | Primary command | Read next |
 |---|---|---|
@@ -10,7 +10,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Pixel asset pack, low-cost high-volume sprites, prototype asset sheet, general 4:3 pixel composition, HD-to-pixel reinterpretation, building progression, or top-down pixel image | `pixel-universal-gen-run` | `pixel-and-hd-assets.md` |
 | One pixel object at a user-specified width and height, or one source image regenerated as pixel art at a specified size | `custom-size-pixel-gen-run` | `pixel-and-hd-assets.md` |
 | HD character, prop, icon, or asset pack | `hd-gen-run` | `pixel-and-hd-assets.md` |
-| General HD image, scene, illustration, sprite sheet, or batch of art assets | `nano-banana-run` or `image-2-run` | `pixel-and-hd-assets.md` |
+| General generation: freely styled HD or pixel image, character, UI, game background, or batch such as nine props in one sheet | `general-image-run` (default Image2.5; select Image2 or Nano Banana with `--generation-model`) | `pixel-and-hd-assets.md` |
 | Eight-direction character sheet using mirrored or nine-grid generation | `character-multi-view-run` | `pixel-and-hd-assets.md` |
 | Remove a background | `remove-background-run` | `pixel-and-hd-assets.md` |
 | Convert existing art into crisp pixel art | `pixelate-run` | `pixel-and-hd-assets.md` |
@@ -43,7 +43,8 @@ Use this module to select one primary public command. Prefer the most specialize
 
 ## Selection rules
 
-- Use preset discovery before guessing a pixel, large-pixel, or HD preset: run `pixel-gen-template-info`, `large-pixel-template-info`, or `hd-gen-template-info`.
+- Before any template-dependent generation, tell the user it requires a template and list suitable choices from the current catalog, with available size, count, style, and preview information. Let the user select unless they already specified a template. For pixel, large-pixel, and HD presets, run `pixel-gen-template-info`, `large-pixel-template-info`, or `hd-gen-template-info`; use the corresponding catalog for other template-dependent capabilities.
+- General generation directly calls the image API without an asset template; the prompt and optional references control the content and style. Use it when composition freedom matters or available template styles do not fit, including pixel-style requests.
 - Use preset-driven `pixel-gen-run` when exact dimensions or maximum pixel quality matter. Use `pixel-universal-gen-run` when low-cost volume and rapid prototyping matter more; it can produce many sprites on one general pixel canvas, but its per-sprite quality and size control are weaker.
 - Prefer a fixed-size preset such as a 32px or 64px template when one matches the deliverable. `custom-size-pixel-gen-run` accepts user-specified dimensions when they fit the generation canvas, but it is less reliable than preset-driven generation.
 - Keep custom-size generation to one object or one source image converted into a requested pixel size. Do not use it for asset packs. For a pack, prefer a matching fixed template; when the pack needs freer composition or many differently sized assets, use `pixel-universal-gen-run`, whose built-in 4:3 `xlarge` mode includes asset-pack optimizations. The large canvas is more flexible but remains less reliable than basic template-driven generation.
@@ -51,15 +52,15 @@ Use this module to select one primary public command. Prefer the most specialize
 - Default custom-size generation to Nano Banana. Switch to Image-2 only when comparison is useful. Keep background removal off during prompt iteration, then run `remove-background-run` on an approved result to avoid paying for removal on discarded generations.
 - Treat fill-canvas as a composition request, not a geometric guarantee. A tall standing character cannot necessarily fill a wide canvas without distortion or cropping. Use strong pixelation only with a reference, especially when a low-quality or already-pixelated source causes the model to copy instead of redraw; it improves enforcement but does not guarantee success.
 - Use `pixel-universal-gen-run` for a flexible pixel scene or illustration rather than an exact small-sprite contract. Select `top-down` only when the camera must be overhead.
-- Use `nano-banana-run` or `image-2-run` for unrestricted HD generation and batches. Use `ui-gen-run` instead when the requested sheet also needs automatic background removal and component segmentation; UI generation is prompt-driven and can produce ordinary assets or sprite sheets, not only interface graphics.
+- Use `general-image-run` (default Image2.5; select Image2 or Nano Banana with `--generation-model`) for general generation and batches, including a complete UI or game background. Use `ui-gen-run` when the requested sheet also needs automatic background removal and component segmentation; it is prompt-driven and can produce ordinary assets or sprite sheets as well as interface graphics.
 - Use `pixelate-run` only for explicit visual conversion; it is not a generic exact-size sprite generator.
 - Use map reference search when the selected generator accepts a reference or preset. For side-scrolling maps, treat search results as visual planning material only; those commands do not accept a preset input.
 - Treat preset output size and default count as part of the deliverable contract. If no preset matches the requested size or count, explain the gap instead of implying that prompt text can enforce it.
-- Use pixel commands whenever the requested final asset is pixel art; do not route pixel work through a general illustration path.
+- Use pixel workflows when their style and exact sprite contract fit. If template styles do not fit, offer general generation in pixel style and inspect the resulting pixel grid and dimensions; prompt wording alone does not guarantee either.
 - Use `image-edit-run` for one precise still-image transformation. Use one-click upgrade when one source should become a coherent upgrade sequence or several style-consistent variants. Use `animation-edit-run` for an existing animated GIF or WebP.
 - Use `animate-run` for most animation because it directly produces WebP, GIF, or sprite-sheet frames. For an ordinary complex action, use `keyframes-run` to constrain intermediate poses while keeping frame-animation output. Its general frame mode still outputs at no more than 480p, regardless of a higher-resolution source. Use `video-run` only when frame animation remains insufficient or higher-resolution video is required.
 - Use `character-multi-view-run` for a still eight-direction character sheet. Its left and right views are typically mirrored. When the user needs a physically consistent eight-direction turnaround without mirroring, use Frame Animation V2 (`meowa-animation-run`) with the Multi-view prompt and 32-frame loop documented in `pixel-and-hd-assets.md`. That path is a follow-up, not a one-click replacement for the still sheet.
 - Use `texture-reference-search` and `texture-reference-download` first when a standard 64×64 flat material already fits. Use `texture-gen-run` to create and download a new 64×64 seamless texture, and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
 - Use `tileset-gen-run` for a 64px top-down dual-grid atlas. Select `foreground` or `background` with one matching 64×64 texture, or `dual` with both textures. Single-terrain modes can remove the unused background; dual mode cannot. Use `isometric-tileset-run` for an isometric atlas.
 
-If no specialized capability fits, explain the gap instead of exposing an internal workflow or raw request surface.
+If no specialized capability fits, offer general generation and explain any remaining output-contract gap. Keep execution within the public commands.

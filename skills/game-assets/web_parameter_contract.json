@@ -19,12 +19,20 @@
   },
   "features": {
     "general_nano_banana": {
-      "command": "nano-banana-run",
+      "command": "general-image-run",
+      "command_args": ["--generation-model", "nano-banana"],
+      "legacy_command": "nano-banana-run",
       "web_sources": [
         "types.ts:GenerationSettings",
         "components/SettingsPanel.tsx"
       ],
       "parameters": {
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": ["image-2.5", "image-2", "nano-banana"],
+          "request_field": "generationProvider"
+        },
         "model": {
           "flag": "--model",
           "default": "gemini-3.1-flash-image",
@@ -106,12 +114,20 @@
       }
     },
     "general_image2_5": {
-      "command": "image-2.5-run",
+      "command": "general-image-run",
+      "command_args": ["--generation-model", "image-2.5"],
+      "legacy_command": "image-2.5-run",
       "web_sources": [
         "types.ts:GenerationSettings",
         "components/SettingsPanel.tsx"
       ],
       "parameters": {
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": ["image-2.5", "image-2", "nano-banana"],
+          "request_field": "generationProvider"
+        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "none",
@@ -155,12 +171,20 @@
       }
     },
     "general_image2": {
-      "command": "image-2-run",
+      "command": "general-image-run",
+      "command_args": ["--generation-model", "image-2"],
+      "legacy_command": "image-2-run",
       "web_sources": [
         "types.ts:GenerationSettings",
         "components/SettingsPanel.tsx"
       ],
       "parameters": {
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": ["image-2.5", "image-2", "nano-banana"],
+          "request_field": "generationProvider"
+        },
         "quality": {
           "flag": "--quality",
           "default": "standard",

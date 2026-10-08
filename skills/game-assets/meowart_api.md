@@ -30,13 +30,13 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/meowart_api.py" --versio
 ```
 
 更新后先用顶层 `--help` 查看可用的 `*-poll` 恢复命令，再使用原 `job_id` 恢复下载。
-通用图片任务分别使用 `nano-banana-poll` 和 `image-2-poll`。恢复命令只轮询原任务，
+通用图片任务统一使用 `general-image-poll`；旧轮询命令仍兼容。恢复命令只轮询原任务，
 不会重新提交或再次扣费。必须复制整个 `skills/game-assets` 目录，不能只替换
 `SKILL.md` 或 `meowart_api.py`。
 
 ```bash
 python3 skills/game-assets/meowart_api.py --help
-python3 skills/game-assets/meowart_api.py nano-banana-poll \
+python3 skills/game-assets/meowart_api.py general-image-poll \
   --job-id <original-job-id> \
   --output-dir <output-dir>
 ```
@@ -119,15 +119,17 @@ python3 skills/game-assets/meowart_api.py <command> --help
 每次生成都指定新的输出目录，并只交付任务目录中的最终媒体与 `final_outputs.json`。
 策划任务使用 `game-design-run`，会保存 `game_design_outputs.json` 与 `design_docs/` 下的 Markdown 文档；不预扣、不封顶，按实际 token 实时增量扣费，下一轮预估积分不足时会停止并提示充值。
 
-### 通用生成 Image 2.5
+### 通用生成 `general-image-run`
 
-`image-2.5-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
+通用生成统一使用 `general-image-run`。旧命令 `image-2.5-run`、`image-2-run`、`nano-banana-run` 仍可用，分别等价于 `--generation-model image-2.5`、`image-2`、`nano-banana`，原参数和默认值不变。模型选项与条件参数见 [生成指南](references/pixel-and-hd-assets.md#general-generation-hd-or-pixel-style)。
+
+`general-image-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
 质量仅支持 `standard/detailed/ultimate`，对应网页 普通/精细/极致 与 canonical `low/medium/high`。
 `--resolution 1K|2K` 默认 1K；`--aspect-ratio` 默认 1:1，支持 1:1、3:4、4:3、9:16、16:9。
-可重复 `--reference-image` 传参考图；失败或中断用 `image-2.5-poll --job-id ...` 恢复，勿重复提交。
+可重复 `--reference-image` 传参考图；失败或中断用 `general-image-poll --job-id ...` 恢复，勿重复提交。
 1K 基础积分为 1/5/10，2K 为 2/10/20；每张参考图另加 2 积分，由服务端结算。
 
-通用生成默认使用 Image2.5（`image-2.5-run`）。万能编辑高清模式默认使用 Image2.5、2K；像素模式默认不变。万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
+通用生成统一使用 `general-image-run`，`--generation-model image-2.5|image-2|nano-banana` 默认 `image-2.5`。万能编辑高清模式默认使用 Image2.5、2K；像素模式默认不变。万能编辑支持 `image-edit-run --generation-model image-2.5`，参数与 `image-2` 相同。普通／精细／极致基础积分：1K 为 1/5/10，2K 为 2/10/20；每张参考图 +2。Image2.5 去背景免费，只提供普通抠图；失败则不去背景、不扣附加费。分区像素化沿用现有附加费。
 
 素材克隆使用 `asset-clone-run` 和 `/api/workflows/asset_clone/run`。`--clone-count` 可选 1、4、9、16、25、36，返回完整网格图而不自动切分。多张参考图必须同尺寸；尺寸不一致时使用 `--cell-width`、`--cell-height` 和 `--fit-mode pad|crop` 居中处理，不缩放。像素模式默认分区量化与多重像素化，像素缩放比例低于 2、高清缩放比例低于 0.5 时提交前拒绝。像素和高清模式均默认 Image2.5、1K、精细画质；Nano Banana 固定普通画质，默认不去背景；Image2.5 默认去背景。背景选项只有 `none` / `standard`。
 
