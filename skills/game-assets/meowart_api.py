@@ -1714,7 +1714,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "pixel_gen_grid_5x5": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_grid_8x8": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_mask_single": frozenset({"final_sprite", "url"}),
-    "pixel_gen_self_loop": frozenset({"output_path", "tiling_preview_path", "image_paths", "url"}),
+    "pixel_gen_self_loop": frozenset({"output_path", "url"}),
     "pixel_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_16_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_32_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
@@ -1723,7 +1723,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "remove_background": frozenset({"remove_bg_path", "transparent_path", "output_url", "result_url", "url"}),
     "seedance_generator": frozenset({"raw_video_path", "video_paths", "url"}),
     "side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
-    "texture_gen": frozenset({"final_texture_path", "texture_path", "tiling_preview_path", "url"}),
+    "texture_gen": frozenset({"final_texture_path", "texture_path", "url"}),
     "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "url"}),
 }
 _WORKFLOW_FINAL_OUTPUT_CONTAINERS: dict[str, frozenset[str]] = {

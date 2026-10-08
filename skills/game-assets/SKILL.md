@@ -18,6 +18,8 @@ Determine these requirements before selecting a command:
 - Final dimensions, sprite-cell size, count, aspect ratio, transparency, and file format.
 - Deliverable structure: one asset, a variant pack, sprite sheet, directional set, layer set, animation, or reusable atlas.
 
+Single-image jobs return only the final image. Separate pack previews are available only for multiple final images.
+
 Treat preset-defined dimensions and output counts as fixed contracts. Do not imply that prompt wording can override them.
 
 ## Write simple natural-language prompts
