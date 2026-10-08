@@ -3716,6 +3716,7 @@ def submit_meowa_animation(
     remove_bg_batch_size: str = "16",
     background_color: str,
     high_frame_rate: bool = False,
+    auto_scale_to_input: bool = False,
     source_padding: dict[str, Any],
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
@@ -3738,6 +3739,7 @@ def submit_meowa_animation(
             "remove_bg_batch_size": remove_bg_batch_size,
             "background_color": background_color,
             "high_frame_rate": "true" if high_frame_rate else "false",
+            "auto_scale_to_input": "true" if auto_scale_to_input else "false",
             "source_padding": json.dumps(source_padding),
         },
         files={
@@ -7902,6 +7904,8 @@ def build_parser() -> argparse.ArgumentParser:
             default=False,
             help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
         )
+        edit_parser.add_argument("--auto-scale-to-input", action="store_true", default=False,
+            help="HD only: smoothly restore the input size; keep the original animation as a second output")
         edit_parser.add_argument("--background-color", default="#ffffff", action=_StoreExplicitArgument, help="Fill transparent reference pixels with #RRGGBB; applies to both media inputs")
         edit_parser.set_defaults(background_color_explicit=False)
         edit_parser.add_argument("--primary-reference", choices=["video", "image"], default="video",
@@ -7985,6 +7989,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
     )
+    meowa_animation_run_parser.add_argument("--auto-scale-to-input", action="store_true", default=False,
+        help="HD only: smoothly restore the input size; keep the original animation as a second output")
     meowa_animation_run_parser.set_defaults(background_color_explicit=False)
     meowa_animation_run_parser.set_defaults(optimize_prompt=True)
     meowa_animation_run_parser.add_argument(
@@ -11130,7 +11136,10 @@ def main() -> int:
                 background_color = "#00b140"
             data = {"edit_intent": args.edit_intent, "video_description": args.video_description,
                     "image_description": args.image_description if args.image_file else "", "background_color": background_color,
-                    "high_frame_rate": "true" if args.high_frame_rate else "false"}
+                    "high_frame_rate": "true" if args.high_frame_rate else "false",
+                    "auto_scale_to_input": "true" if args.auto_scale_to_input else "false"}
+            if args.auto_scale_to_input and args.style_mode != "hd":
+                raise ValueError("--auto-scale-to-input requires HD mode")
             if args.style_mode == "pixel" and args.resolution != "480p":
                 raise ValueError("Pixel mode requires 480p")
             if args.primary_reference == "image" and not args.image_file:
@@ -11169,6 +11178,8 @@ def main() -> int:
             return 0
 
         if args.command == "meowa-animation-run":
+            if args.auto_scale_to_input and args.style_mode != "hd":
+                raise ValueError("--auto-scale-to-input requires HD mode")
             image_path = Path(args.image_file).expanduser().resolve()
             if not image_path.is_file():
                 raise FileNotFoundError(f"animation source not found: {image_path}")
@@ -11263,6 +11274,7 @@ def main() -> int:
                 remove_bg_batch_size=args.remove_bg_batch_size,
                 background_color=args.background_color,
                 high_frame_rate=args.high_frame_rate,
+                auto_scale_to_input=args.auto_scale_to_input,
                 source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,

@@ -15,6 +15,7 @@ Use this module to select one primary public command. Prefer the most specialize
 | Remove a background | `remove-background-run` | `pixel-and-hd-assets.md` |
 | Convert existing art into crisp pixel art | `pixelate-run` | `pixel-and-hd-assets.md` |
 | Generate a UI sheet, HUD, menu, buttons, icons, or extract UI components | `ui-gen-run` | `ui-and-image-editing.md` |
+| Split separated complex patterns in an existing PNG into individual transparent assets locally | `scripts/split-components.py` | `local-tools.md` |
 | Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
 | Clone same-style assets into one grid sheet | `asset-clone-run` | `ui-and-image-editing.md` |
 | Quickly upgrade one asset or create several similarly sized, style-consistent variants | `one-click-upgrade-prompts`, then `one-click-upgrade-run` | `ui-and-image-editing.md` |

@@ -4,6 +4,8 @@
 
 ## 安装
 
+只使用本地工具无需安装依赖或配置 API key：例如 `python3 <skill-dir>/scripts/split-components.py sheet.png --output-dir components`。本地 tools 统一放在 `scripts/`，参数和限制见 [local-tools.md](references/local-tools.md)。下面的依赖用于 API runner。
+
 在 Skill 仓库根目录安装 runner 依赖：
 
 ```bash
@@ -147,3 +149,5 @@ References are limited to 4.5 seconds. Output duration is selected automatically
 Video-reference editing: both `meowa-animation-edit-prompts` and `meowa-animation-edit-run` accept `--background-color '#RRGGBB'` (default `#ffffff`). The same color fills transparent pixels in every reference-animation frame and the appearance image; opaque pixels are unchanged. Use the same color for polishing and generation. Background filling adds no credits.
 
 Nano Banana 2.1 is available in general generation: `nano-banana-run --model gemini-nano-banana-2.1 --prompt "..."`. It supports 1K/2K/4K (5/10/20 credits), all 14 aspect ratios, and only `--generation-speed normal` (default). Each reference image adds 2 credits. The default model remains `gemini-3.1-flash-image`.
+
+HD frame animation: `meowa-animation-run` and `meowa-animation-edit-run` accept `--auto-scale-to-input` (default off). It restores the final WebP to the input dimensions using smooth scaling, preserves the original as a second WebP, and adds no credits. With background removal, only the final transparent animation is scaled.
