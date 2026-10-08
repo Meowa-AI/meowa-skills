@@ -13,6 +13,7 @@
           "flag": "--model",
           "default": "gemini-3.1-flash-image",
           "choices": [
+            "gemini-nano-banana-2.1",
             "gemini-3.1-flash-lite-image",
             "gemini-3.1-flash-image",
             "gemini-3-pro-image"
@@ -26,7 +27,12 @@
             "normal",
             "fast"
           ],
-          "request_field": "generationSpeed"
+          "request_field": "generationSpeed",
+          "choices_by_model": {
+            "gemini-nano-banana-2.1": [
+              "normal"
+            ]
+          }
         },
         "resolution": {
           "flag": "--resolution",
@@ -37,7 +43,28 @@
             "2K",
             "4K"
           ],
-          "request_field": "resolution"
+          "request_field": "resolution",
+          "choices_by_model": {
+            "gemini-nano-banana-2.1": [
+              "1K",
+              "2K",
+              "4K"
+            ],
+            "gemini-3.1-flash-lite-image": [
+              "1K"
+            ],
+            "gemini-3.1-flash-image": [
+              "512",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            "gemini-3-pro-image": [
+              "1K",
+              "2K",
+              "4K"
+            ]
+          }
         },
         "aspect_ratio": {
           "flag": "--aspect-ratio",

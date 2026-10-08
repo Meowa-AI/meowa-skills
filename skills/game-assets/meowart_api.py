@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.06.1"
+MEOWART_API_CLI_VERSION = "2026.10.08.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -79,6 +79,7 @@ GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
 NANO_BANANA_MODEL = "gemini-3.1-flash-image"
 IMAGE_2_MODEL = "gpt-image-2"
 NANO_BANANA_MODELS = (
+    "gemini-nano-banana-2.1",
     "gemini-3.1-flash-lite-image",
     "gemini-3.1-flash-image",
     "gemini-3-pro-image",
@@ -4216,6 +4217,8 @@ def submit_general_image(
         normalized_model = "gpt-image-2.5-sunburst" if normalized_capability == "image-2.5" else IMAGE_2_MODEL
     if generation_speed not in GENERATION_SPEED_CHOICES:
         raise ValueError("generation_speed must be one of: normal, fast")
+    if is_nano_banana and normalized_model == "gemini-nano-banana-2.1" and generation_speed != "normal":
+        raise ValueError("Nano Banana 2.1 supports only normal generation_speed")
     payload = {
         "generationProvider": "nanobanana" if is_nano_banana else "image2_5" if normalized_capability == "image-2.5" else "image2",
         "model": normalized_model,
@@ -6677,7 +6680,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         default=NANO_BANANA_MODEL,
         choices=NANO_BANANA_MODELS,
-        help="Nano Banana model exposed by the web product",
+        help="Nano Banana model exposed by the web product; 2.1 supports 1K/2K/4K and normal speed only",
     )
     nano_banana_run.add_argument(
         "--generation-speed",
