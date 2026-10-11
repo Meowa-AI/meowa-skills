@@ -409,6 +409,7 @@
     "asset_clone": {
       "command": "asset-clone-run",
       "prompt_command": "asset-clone-prompt",
+      "prompt_parameters": ["prompt", "clone_count"],
       "web_sources": ["components/AssetCloneDialog.tsx", "services/assetCloneService.ts"],
       "parameters": {
         "prompt": {"flag": "--prompt", "default": "参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", "default_count_field": "clone_count", "request_field": "prompt"},
