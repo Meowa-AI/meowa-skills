@@ -199,4 +199,10 @@ JSON 的 `generation_provider` 可选 `nanobanana`（默认）、`image2`、`ima
 
 Asset cloning (`asset-clone-run`) uses `--clone-count` in its default prompt (default 1); explicit prompts are preserved. `asset-clone-prompt` also accepts `--clone-count` (default 1) and preserves it when polishing. It defaults to Image2.5, 1K, and Detailed quality in both pixel and HD modes. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal.
 
+素材克隆的模型选择：
+
+- **色彩还原**：GPT Image2.5 色彩层次更丰富，更能还原参考图色系，整体更鲜艳；Nano Banana 配色较保守，可能偏离参考图色系。
+- **形体控制**：Nano Banana 对轮廓、像素边缘和体积尺度的一致性控制更强，适合形体及尺寸约束严格的像素资产；GPT Image2.5 像素质感相对较弱，资产尺寸更容易变化。
+- **去背景**：GPT Image2.5 去背景不收附加积分；Nano Banana（包括 2.1）开启去背景需额外积分，以当前报价为准。
+
 Nano Banana 2.1 is available in general generation: `nano-banana-run --model gemini-nano-banana-2.1 --prompt "..."`. It supports 1K/2K/4K (5/10/20 credits), all 14 aspect ratios, and only `--generation-speed normal` (default). Each reference image adds 2 credits. The default model remains `gemini-3.1-flash-image`.

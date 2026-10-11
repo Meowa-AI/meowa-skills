@@ -145,6 +145,12 @@ python3 skills/game-assets/meowart_api.py one-click-upgrade-run \
 
 Use `asset-clone-run --reference-image <source.png> --clone-count 4 --prompt "A sword, a dagger, a red gem" --output-dir <output-dir>` for a complete 2×2 sheet. Repeat `--reference-image` for more references. Inputs must share dimensions; when they do not, specify `--cell-width`, `--cell-height`, and `--fit-mode pad|crop` for centered correction without scaling. Pixel and HD both default to Image2.5, 1K, and Detailed quality with standard background removal. Pixel mode enables regional quantization and three complete pixelation variants. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal. Use `--quality standard|detailed|ultimate` for Image2.5. Canvas selection follows Universal Edit. Pixel scale must be at least 2; HD scale must be at least 0.5. Oversize references are rejected before composition or charging.
 
+Model selection for asset cloning:
+
+- **Color fidelity:** GPT Image2.5 offers richer, more vivid colors and better reproduction of the reference palette. Nano Banana uses more conservative palettes and may depart from the reference colors.
+- **Shape control:** Nano Banana provides stronger control over silhouettes, crisp pixel edges, and consistent volume and scale, making it preferable for pixel assets with strict shape and size constraints. GPT Image2.5 has weaker pixel texture and is more prone to size variation.
+- **Background removal:** GPT Image2.5 adds no background-removal credits. Nano Banana, including 2.1, charges extra when background removal is enabled; use the current quote.
+
 Use `asset-clone-prompt --clone-count 4 --prompt "参考图 1 的布局，生成4 个不同外观的道具，保持美术风格一致。 红色的宝石"` to polish a prompt without generating an image. Use the same `--clone-count` as generation (default 1); polishing preserves that count. Pass the returned prompt to `asset-clone-run --prompt <polished-prompt> --skip-prompt-optimization` to use it verbatim. Without that flag, generation optimizes the prompt. The default prompt is `参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。`. When `--prompt` is omitted, the default prompt uses `--clone-count` (default 1). Explicit prompts are preserved.
 
 ```bash

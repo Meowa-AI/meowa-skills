@@ -133,6 +133,12 @@ python3 skills/game-assets/meowart_api.py <command> --help
 
 素材克隆使用 `asset-clone-run` 和 `/api/workflows/asset_clone/run`。`--clone-count` 可选 1、4、9、16、25、36，返回完整网格图而不自动切分。多张参考图必须同尺寸；尺寸不一致时使用 `--cell-width`、`--cell-height` 和 `--fit-mode pad|crop` 居中处理，不缩放。像素模式默认分区量化与多重像素化，像素缩放比例低于 2、高清缩放比例低于 0.5 时提交前拒绝。像素和高清模式均默认 Image2.5、1K、精细画质；Nano Banana 固定普通画质，默认不去背景；Image2.5 默认去背景。背景选项只有 `none` / `standard`。
 
+素材克隆的模型选择：
+
+- **色彩还原**：GPT Image2.5 色彩层次更丰富，更能还原参考图色系，整体更鲜艳；Nano Banana 配色较保守，可能偏离参考图色系。
+- **形体控制**：Nano Banana 对轮廓、像素边缘和体积尺度的一致性控制更强，适合形体及尺寸约束严格的像素资产；GPT Image2.5 像素质感相对较弱，资产尺寸更容易变化。
+- **去背景**：GPT Image2.5 去背景不收附加积分；Nano Banana（包括 2.1）开启去背景需额外积分，以当前报价为准。
+
 `asset-clone-prompt --clone-count 4 --prompt "..."` 使用同一个 API 的 `prompt_only=true` 单独润色提示词，不生成图片；`--clone-count` 与生成使用同一数量（默认 1），润色后的指令保留该数量。将返回的提示词传给 `asset-clone-run --prompt "..." --skip-prompt-optimization` 可直接使用；不带该标志时生成阶段会运行提示词优化。默认提示词为「参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。」 素材克隆省略 `--prompt` 时，默认指令中的数量跟随 `--clone-count`（默认 1）；显式传入的提示词保持原样。
 万能编辑 `--multi-pixelation` 返回三张像素化结果，不额外收费。`--regional-pixelation` 默认启用多重像素化，可用 `--no-multi-pixelation` 单独关闭；不分区时也可单独开启。
 
