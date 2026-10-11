@@ -197,6 +197,6 @@ JSON 的 `generation_provider` 可选 `nanobanana`（默认）、`image2`、`ima
 仅模型可切换：内部生成固定 1K、1:1，Nano Banana 固定普通模式，GPT Image2 固定精细，GPT Image2.5 固定极致；不接受质量、分辨率或路由参数。
 原有类型、风格、Padding 和额外要求按所选模板提供。GPT Image2.5 使用原生透明，20 积分；其他模型含高级抠图，30 积分。透明失败则任务失败，不追加抠图。
 
-Asset cloning (`asset-clone-run`) defaults to Image2.5, 1K, and Detailed quality in both pixel and HD modes. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal.
+Asset cloning (`asset-clone-run`) uses `--clone-count` in its default prompt (default 1); explicit prompts are preserved. It defaults to Image2.5, 1K, and Detailed quality in both pixel and HD modes. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal.
 
 Nano Banana 2.1 is available in general generation: `nano-banana-run --model gemini-nano-banana-2.1 --prompt "..."`. It supports 1K/2K/4K (5/10/20 credits), all 14 aspect ratios, and only `--generation-speed normal` (default). Each reference image adds 2 credits. The default model remains `gemini-3.1-flash-image`.

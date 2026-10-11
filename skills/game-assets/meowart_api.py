@@ -28,7 +28,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.08.2"
+MEOWART_API_CLI_VERSION = "2026.10.11.1"
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -6475,6 +6475,9 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             if not resolution_explicit:
                 parsed.resolution = "2K"
         remove_bg_explicit = vars(parsed).pop("_image_edit_remove_bg_method_explicit", False)
+        clone_prompt_explicit = vars(parsed).pop("_image_edit_prompt_explicit", False)
+        if parsed.command == "asset-clone-run" and not clone_prompt_explicit:
+            parsed.prompt = f"参考图 1 的布局，生成{parsed.clone_count} 个不同外观的美术资产，保持美术风格一致。"
         if parsed.command == "asset-clone-run" and not remove_bg_explicit:
             parsed.remove_bg_method = "none" if parsed.generation_model == "nano-banana" else "standard"
         ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
@@ -6839,7 +6842,7 @@ def build_parser() -> argparse.ArgumentParser:
     asset_clone_run = subparsers.add_parser("asset-clone-run", help="Clone a sheet of consistent game-art assets")
     add_shared_path_args(asset_clone_run)
     asset_clone_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 36 times")
-    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。", help="Shared requirements and asset descriptions")
+    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", help="Shared requirements and asset descriptions; the default prompt uses --clone-count", action=ImageEditOptionAction)
     asset_clone_run.add_argument("--skip-prompt-optimization", action="store_true", help="Use the supplied prompt without AI optimization")
     asset_clone_run.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36])
     asset_clone_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
@@ -6852,7 +6855,7 @@ def build_parser() -> argparse.ArgumentParser:
     asset_clone_run.add_argument("--fit-mode", default="pad", choices=["pad", "crop"], help="Center pad or crop; never scale")
     asset_clone_prompt = subparsers.add_parser("asset-clone-prompt", help="Polish an asset clone prompt without generating images")
     add_shared_path_args(asset_clone_prompt)
-    asset_clone_prompt.add_argument("--prompt", default="参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。")
+    asset_clone_prompt.add_argument("--prompt", default="参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。")
 
     animation_edit_run = subparsers.add_parser("animation-edit-run", help="Edit an animated GIF or WebP")
     add_shared_path_args(animation_edit_run)
