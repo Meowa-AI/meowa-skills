@@ -4,22 +4,53 @@
   "local_tools": {
     "complex_pattern_split": {
       "script": "scripts/split-components.py",
-      "web_sources": ["services/imageComponentSplitService.ts:analyzeImageComponents", "components/Workspace.tsx:splitImageComponentsToCanvas"],
+      "web_sources": [
+        "services/imageComponentSplitService.ts:analyzeImageComponents",
+        "components/Workspace.tsx:splitImageComponentsToCanvas"
+      ],
       "parameters": {
-        "alpha_threshold": {"flag": "--alpha-threshold", "default": 8},
-        "background_tolerance": {"flag": "--background-tolerance", "default": 8},
-        "connectivity": {"flag": "--connectivity", "default": 8, "choices": [4, 8]},
-        "min_component_area": {"flag": "--min-component-area", "default": 16},
-        "padding_px": {"flag": "--padding-px", "default": 0},
-        "merge_contained_fragments": {"flag": "--no-merge-contained-fragments", "default": true},
-        "fragment_max_area": {"flag": "--fragment-max-area", "default": 256},
-        "fragment_max_area_ratio": {"flag": "--fragment-max-area-ratio", "default": 0.02}
+        "alpha_threshold": {
+          "flag": "--alpha-threshold",
+          "default": 8
+        },
+        "background_tolerance": {
+          "flag": "--background-tolerance",
+          "default": 8
+        },
+        "connectivity": {
+          "flag": "--connectivity",
+          "default": 8,
+          "choices": [
+            4,
+            8
+          ]
+        },
+        "min_component_area": {
+          "flag": "--min-component-area",
+          "default": 16
+        },
+        "padding_px": {
+          "flag": "--padding-px",
+          "default": 0
+        },
+        "merge_contained_fragments": {
+          "flag": "--no-merge-contained-fragments",
+          "default": true
+        },
+        "fragment_max_area": {
+          "flag": "--fragment-max-area",
+          "default": 256
+        },
+        "fragment_max_area_ratio": {
+          "flag": "--fragment-max-area-ratio",
+          "default": 0.02
+        }
       }
     }
   },
   "features": {
     "general_nano_banana": {
-      "command": "nano-banana-run",
+      "command": "general-image-run",
       "web_sources": [
         "types.ts:GenerationSettings",
         "components/SettingsPanel.tsx"
@@ -102,11 +133,26 @@
             "8:1"
           ],
           "request_field": "aspectRatio"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
+          "request_field": "generationProvider"
         }
-      }
+      },
+      "legacy_command": "nano-banana-run",
+      "command_args": [
+        "--generation-model",
+        "nano-banana"
+      ]
     },
     "general_image2_5": {
-      "command": "image-2.5-run",
+      "command": "general-image-run",
       "web_sources": [
         "types.ts:GenerationSettings",
         "components/SettingsPanel.tsx"
@@ -151,11 +197,26 @@
             "16:9"
           ],
           "request_field": "aspectRatio"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
+          "request_field": "generationProvider"
         }
-      }
+      },
+      "legacy_command": "image-2.5-run",
+      "command_args": [
+        "--generation-model",
+        "image-2.5"
+      ]
     },
     "general_image2": {
-      "command": "image-2-run",
+      "command": "general-image-run",
       "web_sources": [
         "types.ts:GenerationSettings",
         "components/SettingsPanel.tsx"
@@ -191,8 +252,23 @@
             "16:9"
           ],
           "request_field": "aspectRatio"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
+          "request_field": "generationProvider"
         }
-      }
+      },
+      "legacy_command": "image-2-run",
+      "command_args": [
+        "--generation-model",
+        "image-2"
+      ]
     },
     "image_edit": {
       "command": "image-edit-run",
@@ -385,19 +461,109 @@
     "asset_clone": {
       "command": "asset-clone-run",
       "prompt_command": "asset-clone-prompt",
-      "web_sources": ["components/AssetCloneDialog.tsx", "services/assetCloneService.ts"],
+      "web_sources": [
+        "components/AssetCloneDialog.tsx",
+        "services/assetCloneService.ts"
+      ],
       "parameters": {
-        "prompt": {"flag": "--prompt", "default": "参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。", "request_field": "prompt"},
-        "skip_prompt_optimization": {"flag": "--skip-prompt-optimization", "default": false, "request_field": "skip_prompt_optimization"},
-        "clone_count": {"flag": "--clone-count", "default": 1, "choices": [1, 4, 9, 16, 25, 36], "request_field": "clone_count"},
-        "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "image-2.5", "choices": ["nano-banana", "image-2.5"], "request_field": "generation_provider", "defaults_by_mode": {"pixel": "image-2.5", "hd": "image-2.5"}},
-        "quality": {"flag": "--quality", "default": "detailed", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
-        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution", "defaults_by_mode": {"pixel": "1K", "hd": "1K"}},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard"], "request_field": "remove_bg_method", "defaults_by_model": {"nano-banana": "none", "image-2.5": "standard"}},
-        "cell_width": {"flag": "--cell-width", "request_field": "cell_width"},
-        "cell_height": {"flag": "--cell-height", "request_field": "cell_height"},
-        "fit_mode": {"flag": "--fit-mode", "default": "pad", "choices": ["pad", "crop"], "request_field": "fit_mode"}
+        "prompt": {
+          "flag": "--prompt",
+          "default": "参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。",
+          "request_field": "prompt"
+        },
+        "skip_prompt_optimization": {
+          "flag": "--skip-prompt-optimization",
+          "default": false,
+          "request_field": "skip_prompt_optimization"
+        },
+        "clone_count": {
+          "flag": "--clone-count",
+          "default": 1,
+          "choices": [
+            1,
+            4,
+            9,
+            16,
+            25,
+            36
+          ],
+          "request_field": "clone_count"
+        },
+        "mode": {
+          "flag": "--mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": [
+            "nano-banana",
+            "image-2.5"
+          ],
+          "request_field": "generation_provider",
+          "defaults_by_mode": {
+            "pixel": "image-2.5",
+            "hd": "image-2.5"
+          }
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "detailed",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution",
+          "defaults_by_mode": {
+            "pixel": "1K",
+            "hd": "1K"
+          }
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "remove_bg_method",
+          "defaults_by_model": {
+            "nano-banana": "none",
+            "image-2.5": "standard"
+          }
+        },
+        "cell_width": {
+          "flag": "--cell-width",
+          "request_field": "cell_width"
+        },
+        "cell_height": {
+          "flag": "--cell-height",
+          "request_field": "cell_height"
+        },
+        "fit_mode": {
+          "flag": "--fit-mode",
+          "default": "pad",
+          "choices": [
+            "pad",
+            "crop"
+          ],
+          "request_field": "fit_mode"
+        }
       }
     },
     "one_click_upgrade": {
@@ -2247,7 +2413,11 @@
       "browser_handoff": "https://meowa.ai/canvas?free_credits=1",
       "read_endpoint": "/api/credits/free-rewards/status",
       "claim_endpoint": "/api/credits/free-rewards/claim",
-      "claim_modes": ["auto", "manual", "unavailable"]
+      "claim_modes": [
+        "auto",
+        "manual",
+        "unavailable"
+      ]
     }
   }
 }

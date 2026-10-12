@@ -109,3 +109,8 @@ Before handoff:
 6. Read the local sanitized `final_outputs.json` as a validation manifest and confirm that it lists only the intended deliverables.
 7. Return the listed media files, not `final_outputs.json` itself, unless the user explicitly asks for the local validation manifest.
 8. Return clickable file paths and a concise note about the selected capability and validated properties.
+
+
+Final downloads use the server-selected URL, including the domestic media domain. Re-query an existing successful job to obtain its current route; never guess a replacement hostname. Small image downloads share a 45-second budget across at most three attempts, and files are saved only after a complete media response. Large media uses bounded inactive reads. `general-image-run` mirrors the web model selector (default Image2.5, Standard, 1K, 1:1, no background removal); `general-image-poll` resumes the original job. Model-specific legacy commands retain the same requests. The runner is statically distributed; there is no remote bootstrap execution.
+
+Domestic ready final files may use `media-cn.meowjito.com`; legacy `media.meowjito.com` links remain valid. Follow the exact server-returned final URL and re-query the job to refresh its route. No storage or provider option is required.

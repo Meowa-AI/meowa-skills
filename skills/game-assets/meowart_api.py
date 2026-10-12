@@ -13,6 +13,9 @@ import mimetypes
 import os
 import re
 import stat
+import random
+import socket
+import threading
 import sys
 import time
 import uuid
@@ -28,7 +31,8 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.08.1"
+MEOWART_API_CLI_VERSION = "2026.10.12.1"
+ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
 GAME_ASSETS_SKILL_NAME_HEADER = "X-Meowa-Skill-Name"
@@ -1478,29 +1482,87 @@ def _download_file(
 ) -> str:
     if urlparse(url).scheme.lower() != "https":
         raise ValueError("refusing non-HTTPS download")
-    response = _request_with_skill_version_compatibility(
-        url=url,
-        headers=headers,
-        send=lambda request_headers: requests.get(
-            url,
-            timeout=timeout,
-            verify=verify,
-            headers=request_headers or None,
-        ),
-    )
-    if int(getattr(response, "status_code", 200) or 200) == 426:
+    # Small final images have one budget across all attempts; active large media
+    # uses bounded socket reads instead of an arbitrary complete-file deadline.
+    started = time.monotonic()
+    deadline = started + min(float(timeout), 45.0)
+    last_error = None
+    for attempt in range(3):
+        response = None
+        timer = None
+        partial = None
         try:
-            payload = response.json()
-        except (requests.RequestException, ValueError, AttributeError):
-            payload = {}
-        _raise_for_skill_upgrade(response, payload)
-    response.raise_for_status()
-    content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
-    if require_media and not content_type.startswith(("image/", "audio/", "video/")):
-        raise ValueError(f"refusing non-media download: content-type={content_type or 'missing'}")
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(response.content)
-    return content_type
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise requests.Timeout("media download deadline exceeded")
+            response = _request_with_skill_version_compatibility(
+                url=url, headers=headers,
+                send=lambda request_headers: requests.get(
+                    url, timeout=(min(5.0, remaining), min(10.0, remaining)),
+                    verify=verify, headers=request_headers or None, stream=True,
+                ),
+            )
+            if int(getattr(response, "status_code", 200) or 200) == 426:
+                try:
+                    payload = response.json()
+                except (requests.RequestException, ValueError, AttributeError):
+                    payload = {}
+                _raise_for_skill_upgrade(response, payload)
+            response.raise_for_status()
+            content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+            if require_media and not content_type.startswith(("image/", "audio/", "video/")):
+                raise ValueError(f"refusing non-media download: content-type={content_type or 'missing'}")
+            length = int(response.headers.get("content-length") or 0)
+            small_image = content_type.startswith("image/") and length <= 1024 * 1024
+            raw_socket = getattr(getattr(getattr(getattr(response, "raw", None), "_fp", None), "fp", None), "raw", None)
+            raw_socket = getattr(raw_socket, "_sock", None)
+            if raw_socket is not None:
+                raw_socket.settimeout(15.0)
+            if small_image:
+                # Shutdown the owned socket at the absolute deadline, including
+                # slow trickles that never trigger requests' inactivity timeout.
+                def abort_owned_socket(sock=raw_socket):
+                    if sock is not None:
+                        try:
+                            sock.shutdown(socket.SHUT_RDWR)
+                        except OSError:
+                            pass
+                timer = threading.Timer(max(0.001, deadline-time.monotonic()), abort_owned_socket)
+                timer.daemon = True
+                timer.start()
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            partial = target_path.with_name(target_path.name + "." + uuid.uuid4().hex + ".part")
+            written = 0
+            with partial.open("xb") as output:
+                chunks = response.iter_content(chunk_size=64 * 1024) if hasattr(response, "iter_content") else (response.content,)
+                for chunk in chunks:
+                    if small_image and time.monotonic() >= deadline:
+                        raise requests.Timeout("media download deadline exceeded")
+                    output.write(chunk)
+                    written += len(chunk)
+            if length and written != length:
+                raise requests.ConnectionError("incomplete media response")
+            if small_image and time.monotonic() >= deadline:
+                raise requests.Timeout("media download deadline exceeded")
+            partial.replace(target_path)
+            return content_type
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as exc:
+            last_error = exc
+            status = int(getattr(response, "status_code", 0) or 0)
+            if isinstance(exc, requests.HTTPError) and status not in {429, 500, 502, 503, 504}:
+                raise
+            if attempt == 2 or time.monotonic() >= deadline:
+                raise
+            time.sleep(min((0.25 * 2 ** attempt) + random.uniform(0, 0.1), max(0, deadline-time.monotonic())))
+        finally:
+            if timer is not None:
+                timer.cancel()
+            if response is not None and hasattr(response, "close"):
+                response.close()
+            if partial is not None and partial.exists():
+                partial.unlink()  # Only this attempt's owned, unpublished bytes.
+    raise last_error or requests.Timeout("media download failed")
+
 
 
 def _safe_slug(value: str) -> str:
@@ -1665,7 +1727,7 @@ def _download_named_urls(
             downloads.append({"type": "media", "key": key, "path": str(target), "mime_type": mime_type})
             print(f"[INFO] downloaded={target}")
         except (requests.RequestException, ValueError) as exc:
-            print(f"[WARN] download failed for {url}: {exc}", file=sys.stderr)
+            print(f"[WARN] final media download failed: {type(exc).__name__}", file=sys.stderr)
     return downloads
 
 
@@ -1714,7 +1776,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "pixel_gen_grid_5x5": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_grid_8x8": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_mask_single": frozenset({"final_sprite", "url"}),
-    "pixel_gen_self_loop": frozenset({"output_path", "tiling_preview_path", "image_paths", "url"}),
+    "pixel_gen_self_loop": frozenset({"output_path", "image_paths", "url"}),
     "pixel_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_16_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_32_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
@@ -1723,7 +1785,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "remove_background": frozenset({"remove_bg_path", "transparent_path", "output_url", "result_url", "url"}),
     "seedance_generator": frozenset({"raw_video_path", "video_paths", "url"}),
     "side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
-    "texture_gen": frozenset({"final_texture_path", "texture_path", "tiling_preview_path", "url"}),
+    "texture_gen": frozenset({"final_texture_path", "texture_path", "url"}),
     "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "url"}),
 }
 _WORKFLOW_FINAL_OUTPUT_CONTAINERS: dict[str, frozenset[str]] = {
@@ -6466,6 +6528,17 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
         ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
         if parsed.command in (UI_GEN_SUBMIT_COMMANDS | UI_GEN_RUN_COMMANDS) and not ui_quality_explicit:
             parsed.quality = "standard" if parsed.generation_model == "image-2.5" else "detailed"
+        if parsed.command == "general-image-run":
+            explicit = {argument.split("=", 1)[0] for argument in arguments if argument.startswith("--")}
+            if parsed.generation_model != "nano-banana":
+                if parsed.resolution not in {"1K", "2K"} or parsed.aspect_ratio not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
+                    self.error("Selected image model supports 1K/2K and the standard five aspect ratios")
+                if explicit.intersection({"--model", "--generation-speed"}):
+                    self.error("Model variant and generation speed apply only to Nano Banana")
+                if parsed.generation_model == "image-2" and "--remove-bg-method" in explicit:
+                    self.error("Background removal is available only with Image2.5")
+            elif explicit.intersection({"--quality", "--remove-bg-method"}):
+                self.error("Quality and background removal apply only to the selected Image2 model")
         return parsed
 
 
@@ -6696,8 +6769,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Canvas ratio; recommended shared default is 1:1",
     )
     nano_banana_poll = subparsers.add_parser(
-        "nano-banana-poll",
-        help="Recover one Nano Banana job and download its final outputs",
+        "nano-banana-poll", aliases=["general-image-poll"],
+        help="Recover one general image job and download its final outputs",
     )
     add_shared_path_args(nano_banana_poll)
     nano_banana_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
@@ -6744,6 +6817,13 @@ def build_parser() -> argparse.ArgumentParser:
     image_2_5_run.set_defaults(quality="standard")
     image_2_5_run.add_argument("--remove-bg-method", choices=["none", "standard"], default="none",
                              help="Optional free Image2.5 background removal; failure keeps the original background")
+
+    general_image_run = subparsers.add_parser("general-image-run", help="Create a general image with the web model selector")
+    for action in nano_banana_run._actions[1:]:
+        general_image_run._add_action(copy.copy(action))
+    general_image_run.add_argument("--generation-model", choices=["nano-banana", "image-2", "image-2.5"], default="image-2.5")
+    general_image_run.add_argument("--quality", choices=IMAGE2_QUALITY_CHOICES, default="standard")
+    general_image_run.add_argument("--remove-bg-method", choices=["none", "standard"], default="none")
 
     image_2_poll = subparsers.add_parser(
         "image-2-poll",
@@ -8065,6 +8145,7 @@ def build_parser() -> argparse.ArgumentParser:
         "map-reference-download",
         "texture-reference-search",
         "texture-reference-download",
+        "general-image-run",
         "nano-banana-run",
         "image-2-run",
         "image-2.5-run",
@@ -8120,15 +8201,17 @@ def build_parser() -> argparse.ArgumentParser:
         "keyframes-run",
     }
     public_commands.update(
-        action.dest
+        action.dest.split(" ", 1)[0]
         for action in subparsers._choices_actions
-        if action.dest.endswith("-poll")
+        if action.dest.split(" ", 1)[0].endswith("-poll")
     )
     subparsers._choices_actions[:] = [
-        action for action in subparsers._choices_actions if action.dest in public_commands
+        action for action in subparsers._choices_actions if action.dest.split(" ", 1)[0] in public_commands
     ]
     for action in subparsers._choices_actions:
         action.metavar = action.dest
+        if action.dest == "nano-banana-poll":
+            action.metavar += " (general-image-" + action.dest.rsplit("-", 1)[1] + ")"
 
     return parser
 
@@ -8623,8 +8706,8 @@ def main() -> int:
             print(_format_public_json(public_search_payload))
             return 0
 
-        if args.command in {"nano-banana-run", "image-2-run", "image-2.5-run"}:
-            capability = args.command.removesuffix("-run")
+        if args.command in {"general-image-run", "nano-banana-run", "image-2-run", "image-2.5-run"}:
+            capability = args.generation_model if args.command == "general-image-run" else args.command.removesuffix("-run")
             print(f"[INFO] planned_output_dir={_predict_saved_dir(effective_output_dir, args.prompt)}")
             submit_payload, final_payload = run_general_image(
                 api_base=args.api_base,
@@ -8658,8 +8741,8 @@ def main() -> int:
             print(_format_json_for_display(final_payload))
             return 0
 
-        if args.command in {"nano-banana-poll", "image-2-poll", "image-2.5-poll"}:
-            capability = "nano-banana" if args.command == "nano-banana-poll" else "image-2"
+        if args.command in {"general-image-poll", "nano-banana-poll", "image-2-poll", "image-2.5-poll"}:
+            capability = "general-image" if args.command == "general-image-poll" else "nano-banana" if args.command == "nano-banana-poll" else "image-2"
             payload = wait_submitted_workflow_job(
                 api_base=args.api_base,
                 api_key=args.api_key,
