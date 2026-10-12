@@ -1776,7 +1776,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "pixel_gen_grid_5x5": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_grid_8x8": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_mask_single": frozenset({"final_sprite", "url"}),
-    "pixel_gen_self_loop": frozenset({"output_path", "image_paths", "url"}),
+    "pixel_gen_self_loop": frozenset({"output_path", "url"}),
     "pixel_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_16_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_32_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
@@ -6523,6 +6523,9 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             if not resolution_explicit:
                 parsed.resolution = "2K"
         remove_bg_explicit = vars(parsed).pop("_image_edit_remove_bg_method_explicit", False)
+        clone_prompt_explicit = vars(parsed).pop("_image_edit_prompt_explicit", False)
+        if parsed.command in {"asset-clone-run", "asset-clone-prompt"} and not clone_prompt_explicit:
+            parsed.prompt = f"参考图 1 的布局，生成{parsed.clone_count} 个不同外观的美术资产，保持美术风格一致。"
         if parsed.command == "asset-clone-run" and not remove_bg_explicit:
             parsed.remove_bg_method = "none" if parsed.generation_model == "nano-banana" else "standard"
         ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
@@ -6735,7 +6738,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     nano_banana_run = subparsers.add_parser(
         "nano-banana-run",
-        help="Create a general HD image with Nano Banana",
+        help="Compatibility alias for general-image-run --generation-model nano-banana",
     )
     add_shared_path_args(nano_banana_run)
     nano_banana_run.add_argument("--prompt", required=True, help="Describe the requested image or asset sheet")
@@ -6769,7 +6772,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Canvas ratio; recommended shared default is 1:1",
     )
     nano_banana_poll = subparsers.add_parser(
-        "nano-banana-poll", aliases=["general-image-poll"],
+        "nano-banana-poll",
         help="Recover one general image job and download its final outputs",
     )
     add_shared_path_args(nano_banana_poll)
@@ -6777,7 +6780,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     image_2_run = subparsers.add_parser(
         "image-2-run",
-        help="Create a general HD image with Image-2",
+        help="Compatibility alias for general-image-run --generation-model image-2",
     )
     add_shared_path_args(image_2_run)
     image_2_run.add_argument("--prompt", required=True, help="Describe the requested image or asset sheet")
@@ -6808,7 +6811,7 @@ def build_parser() -> argparse.ArgumentParser:
             "rerun with Detailed after the prompt is approved"
         ),
     )
-    image_2_5_run = subparsers.add_parser("image-2.5-run", help="Create a general image with Image 2.5 Sunburst")
+    image_2_5_run = subparsers.add_parser("image-2.5-run", help="Compatibility alias for general-image-run --generation-model image-2.5")
     for action in image_2_run._actions[1:]:
         cloned_action = copy.copy(action)
         if cloned_action.dest == "quality":
@@ -6818,20 +6821,40 @@ def build_parser() -> argparse.ArgumentParser:
     image_2_5_run.add_argument("--remove-bg-method", choices=["none", "standard"], default="none",
                              help="Optional free Image2.5 background removal; failure keeps the original background")
 
-    general_image_run = subparsers.add_parser("general-image-run", help="Create a general image with the web model selector")
-    for action in nano_banana_run._actions[1:]:
-        general_image_run._add_action(copy.copy(action))
-    general_image_run.add_argument("--generation-model", choices=["nano-banana", "image-2", "image-2.5"], default="image-2.5")
-    general_image_run.add_argument("--quality", choices=IMAGE2_QUALITY_CHOICES, default="standard")
-    general_image_run.add_argument("--remove-bg-method", choices=["none", "standard"], default="none")
-
-    image_2_poll = subparsers.add_parser(
-        "image-2-poll",
-        aliases=["image-2.5-poll"],
-        help="Recover one Image-2 job and download its final outputs",
+    general_image_run = subparsers.add_parser(
+        "general-image-run",
+        help="General generation in HD or pixel style with prompt and references",
+        description="General generation (通用生成); no asset template is imposed.",
+        epilog=("Replaces image-2.5-run, image-2-run, and nano-banana-run; these remain compatible aliases "
+                "for --generation-model image-2.5, image-2, and nano-banana respectively. "
+                "Recover an interrupted job with general-image-poll --job-id <id>; never resubmit it."),
+        allow_abbrev=False,
     )
-    add_shared_path_args(image_2_poll)
-    image_2_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+    general_image_run.add_argument("--generation-model", default="image-2.5",
+                                   choices=["nano-banana", "image-2", "image-2.5"],
+                                   help="Image generation model; default Image2.5")
+    for action in nano_banana_run._actions[1:]:
+        cloned_action = copy.copy(action)
+        if action.dest in {"model", "generation_speed"}:
+            cloned_action.help = f"Nano Banana only. {action.help or ''}".strip()
+        elif action.dest in {"resolution", "aspect_ratio"}:
+            supported = next(item.choices for item in image_2_run._actions if item.dest == action.dest)
+            cloned_action.help = f"{action.help}; Image2/Image2.5: {', '.join(supported)}"
+        general_image_run._add_action(cloned_action)
+    for action in image_2_5_run._actions:
+        if action.dest in {"quality", "remove_bg_method"}:
+            cloned_action = copy.copy(action)
+            cloned_action.help = ("Image2/Image2.5 only; Standard/Detailed/Ultimate" if action.dest == "quality"
+                                  else "Image2.5 only; free native background removal, default none")
+            general_image_run._add_action(cloned_action)
+
+    general_image_poll = subparsers.add_parser(
+        "general-image-poll",
+        aliases=["image-2-poll", "image-2.5-poll"],
+        help="Recover general generation; image-2-poll and image-2.5-poll remain compatible",
+    )
+    add_shared_path_args(general_image_poll)
+    general_image_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
     image_edit_run = subparsers.add_parser("image-edit-run", help="Edit one or more game-art images")
     add_shared_path_args(image_edit_run)
@@ -6878,7 +6901,7 @@ def build_parser() -> argparse.ArgumentParser:
     asset_clone_run = subparsers.add_parser("asset-clone-run", help="Clone a sheet of consistent game-art assets")
     add_shared_path_args(asset_clone_run)
     asset_clone_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 36 times")
-    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。", help="Shared requirements and asset descriptions")
+    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", help="Shared requirements and asset descriptions; the default prompt uses --clone-count", action=ImageEditOptionAction)
     asset_clone_run.add_argument("--skip-prompt-optimization", action="store_true", help="Use the supplied prompt without AI optimization")
     asset_clone_run.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36])
     asset_clone_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
@@ -6891,7 +6914,8 @@ def build_parser() -> argparse.ArgumentParser:
     asset_clone_run.add_argument("--fit-mode", default="pad", choices=["pad", "crop"], help="Center pad or crop; never scale")
     asset_clone_prompt = subparsers.add_parser("asset-clone-prompt", help="Polish an asset clone prompt without generating images")
     add_shared_path_args(asset_clone_prompt)
-    asset_clone_prompt.add_argument("--prompt", default="参考图 1 的布局，生成一些不同外观的美术资产，保持美术风格一致。")
+    asset_clone_prompt.add_argument("--prompt", default="参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", action=ImageEditOptionAction)
+    asset_clone_prompt.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36], help="Clone count to preserve in the polished prompt")
 
     animation_edit_run = subparsers.add_parser("animation-edit-run", help="Edit an animated GIF or WebP")
     add_shared_path_args(animation_edit_run)
@@ -8781,7 +8805,7 @@ def main() -> int:
                 headers=_base_headers(args.api_key),
                 send=lambda request_headers: requests.post(
                     prompt_url, headers=request_headers,
-                    data={"prompt": args.prompt, "prompt_only": "true"},
+                    data={"prompt": args.prompt, "prompt_only": "true", "clone_count": str(args.clone_count)},
                     timeout=args.timeout, verify=verify,
                 ),
             )

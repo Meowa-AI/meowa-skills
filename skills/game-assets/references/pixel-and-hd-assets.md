@@ -5,7 +5,7 @@
 - Important guidance
 - Purpose and capability boundaries
 - Preset-driven pixel and HD generation
-- General HD generation
+- General generation (HD or pixel style)
 - Custom-size pixel generation
 - Large-pixel and Pixel Universal generation
 - Directional characters
@@ -29,7 +29,7 @@
 ### Standalone pixelation
 
 - Pixelate one object at a time whenever possible. A batch image, especially an AI-generated sheet, may contain different effective pixel sizes in different regions; one global pass can leave some objects sharp and others blurred.
-- Do not repeat pixelation on Meowa-generated pixel assets. As a practical clue, assets smaller than 256×256 are usually already perfectly pixelated, although some Meowa tools intentionally produce larger pixel assets.
+- Do not repeat pixelation on assets from Meowa pixel-generation workflows. Pixel-style images from general generation need their pixel grid inspected first.
 - Review every pixelation result. Very simple images, solid-color blocks, or highly abstract objects may be misread because their clusters are too large; extremely complex scenes and background maps may fail because their clusters are too small.
 
 ## Purpose
@@ -40,7 +40,7 @@ Use this module to create the base still asset for a character, prop, item, icon
 |---|---|---|---|
 | Discover pixel or HD presets | `pixel-gen-template-info`, `hd-gen-template-info` | Choose a supported size, count, and asset family | Discovery does not generate an asset |
 | Generate pixel or HD assets | `pixel-gen-run`, `hd-gen-run` | Produce the base still asset or pack | Preset size and count are fixed contracts |
-| Generate unrestricted HD assets | `nano-banana-run`, `image-2-run` | Produce a scene, illustration, sprite sheet, or batch of assets | Prompt controls the arrangement; no preset asset contract |
+| General generation in HD or pixel style | `general-image-run --generation-model image-2.5|image-2|nano-banana` | Produce freely styled characters, props, UI, backgrounds, or asset sheets | Prompt and references control the result; no preset sprite contract or pixel-grid guarantee |
 | Discover large-pixel presets | `large-pixel-template-info` | Choose a supported large canvas shape | Lists only the large-pixel family |
 | Generate a large pixel asset | `large-pixel-gen-run` | Produce a scene, illustration, portrait, building, or other large pixel composition | Requires a preset from large-pixel discovery |
 | Generate a general-purpose 4:3 pixel image or asset pack | `pixel-universal-gen-run` | Produce a normal-view or top-down pixel composition without choosing a preset | Uses the fixed large 4:3 `xlarge` canvas contract |
@@ -60,7 +60,7 @@ For pixel sprites, choose by production goal:
 
 ## Preset-driven generation
 
-List presets before choosing one:
+Tell the user this path requires a template. List current presets, shortlist those fitting the requested asset, size, count, and style, and let the user choose before generation unless they already specified a template. Include previews when available. If no style fits, offer general generation instead.
 
 ```bash
 python3 skills/game-assets/meowart_api.py pixel-gen-template-info
@@ -100,12 +100,30 @@ Quality labels are:
 | `detailed` | Detailed |
 | `ultimate` | Ultimate |
 
-## General HD generation
+## General generation (HD or pixel style)
+
+This is the most flexible, direct image API path: no asset template is imposed, and the prompt and optional references define the result. Use it for almost any image task, such as nine props in one sheet, a character, a complete UI, or a game background. HD and pixel style are both prompt choices; pixel style alone does not ensure exact sprite dimensions or a clean pixel grid.
+
+Supported models are Image2.5 (default), Image2, and Nano Banana. Start with Image2.5:
+
+```bash
+python3 skills/game-assets/meowart_api.py general-image-run \
+  --prompt "Nine distinct pixel-art fantasy props, evenly spaced in a 3×3 sheet" \
+  --resolution 1K \
+  --aspect-ratio 1:1 \
+  --quality standard \
+  --output-dir <output-dir>
+```
+
+Repeat `--reference-image` for visual constraints. Use `general-image-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted task without resubmitting it.
+
+The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. `--model` and `--generation-speed` are Nano Banana options. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana retains its model-dependent resolution and aspect-ratio options.
 
 Use Nano Banana for flexible composition, broad aspect-ratio support, and reference-guided generation:
 
 ```bash
-python3 skills/game-assets/meowart_api.py nano-banana-run \
+python3 skills/game-assets/meowart_api.py general-image-run \
+  --generation-model nano-banana \
   --prompt "A coherent HD fantasy item sheet with twelve clearly separated potions and scrolls" \
   --resolution 1K \
   --aspect-ratio 1:1 \
@@ -115,7 +133,7 @@ python3 skills/game-assets/meowart_api.py nano-banana-run \
 If that task was submitted but polling or download was interrupted, recover the same paid job:
 
 ```bash
-python3 skills/game-assets/meowart_api.py nano-banana-poll \
+python3 skills/game-assets/meowart_api.py general-image-poll \
   --job-id <original-job-id> \
   --output-dir <output-dir>
 ```
@@ -123,7 +141,8 @@ python3 skills/game-assets/meowart_api.py nano-banana-poll \
 Use Image-2 when its quality tiers and direct HD asset generation fit the task:
 
 ```bash
-python3 skills/game-assets/meowart_api.py image-2-run \
+python3 skills/game-assets/meowart_api.py general-image-run \
+  --generation-model image-2 \
   --prompt "A clean HD game asset sheet with eight clearly separated sci-fi props" \
   --resolution 1K \
   --aspect-ratio 1:1 \
@@ -131,10 +150,10 @@ python3 skills/game-assets/meowart_api.py image-2-run \
   --output-dir <output-dir>
 ```
 
-Use `image-2-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted
+Use `general-image-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted
 Image-2 task without submitting it again.
 
-- Default both commands to the shared 1K, 1:1 square working canvas. Treat it as the common 1024×1024-tier contract when moving a composition between Nano Banana and Image-2, and inspect the saved file for its actual delivered dimensions.
+- All three models default to a shared 1K, 1:1 square working canvas; inspect the saved file for its actual delivered dimensions.
 - Start Image-2 prompt iteration with `standard` (`Standard`), which is inexpensive. After the wording and composition are approved, rerun the same prompt with `detailed` (`Detailed`) for the production candidate. Use `ultimate` only when the final asset genuinely benefits from the additional quality and cost.
 - Repeat `--reference-image` for up to eight visual references.
 - Nano Banana supports 1K, 2K, and 4K plus its listed aspect ratios. Image-2 supports 1K and 2K with 1:1, 3:4, 4:3, 9:16, or 16:9.
