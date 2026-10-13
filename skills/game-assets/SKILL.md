@@ -92,7 +92,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 
 ### HD workflow
 
-1. **Characters and props:** use an HD preset when the deliverable needs a controlled asset family, count, or composition, and use references for style or identity consistency.
+1. **Characters and props:** HD GEN character (2×2) and asset-pack (4×4) presets default to Image2.5 / Standard / 1K. Generation includes one template reference; default total is 3 credits, plus 2 per uploaded reference. Native background removal is free (none or standard only). Use an HD preset when the deliverable needs a controlled asset family, count, or composition, and use references for style or identity consistency.
 2. **General or batch generation:** use `general-image-run` (default Image2.5; select Image2 or Nano Banana with `--generation-model`) for scenes, illustrations, portraits, sprite sheets, UI, and batches of art assets. These paths prioritize prompt and reference freedom over a preset asset contract. See [Pixel and HD assets](references/pixel-and-hd-assets.md) for model options and examples.
 3. **Automatic background removal and component segmentation:** use `ui-gen-run` when an HD asset sheet should be generated with background removal and automatic component detection. It can generate UI, ordinary art assets, or a sprite sheet; the result depends primarily on the prompt, not on the name of the module. The public final media remains one aggregate sheet accompanied by component segmentation data.
 

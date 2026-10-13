@@ -768,10 +768,11 @@
         },
         "generation_model": {
           "flag": "--generation-model",
-          "default": "image-2",
+          "default": "image-2.5",
           "choices": [
             "nano-banana",
-            "image-2"
+            "image-2",
+            "image-2.5"
           ],
           "request_field": "generation_provider"
         },
@@ -792,7 +793,8 @@
             "normal",
             "fast"
           ],
-          "request_field": "generation_speed"
+          "request_field": "generation_speed",
+          "available_when": "generation_model=nano-banana"
         },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
@@ -802,7 +804,17 @@
             "standard",
             "advanced"
           ],
-          "request_field": "remove_bg_method"
+          "request_field": "remove_bg_method",
+          "available_when": "image-2.5: none or standard (free); other models: none, standard, advanced"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution"
         }
       }
     },

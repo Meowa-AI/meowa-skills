@@ -90,6 +90,10 @@ python3 skills/game-assets/meowart_api.py hd-gen-run \
   --output-dir <output-dir>
 ```
 
+HD GEN (2×2 characters and 4×4 packs) defaults to Image2.5, `--generation-model image-2.5`, `--quality standard`, and `--resolution 1K`. `image-2` and `nano-banana` remain available. Image2.5 Standard/Detailed/Ultimate costs 1/5/10 credits at 1K or 2/10/20 at 2K, plus 2 per reference image: one template grid is always included, and each uploaded reference adds 2. Default generation therefore costs 3 credits.
+
+Image2.5 background removal is free: `--remove-bg-method none|standard` (default `standard`). Standard requests native transparency; if unavailable, retain the background without a removal charge or another provider call. Advanced removal remains available for the other models.
+
 Use `--reference-file` for one reference and repeat `--reference-files` for additional references. Do not pass raw preset configuration JSON; choose a supported preset and product-level options. Preset discovery reports only product fields such as output size and default count. Treat those as fixed: if they do not match the request, choose another preset or report that the exact contract is unavailable.
 
 Quality labels are:

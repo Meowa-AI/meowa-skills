@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.12.1"
+MEOWART_API_CLI_VERSION = "2026.10.13.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -3409,11 +3409,11 @@ def submit_hd_gen(
     requirement: str,
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
-    resolution: str = "",
+    resolution: str = "1K",
     aspect_ratio: str = "1:1",
     quality_mode: str = "standard",
     remove_bg_method: str = "standard",
-    generation_model: str = "image-2",
+    generation_model: str = "image-2.5",
     generation_speed: str = "normal",
     reference_file: str = "",
     reference_files: list[str] | None = None,
@@ -3431,7 +3431,7 @@ def submit_hd_gen(
         "aspect_ratio": aspect_ratio,
         "quality_mode": quality_mode,
         "remove_bg_method": remove_bg_method,
-        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2_5" if generation_model == "image-2.5" else "image2",
         "generation_speed": generation_speed,
     }
     if project_id is not None:
@@ -3522,11 +3522,11 @@ def run_hd_gen(
     requirement: str,
     template_config: dict[str, Any] | None = None,
     job_name: str = "",
-    resolution: str = "",
+    resolution: str = "1K",
     aspect_ratio: str = "1:1",
     quality_mode: str = "standard",
     remove_bg_method: str = "standard",
-    generation_model: str = "image-2",
+    generation_model: str = "image-2.5",
     generation_speed: str = "normal",
     reference_file: str = "",
     reference_files: list[str] | None = None,
@@ -6509,6 +6509,8 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         arguments = list(sys.argv[1:] if args is None else args)
         parsed = super().parse_args(arguments, namespace)
+        if parsed.command in {"hd-gen-run", "hd-gen-submit"} and parsed.generation_model == "image-2.5" and parsed.remove_bg_method == "advanced":
+            self.error("Image2.5 background removal supports only none or standard (free)")
         quality_explicit = vars(parsed).pop("_remove_bg_quality_explicit", False)
         if parsed.command in {"remove-background-submit", "remove-background-run"} and not quality_explicit:
             parsed.quality = "standard" if parsed.mode == "pixel" else "advanced"
@@ -7250,7 +7252,7 @@ def build_parser() -> argparse.ArgumentParser:
     hd_submit.add_argument("--requirement", required=True)
     hd_submit.set_defaults(template_config="{}")
     hd_submit.add_argument("--job-name", default="")
-    hd_submit.add_argument("--resolution", default="", help="Optional resolution; empty uses template default")
+    hd_submit.add_argument("--resolution", default="1K", choices=["1K", "2K"], help="Generation resolution (default: 1K)")
     hd_submit.add_argument("--aspect-ratio", default="1:1")
     hd_submit.add_argument(
         "--quality",
@@ -7261,16 +7263,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hd_submit.add_argument(
         "--generation-model",
-        default="image-2",
-        choices=GENERATION_MODEL_CHOICES,
+        default="image-2.5",
+        choices=UI_GENERATION_MODEL_CHOICES,
+        help="Generation model (default: image-2.5)",
     )
-    hd_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
+    hd_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES, help="Generation speed for nano-banana only")
     hd_submit.add_argument("--direction", default="", help="Preset direction exposed by the selected web preset")
     hd_submit.add_argument(
         "--remove-bg-method",
         default="standard",
         choices=["none", "standard", "advanced"],
-        help="Background removal: none, standard, or advanced",
+        help="Image2.5: none or standard (free); other models also support advanced",
     )
     hd_submit.add_argument("--reference-file", default="", help="Optional single user reference image")
     hd_submit.add_argument("--reference-files", action="append", default=[], help="Optional user reference image; can be repeated")
