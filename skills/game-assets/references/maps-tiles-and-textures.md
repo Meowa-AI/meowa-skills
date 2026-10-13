@@ -499,3 +499,14 @@ After generation, start `map-preview-server.py --mode side-scrolling --side-scro
 - Deliver only files listed in `final_outputs.json`.
 
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。
+# Image expansion
+
+`image-expander-run --project-id PROJECT --target-coord -1 1 --neighbor-left left.png --neighbor-bottom bottom.png --custom-prompt "Continue the road"` generates one tile from its existing cardinal neighbors. Coordinates range from -16 to 16. Supply one to four `--neighbor-top/left/right/bottom` images, relative to the target. For an initial cardinal expansion, `--source-image center.png` is equivalent to the web's single center reference.
+
+Defaults mirror the canvas: `--mode hd`, `--resolution 1K`, `--aspect-ratio auto`, `--view-preset top-down-60`, `--generation-provider nanobanana`, `--generation-speed normal`, `--image2-quality medium`, `--overlap-percent 20`, `--feather-percent 10`. Image2 quality `low/medium/high` means Standard/Detailed/Ultimate. Speed applies to Nano Banana; quality applies to GPT Image2. The default editable `--basic-prompt` follows the selected view; `--custom-prompt` defaults to empty. Neighbors are combined into one reference canvas; pricing remains one generation plus one reference where applicable, using the backend calculator.
+
+`image-expander-prompt --project-id PROJECT --source-image map.png --prompt "Continue the road" --direction top-right` rewrites an editable prompt without creating a generation job. Directions include center, four cardinal directions, and four diagonals. Only declared final target tiles are downloaded; references and intermediate grids remain private. Canvas export uses those final tiles to assemble an image or split archive.
+
+`image-expander-export --project-id PROJECT --tiles-json tiles.json --aspect-ratio 1:1 --export-kind assembled` mirrors canvas image export; `--export-kind split` exports the selected final tile archive. The JSON list contains canonical `coord`, `asset_id` and optional `display_feather` facts (`range_percent` defaults to 3; `top/right/bottom/left` default to 0). Coordinates and assets refer to the same project input references as the canvas. Match the map’s mode, resolution, resolved aspect ratio, generation provider and overlap when exporting.
+
+`--export-kind godot` creates a Godot 4 scene with final textures split into bounded chunks and the same positions, paint order, display feather and pixel/HD sampling as the canvas. Extract the archive as a Godot 4 project and open `project.godot`; its main scene is `scenes/image_expansion.tscn`. This avoids allocating one giant combined image.

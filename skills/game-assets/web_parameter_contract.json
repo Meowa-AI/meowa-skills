@@ -49,6 +49,19 @@
     }
   },
   "features": {
+    "media_storage": {
+      "command": "media-storage-set",
+      "read_command": "media-storage-get",
+      "web_sources": ["components/MediaStorageSelector.tsx", "services/authService.ts:updateMediaStorageSite"],
+      "parameters": {
+        "media_storage_site": {
+          "flag": "--media-storage-site",
+          "default": "auto",
+          "choices": ["auto", "domestic", "overseas"],
+          "request_field": "media_storage_site"
+        }
+      }
+    },
     "general_nano_banana": {
       "command": "general-image-run",
       "command_args": ["--generation-model", "nano-banana"],
@@ -2365,6 +2378,269 @@
         "manual",
         "unavailable"
       ]
+    },
+    "image_expander": {
+      "command": "image-expander-run",
+      "web_sources": [
+        "services/imageExpanderService.ts:submitTile",
+        "components/InfiniteCanvas.tsx",
+        "utils/imageExpansionPrompts.ts"
+      ],
+      "parameters": {
+        "mode": {
+          "flag": "--mode",
+          "default": "hd",
+          "request_field": "mode",
+          "choices": [
+            "pixel",
+            "hd"
+          ]
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "request_field": "resolution",
+          "choices": [
+            "1K",
+            "2K"
+          ]
+        },
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "default": "auto",
+          "request_field": "aspect_ratio",
+          "choices": [
+            "auto",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ]
+        },
+        "view_preset": {
+          "flag": "--view-preset",
+          "default": "top-down-60",
+          "request_field": "view_preset",
+          "choices": [
+            "top-down-60",
+            "top-down-90",
+            "side-view",
+            "isometric"
+          ]
+        },
+        "generation_provider": {
+          "flag": "--generation-provider",
+          "default": "nanobanana",
+          "request_field": "generation_provider",
+          "choices": [
+            "nanobanana",
+            "image2"
+          ]
+        },
+        "generation_speed": {
+          "flag": "--generation-speed",
+          "default": "normal",
+          "request_field": "generation_speed",
+          "choices": [
+            "normal",
+            "fast"
+          ],
+          "available_when": {
+            "generation_provider": "nanobanana"
+          }
+        },
+        "image2_quality": {
+          "flag": "--image2-quality",
+          "default": "medium",
+          "request_field": "image2_quality",
+          "choices": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "available_when": {
+            "generation_provider": "image2"
+          }
+        },
+        "overlap_percent": {
+          "flag": "--overlap-percent",
+          "default": 20,
+          "request_field": "overlap_percent"
+        },
+        "feather_percent": {
+          "flag": "--feather-percent",
+          "default": 10,
+          "request_field": "feather_percent"
+        },
+        "basic_prompt": {
+          "flag": "--basic-prompt",
+          "default": "俯视角场景，建筑必须水平或者垂直，拒绝 45° 倾斜。同时排除任何人物、文字、远景与天空相关的描述。",
+          "request_field": "basic_prompt"
+        },
+        "custom_prompt": {
+          "flag": "--custom-prompt",
+          "default": "",
+          "request_field": "custom_prompt"
+        },
+        "target_coord": {
+          "flag": "--target-coord",
+          "request_field": "target_coord",
+          "range": [
+            -16,
+            16
+          ]
+        },
+        "neighbor_top": {
+          "flag": "--neighbor-top",
+          "default": "",
+          "request_field": "input_assets",
+          "role": "neighbor_top"
+        },
+        "neighbor_left": {
+          "flag": "--neighbor-left",
+          "default": "",
+          "request_field": "input_assets",
+          "role": "neighbor_left"
+        },
+        "neighbor_right": {
+          "flag": "--neighbor-right",
+          "default": "",
+          "request_field": "input_assets",
+          "role": "neighbor_right"
+        },
+        "neighbor_bottom": {
+          "flag": "--neighbor-bottom",
+          "default": "",
+          "request_field": "input_assets",
+          "role": "neighbor_bottom"
+        }
+      }
+    },
+    "image_expander_prompt": {
+      "command": "image-expander-prompt",
+      "web_sources": [
+        "services/imageExpanderService.ts:rewritePrompt"
+      ],
+      "parameters": {
+        "prompt": {
+          "flag": "--prompt",
+          "request_field": "prompt"
+        },
+        "direction": {
+          "flag": "--direction",
+          "default": "center",
+          "choices": [
+            "center",
+            "top",
+            "left",
+            "right",
+            "bottom",
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+          ],
+          "request_field": "direction"
+        },
+        "mode": {
+          "flag": "--mode",
+          "default": "hd",
+          "request_field": "mode",
+          "choices": [
+            "pixel",
+            "hd"
+          ]
+        },
+        "view_preset": {
+          "flag": "--view-preset",
+          "default": "top-down-60",
+          "request_field": "view_preset",
+          "choices": [
+            "top-down-60",
+            "top-down-90",
+            "side-view",
+            "isometric"
+          ]
+        }
+      }
+    },
+    "image_expander_export": {
+      "command": "image-expander-export",
+      "web_sources": [
+        "services/imageExpanderService.ts:exportProject"
+      ],
+      "parameters": {
+        "mode": {
+          "flag": "--mode",
+          "default": "hd",
+          "request_field": "mode",
+          "choices": [
+            "pixel",
+            "hd"
+          ]
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "request_field": "resolution",
+          "choices": [
+            "1K",
+            "2K"
+          ]
+        },
+        "generation_provider": {
+          "flag": "--generation-provider",
+          "default": "nanobanana",
+          "request_field": "generation_provider",
+          "choices": [
+            "nanobanana",
+            "image2"
+          ]
+        },
+        "overlap_percent": {
+          "flag": "--overlap-percent",
+          "default": 20,
+          "request_field": "overlap_percent"
+        },
+        "aspect_ratio": {
+          "flag": "--aspect-ratio",
+          "choices": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "request_field": "aspect_ratio"
+        },
+        "tiles": {
+          "flag": "--tiles-json",
+          "request_field": "input_assets",
+          "fields": [
+            "coord",
+            "asset_id",
+            "display_feather"
+          ],
+          "display_feather_defaults": {
+            "range_percent": 3,
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          }
+        },
+        "export_kind": {
+          "flag": "--export-kind",
+          "default": "assembled",
+          "choices": [
+            "assembled",
+            "split",
+            "godot"
+          ],
+          "request_field": "export_kind"
+        }
+      }
     }
   }
 }

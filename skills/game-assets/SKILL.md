@@ -5,6 +5,8 @@ description: Plan games and create, edit, upgrade, animate, and prepare producti
 
 # Meowa Game Assets
 
+For coordinate-based map expansion, use `image-expander-run`; for editable expansion prompts, use `image-expander-prompt`; for selected final tile exports, use `image-expander-export`. See [maps, tiles, and textures](references/maps-tiles-and-textures.md) for matching canvas parameters and neighbor coordinates.
+
 Plan a game or create game-ready visual and audio assets. For game concepts, systems, balance, market research, or structured design documents, use the Game Designer module. For assets, establish the final asset contract first, choose the smallest suitable capability, and combine modules only when the downstream command accepts the upstream output.
 
 For HD frame animation V2, `--auto-scale-to-input` (default off, no extra credits) restores the final animation to the input dimensions with smooth scaling and retains the original animation as a second output. With background removal, only the final transparent animation is resized.
@@ -211,3 +213,7 @@ Nano Banana 2.1 is available in general generation: `nano-banana-run --model gem
 Final downloads use the server-selected URL, including the domestic media domain. Re-query an existing successful job to obtain its current route; never guess a replacement hostname. Small image downloads share a 45-second budget across at most three attempts, and files are saved only after a complete media response. Large media uses bounded inactive reads. `general-image-run` mirrors the web model selector (default Image2.5, Standard, 1K, 1:1, no background removal); `general-image-poll` resumes the original job. Model-specific legacy commands retain the same requests. The runner is statically distributed; there is no remote bootstrap execution.
 
 Domestic ready final files may use `media-cn.meowjito.com`; legacy `media.meowjito.com` links remain valid. Follow the exact server-returned final URL and re-query the job to refresh its route. No storage or provider option is required.
+
+## New-media storage preference
+
+Use `media-storage-get` to read the account preference. Use `media-storage-set --media-storage-site auto|domestic|overseas` to change it; omitting the option sets `auto`. Automatic chooses the site for new tasks and private uploads from the submission IP. The setting applies across web and API clients. Existing files stay in place; changing storage does not migrate assets or regenerate them. Download routing can only select an existing ready copy.

@@ -166,3 +166,16 @@ HD frame animation: `meowa-animation-run` and `meowa-animation-edit-run` accept 
 Final downloads use the server-selected URL, including the domestic media domain. Re-query an existing successful job to obtain its current route; never guess a replacement hostname. Small image downloads share a 45-second budget across at most three attempts, and files are saved only after a complete media response. Large media uses bounded inactive reads. `general-image-run` mirrors the web model selector (default Image2.5, Standard, 1K, 1:1, no background removal); `general-image-poll` resumes the original job. Model-specific legacy commands retain the same requests. The runner is statically distributed; there is no remote bootstrap execution.
 
 Domestic ready final files may use `media-cn.meowjito.com`; legacy `media.meowjito.com` links remain valid. Follow the exact server-returned final URL and re-query the job to refresh its route. No storage or provider option is required.
+# Image expansion
+
+`image-expander-run --project-id PROJECT --target-coord ROW COL --neighbor-left left.png --custom-prompt "Continue the road"` mirrors the canvas grid. Supply one to four neighbor images (`--neighbor-top/left/right/bottom`), or `--source-image` for an initial cardinal target. Defaults: HD, 1K, auto aspect ratio, top-down-60 view, Nano Banana, normal speed, Detailed Image2 quality (`medium`), 20% overlap, 10% feather. `--basic-prompt` follows the selected view; `--custom-prompt` defaults to empty. Speed applies to Nano Banana; `--image2-quality low/medium/high` means Standard/Detailed/Ultimate and applies to GPT Image2.
+
+`image-expander-prompt --project-id PROJECT --source-image map.png --prompt "Continue the road" --direction top-right` supports all cardinal and diagonal directions. Generation saves declared final target tiles only. See `references/maps-tiles-and-textures.md` and `--help` for the full parameter contract.
+
+`image-expander-export --project-id PROJECT --tiles-json tiles.json --aspect-ratio 1:1 --export-kind assembled` mirrors canvas image export; `--export-kind split` exports the selected final tile archive. The JSON list contains canonical `coord`, `asset_id` and optional `display_feather` facts (`range_percent` defaults to 3; `top/right/bottom/left` default to 0). Coordinates and assets refer to the same project input references as the canvas. Match the map’s mode, resolution, resolved aspect ratio, generation provider and overlap when exporting.
+
+`--export-kind godot` creates a Godot 4 scene with final textures split into bounded chunks and the same positions, paint order, display feather and pixel/HD sampling as the canvas. Extract the archive as a Godot 4 project and open `project.godot`; its main scene is `scenes/image_expansion.tscn`. This avoids allocating one giant combined image.
+
+## New-media storage preference
+
+Use `media-storage-get` to read the account preference. Use `media-storage-set --media-storage-site auto|domestic|overseas` to change it; omitting the option sets `auto`. Automatic chooses the site for new tasks and private uploads from the submission IP. The setting applies across web and API clients. Existing files stay in place; changing storage does not migrate assets or regenerate them. Download routing can only select an existing ready copy.

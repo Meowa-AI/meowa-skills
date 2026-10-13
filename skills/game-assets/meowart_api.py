@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.13.1"
+MEOWART_API_CLI_VERSION = "2026.10.13.2"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -1759,7 +1759,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "hd_side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
     "image_edit": frozenset({"output_paths", "edited_path", "remove_bg_path", "url"}),
     "asset_clone": frozenset({"output_paths"}),
-    "image_expander": frozenset({"target_tile_paths", "url"}),
+    "image_expander": frozenset({"target_tile_paths"}),
     "isometric_texture_gen": frozenset({"final_isometric_texture_path", "final_texture_path", "texture_path", "url"}),
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
@@ -4525,6 +4525,102 @@ def run_curated_workflow(
     return submit_payload, final_payload
 
 
+IMAGE_EXPANDER_BASIC_PROMPTS = {
+    "top-down-60": "俯视角场景，建筑必须水平或者垂直，拒绝 45° 倾斜。同时排除任何人物、文字、远景与天空相关的描述。",
+    "top-down-90": "90° 的绝对俯视角场景，所有物体都是从顶上往下看，只能看到建筑的顶部。同时排除任何人物、文字、远景与天空相关的描述。",
+    "side-view": "侧面视角（side-view）的场景，类似泰拉瑞亚或者饥荒，只能看到一个横截面。同时排除任何人物、文字、远景与天空相关的描述。",
+    "isometric": "等距视角（Isometric）场景，所有建筑都是 45° isometric 视角，同时排除任何人物、文字、烟雾、远景与天空，相关的描述，只描述场景，建筑等地图内容。",
+}
+IMAGE_EXPANDER_MAX_COORD = 16
+IMAGE_EXPANDER_DIRECTIONS = ["center", "top", "left", "right", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"]
+
+
+def submit_image_expander(*, args: argparse.Namespace, verify: bool) -> dict[str, Any]:
+    """Mirror the asset-backed web tile submission and prompt rewrite."""
+    headers = {**_base_headers(args.api_key), "Content-Type": "application/json"}
+    common = dict(api_base=args.api_base, api_key=args.api_key, project_id=args.project_id,
+                  timeout=args.timeout, verify=verify)
+    if args.command == "image-expander-prompt":
+        asset_id = upload_project_input_asset(**common, image_path=args.source_image)
+        body = dict(project_id=args.project_id, source_asset_id=asset_id, prompt=args.prompt,
+                    direction=args.direction, mode=args.mode, view_preset=args.view_preset)
+        endpoint = "/api/workflows/image_expander/prompts"
+    else:
+        row, col = args.target_coord
+        if max(abs(row), abs(col)) > IMAGE_EXPANDER_MAX_COORD:
+            raise ValueError(f"target coordinates must be within +/-{IMAGE_EXPANDER_MAX_COORD}")
+        sides = [(side, getattr(args, f"neighbor_{side}")) for side in ("top", "left", "right", "bottom")]
+        sources = [(f"neighbor_{side}", path) for side, path in sides if path]
+        if args.source_image:
+            if sources or abs(row) + abs(col) != 1:
+                raise ValueError("--source-image requires one target adjacent to the center and no neighbor options")
+            sources = [("primary_reference", args.source_image)]
+        offsets = {"neighbor_top": (-1, 0), "neighbor_left": (0, -1), "neighbor_right": (0, 1), "neighbor_bottom": (1, 0)}
+        if not sources or (row, col) == (0, 0):
+            raise ValueError("a non-center target and at least one neighbor image are required")
+        if any(abs(row + offsets[role][0]) > IMAGE_EXPANDER_MAX_COORD or abs(col + offsets[role][1]) > IMAGE_EXPANDER_MAX_COORD
+               for role, _ in sources if role in offsets):
+            raise ValueError(f"neighbor coordinates must be within +/-{IMAGE_EXPANDER_MAX_COORD}")
+        if args.feather_percent >= args.overlap_percent:
+            raise ValueError("feather_percent must be less than overlap_percent")
+        if len(sources) == 1 and sources[0][0] in offsets:
+            offset = offsets[sources[0][0]]
+            if (row, col) == (-offset[0], -offset[1]):
+                sources = [("primary_reference", sources[0][1])]
+        inputs = [{"role": role, "ordinal": 0,
+                   "asset_id": upload_project_input_asset(**common, image_path=path)} for role, path in sources]
+        body = {name: getattr(args, name) for name in (
+            "mode", "resolution", "aspect_ratio", "view_preset", "generation_provider", "generation_speed",
+            "image2_quality", "overlap_percent", "feather_percent", "basic_prompt", "custom_prompt",
+        )}
+        body.update(project_id=args.project_id, thread_id=args.thread_id or None,
+                    client_operation_id=args.client_operation_id or f"image-expander:{uuid.uuid4().hex}",
+                    input_assets=inputs, target_coord=args.target_coord)
+        endpoint = "/api/workflows/image_expander/jobs"
+    response, payload = _request_json(method="POST", url=_normalize_base_url(args.api_base, endpoint),
+                                     headers=headers, json_body=body, timeout=args.timeout, verify=verify)
+    if response.status_code >= 400:
+        raise RuntimeError(_format_json_for_display(payload))
+    return payload
+
+
+def export_image_expander(*, args: argparse.Namespace, verify: bool, output_root: str) -> Path:
+    """Export explicitly selected final map tiles; no job payload traversal."""
+    tiles = json.loads(Path(args.tiles_json).read_text(encoding="utf-8"))
+    if not isinstance(tiles, list) or not 1 <= len(tiles) <= 81:
+        raise ValueError("--tiles-json must contain 1 to 81 selected tiles")
+    legacy = {(0, 0): "center", (-1, 0): "top", (0, -1): "left", (0, 1): "right", (1, 0): "bottom"}
+    coords = [tuple(tile["coord"]) for tile in tiles]
+    use_legacy = (0, 0) in coords and all(coord in legacy for coord in coords)
+    inputs = []
+    for index, (tile, coord) in enumerate(zip(tiles, coords)):
+        item = dict(asset_id=tile["asset_id"], ordinal=index,
+                    display_feather={"range_percent": 3, "top": 0, "right": 0, "bottom": 0, "left": 0,
+                                     **tile.get("display_feather", {})})
+        item.update({"role": legacy[coord]} if use_legacy else {"role": "tile", "coord": list(coord)})
+        inputs.append(item)
+    body = {name: getattr(args, name) for name in (
+        "project_id", "mode", "resolution", "aspect_ratio", "generation_provider", "overlap_percent", "export_kind",
+    )}
+    body["input_assets"] = inputs
+    endpoint = _normalize_base_url(args.api_base, "/api/workflows/image_expander/export")
+    response = _request_with_skill_version_compatibility(
+        url=endpoint, headers={**_base_headers(args.api_key), "Content-Type": "application/json"},
+        send=lambda headers: requests.post(endpoint, headers=headers, json=body, timeout=args.timeout, verify=verify),
+    )
+    response.raise_for_status()
+    expected_type = "image/png" if args.export_kind == "assembled" else "application/zip"
+    if response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != expected_type:
+        raise RuntimeError("export response has an unexpected Content-Type")
+    output_dir = Path(output_root).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Split is an explicitly requested final archive, not a media downloader or job snapshot.
+    filenames = {"assembled": "image-expansion.png", "split": "image-expansion-tiles.zip", "godot": "image-expansion-godot.zip"}
+    output_path = output_dir / filenames[args.export_kind]
+    output_path.write_bytes(response.content)
+    return output_path
+
+
 def upload_project_input_asset(
     *,
     api_base: str,
@@ -6511,6 +6607,8 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
         parsed = super().parse_args(arguments, namespace)
         if parsed.command in {"hd-gen-run", "hd-gen-submit"} and parsed.generation_model == "image-2.5" and parsed.remove_bg_method == "advanced":
             self.error("Image2.5 background removal supports only none or standard (free)")
+        if parsed.command == "image-expander-run" and not any(arg.split("=", 1)[0] == "--basic-prompt" for arg in arguments):
+            parsed.basic_prompt = IMAGE_EXPANDER_BASIC_PROMPTS[parsed.view_preset]
         quality_explicit = vars(parsed).pop("_remove_bg_quality_explicit", False)
         if parsed.command in {"remove-background-submit", "remove-background-run"} and not quality_explicit:
             parsed.quality = "standard" if parsed.mode == "pixel" else "advanced"
@@ -6547,6 +6645,21 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
         return parsed
 
 
+def media_storage_settings(*, api_base: str, api_key: str, timeout: int, verify: bool,
+                           media_storage_site: str | None = None) -> dict[str, str]:
+    url = _normalize_base_url(api_base, "/api/auth/me/media-storage")
+    response, payload = _request_json(
+        method="GET" if media_storage_site is None else "PATCH", url=url,
+        headers=_base_headers(api_key), timeout=timeout, verify=verify,
+        json_body=None if media_storage_site is None else {"media_storage_site": media_storage_site},
+    )
+    response.raise_for_status()
+    site = payload.get("media_storage_site")
+    if site not in {"auto", "domestic", "overseas"}:
+        raise ValueError("Invalid account storage preference")
+    return {"media_storage_site": site}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = GameAssetsArgumentParser(description="Create production-ready game assets with Meowa.")
     parser.add_argument("--version", action="version", version=f"meowart_api.py {MEOWART_API_CLI_VERSION}")
@@ -6569,6 +6682,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
+    subparsers.add_parser("media-storage-get", help="Read this account's new-media storage preference")
+    storage = subparsers.add_parser("media-storage-set", help="Set new-media storage; existing assets stay in place")
+    storage.add_argument("--media-storage-site", choices=("auto", "domestic", "overseas"), default="auto")
 
     def option_exists(command_parser: argparse.ArgumentParser, *option_strings: str) -> bool:
         known_options = {
@@ -6857,6 +6973,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_shared_path_args(general_image_poll)
     general_image_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
+    for command in ("image-expander-run", "image-expander-prompt"):
+        expansion = subparsers.add_parser(command, help="Expand a neighboring map tile" if command.endswith("run") else "Rewrite an editable map expansion prompt")
+        add_shared_path_args(expansion)
+        expansion.add_argument("--project-id", required=True)
+        expansion.add_argument("--mode", default="hd", choices=["pixel", "hd"])
+        expansion.add_argument("--view-preset", default="top-down-60", choices=list(IMAGE_EXPANDER_BASIC_PROMPTS))
+        expansion.add_argument("--source-image", required=command.endswith("prompt"), default="", help="Original map image; generation uses it only for a target next to the center")
+        if command.endswith("prompt"):
+            expansion.add_argument("--prompt", required=True)
+            expansion.add_argument("--direction", default="center", choices=IMAGE_EXPANDER_DIRECTIONS)
+            continue
+        expansion.add_argument("--thread-id", default="")
+        expansion.add_argument("--client-operation-id", default="")
+        expansion.add_argument("--target-coord", nargs=2, type=_bounded_integer(-16, 16), required=True, metavar=("ROW", "COL"))
+        for side in ("top", "left", "right", "bottom"):
+            expansion.add_argument(f"--neighbor-{side}", default="", help=f"Existing tile directly {side} of the target")
+        expansion.add_argument("--basic-prompt", default=IMAGE_EXPANDER_BASIC_PROMPTS["top-down-60"])
+        expansion.add_argument("--custom-prompt", default="")
+        expansion.add_argument("--resolution", default="1K", choices=["1K", "2K"])
+        expansion.add_argument("--aspect-ratio", default="auto", choices=["auto", "16:9", "9:16", "4:3", "3:4", "1:1"])
+        expansion.add_argument("--generation-provider", default="nanobanana", choices=["nanobanana", "image2"])
+        expansion.add_argument("--generation-speed", default="normal", choices=["normal", "fast"], help="Applies to Nano Banana")
+        expansion.add_argument("--image2-quality", default="medium", choices=["low", "medium", "high"], help="GPT Image2: low=Standard, medium=Detailed, high=Ultimate")
+        expansion.add_argument("--overlap-percent", type=_bounded_integer(10, 50), default=20)
+        expansion.add_argument("--feather-percent", type=_bounded_integer(0, 49), default=10)
+
+    expansion_export = subparsers.add_parser("image-expander-export", help="Export selected final map tiles as a PNG, split archive, or Godot scene")
+    add_shared_path_args(expansion_export)
+    expansion_export.add_argument("--project-id", required=True)
+    expansion_export.add_argument("--tiles-json", required=True, help="JSON list of coord, asset_id and optional per-tile display_feather facts")
+    expansion_export.add_argument("--mode", default="hd", choices=["pixel", "hd"])
+    expansion_export.add_argument("--resolution", default="1K", choices=["1K", "2K"])
+    expansion_export.add_argument("--aspect-ratio", required=True, choices=["16:9", "9:16", "4:3", "3:4", "1:1"], help="Resolved ratio of the map tiles")
+    expansion_export.add_argument("--generation-provider", default="nanobanana", choices=["nanobanana", "image2"])
+    expansion_export.add_argument("--overlap-percent", type=_bounded_integer(10, 50), default=20)
+    expansion_export.add_argument("--export-kind", default="assembled", choices=["assembled", "split", "godot"])
 
     image_edit_run = subparsers.add_parser("image-edit-run", help="Edit one or more game-art images")
     add_shared_path_args(image_edit_run)
@@ -8176,6 +8329,9 @@ def build_parser() -> argparse.ArgumentParser:
         "nano-banana-run",
         "image-2-run",
         "image-2.5-run",
+        "image-expander-run",
+        "image-expander-prompt",
+        "image-expander-export",
         "image-edit-run",
         "asset-clone-run",
         "asset-clone-prompt",
@@ -8376,6 +8532,14 @@ def main() -> int:
         needs_api_key = args.command not in no_auth_commands
         args.api_key = _resolve_auth_token() if needs_api_key else ""
 
+        if args.command in {"media-storage-get", "media-storage-set"}:
+            preference = media_storage_settings(
+                api_base=args.api_base, api_key=args.api_key, timeout=args.timeout, verify=verify,
+                media_storage_site=args.media_storage_site if args.command == "media-storage-set" else None,
+            )
+            print(_format_json_for_display(preference))
+            return 0
+
         if args.command == "game-design-run":
             project_id = str(args.project_id or "").strip()
             thread_id = str(args.thread_id or "").strip()
@@ -8469,6 +8633,29 @@ def main() -> int:
             return _command_exit_code(
                 0 if str(job.get("status") or "").strip().lower() == "success" else 1
             )
+
+        if args.command == "image-expander-export":
+            output = export_image_expander(args=args, verify=verify, output_root=str(effective_output_dir))
+            print(_format_public_json({"output": str(output)}))
+            return 0
+
+        if args.command in {"image-expander-run", "image-expander-prompt"}:
+            submitted = submit_image_expander(args=args, verify=verify)
+            if args.command == "image-expander-prompt":
+                print(_format_public_json({"prompt": str(submitted.get("prompt") or "")}))
+                return 0
+            final = wait_submitted_workflow_job(
+                api_base=args.api_base, api_key=args.api_key, submit_payload=submitted, label="image-expander",
+                timeout=args.timeout, max_wait=args.max_wait, poll_interval=args.poll_interval, verify=verify,
+            )
+            output_dir, downloads = _save_run_outputs(
+                output_root=str(effective_output_dir), slug_seed="image-expander", submit_payload=submitted,
+                final_payload=final, timeout=args.timeout, verify=verify, api_key=args.api_key,
+                no_download=args.no_download, workflow_id="image_expander",
+            )
+            print(f"[INFO] saved_dir={output_dir}")
+            print(_format_public_json(_local_run_summary(submit_payload=submitted, final_payload=final, downloads=downloads)))
+            return _command_exit_code(0 if str(final.get("status") or "").lower() == "success" else 1)
 
         if args.command == "custom-workflow-list":
             payload = list_custom_workflows(
