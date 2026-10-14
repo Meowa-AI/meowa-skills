@@ -179,3 +179,5 @@ Domestic ready final files may use `media-cn.meowjito.com`; legacy `media.meowji
 ## New-media storage preference
 
 Use `media-storage-get` to read the account preference. Use `media-storage-set --media-storage-site auto|domestic|overseas` to change it; omitting the option sets `auto`. Automatic chooses the site for new tasks and private uploads from the submission IP. The setting applies across web and API clients. Existing files stay in place; changing storage does not migrate assets or regenerate them. Download routing can only select an existing ready copy.
+
+Two-head Spine uses GPT Image 2 (`image-2`, default) or GPT Image 2.5 (`image-2.5`). `--quality standard/detailed/ultimate` selects a 25/35/55-credit package permitting at most 6/8/12 logical image calls, including appearance reference and repairs. Every image is generated at Standard quality; unused calls do not change the fixed package price. Export size does not add credits. The four-head template and existing part-edit/full-reskin commands retain their original model and pricing contracts.

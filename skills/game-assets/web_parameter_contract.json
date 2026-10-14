@@ -952,9 +952,11 @@
           "flag": "--generation-model",
           "default": "image-2",
           "choices": [
-            "nano-banana",
-            "image-2"
+            "image-2",
+            "image-2.5",
+            "nano-banana"
           ],
+          "availability": "Two-head templates: image-2/image-2.5; character_template_slim: image-2/nano-banana",
           "request_field": "generation_provider"
         },
         "export_resolution": {

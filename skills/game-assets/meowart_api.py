@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.13.2"
+MEOWART_API_CLI_VERSION = "2026.10.14.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -4670,6 +4670,10 @@ def submit_spine_agent(
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
+    if template_name != "character_template_slim" and generation_model not in {"image-2", "image-2.5"}:
+        raise ValueError("Two-head Spine supports image-2 or image-2.5")
+    if template_name == "character_template_slim" and generation_model == "image-2.5":
+        raise ValueError("Image 2.5 is available for two-head Spine templates")
     input_assets: list[dict[str, Any]] = []
     if character_reference:
         asset_id = upload_project_input_asset(
@@ -4690,7 +4694,7 @@ def submit_spine_agent(
     payload = {
         "requirement": prompt,
         "template_name": template_name,
-        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2",
+        "generation_provider": {"nano-banana": "nanobanana", "image-2": "image2", "image-2.5": "image2_5"}[generation_model],
         "resolution": "2K",
         "export_resolution": export_resolution,
         "image2_quality": {
@@ -7967,8 +7971,8 @@ def build_parser() -> argparse.ArgumentParser:
     spine_run.add_argument(
         "--generation-model",
         default="image-2",
-        choices=GENERATION_MODEL_CHOICES,
-        help="Generation model; defaults to Image2",
+        choices=["image-2", "image-2.5", "nano-banana"],
+        help="Two-head: GPT Image 2 or 2.5. Nano Banana is available only for the four-head template",
     )
     spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
     spine_run.add_argument(
@@ -7976,7 +7980,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="4.2",
         choices=["4.2", "3.8.99", "3.8.75"],
     )
-    spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
+    spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES, help="Two-head package: Standard 25 credits/6 calls, Detailed 35/8, Ultimate 55/12; every image uses ordinary quality")
     spine_run.add_argument("--weapon", default="auto", choices=["auto", "yes", "no"])
     spine_run.add_argument(
         "--hair",
