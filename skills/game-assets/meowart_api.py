@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.16.1"
+MEOWART_API_CLI_VERSION = "2026.10.17.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -6694,8 +6694,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
-    subparsers.add_parser("media-storage-get", help="Read this account's new-media storage preference")
-    storage = subparsers.add_parser("media-storage-set", help="Set new-media storage; existing assets stay in place")
+    subparsers.add_parser("media-storage-get", help="Read this account's media storage and download route")
+    storage = subparsers.add_parser("media-storage-set", help="Set media storage and download route; domestic downloads can fall back to the original")
     storage.add_argument("--media-storage-site", choices=("auto", "domestic", "overseas"), default="auto")
 
     def option_exists(command_parser: argparse.ArgumentParser, *option_strings: str) -> bool:
