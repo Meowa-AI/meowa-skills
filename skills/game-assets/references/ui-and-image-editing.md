@@ -216,3 +216,7 @@ python3 skills/game-assets/meowart_api.py animation-edit-run \
 Image2.5 通用生成支持 `--remove-bg-method none|standard`，默认 `none`，与网页去背景开关一致。开启后尝试原生透明 PNG，免费；失败则保留原背景、不后处理、不扣附加费。万能编辑选择 Image2.5 时同样免费，高级抠图不可用。重新打开项目或轮询原任务不会再次提交生成。
 
 Two-head Spine uses GPT Image 2 (`image-2`, default) or GPT Image 2.5 (`image-2.5`). `--quality standard/detailed/ultimate` selects a 25/35/55-credit package permitting at most 6/8/12 logical image calls, including appearance reference and repairs. Every image is generated at Standard quality; unused calls do not change the fixed package price. Export size does not add credits. The four-head template and existing part-edit/full-reskin commands retain their original model and pricing contracts.
+
+## Full Spine editor
+
+`spine-editor-open --project-id ID --node-id ID` returns the authenticated web workbench URL. Use it for translate/rotate keys, animation creation/copy/deletion, linear/stepped interpolation, pose-key resampling, project drafts, atlas editing and validated joint rebinding. Parameters and defaults come from the web editor; do not build a separate CLI parameter surface. Rebind candidates require comparison and explicit acceptance before applying to the canvas.
