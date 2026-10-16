@@ -2643,6 +2643,50 @@
           "request_field": "export_kind"
         }
       }
+    },
+    "spine_editor": {
+      "command": "spine-editor-open",
+      "browser_handoff": true,
+      "web_sources": [
+        "utils/spineEditorContract.ts:SPINE_EDITOR_PRODUCT_CONTRACT",
+        "components/spine-editor/SpineSkeletonEditorDialog.tsx",
+        "components/spine-editor/SpineAnimationTimeline.tsx"
+      ],
+      "parameters": {},
+      "browser_parameters": {
+        "channels": [
+          "translate",
+          "rotate"
+        ],
+        "defaultChannel": "translate",
+        "fps": 60,
+        "playbackSpeeds": [
+          0.1,
+          0.25,
+          0.5,
+          0.75,
+          1,
+          1.5,
+          2
+        ],
+        "defaultPlaybackSpeed": 0.5,
+        "interpolations": [
+          "linear",
+          "stepped"
+        ],
+        "poseFrameIntervals": [
+          3,
+          6,
+          12
+        ],
+        "defaultPoseFrameInterval": 6,
+        "defaultAnimationDuration": 1,
+        "maxAnimationDuration": 60,
+        "defaultMode": "animation",
+        "canonicalRebindFields": [
+          "joint_targets"
+        ]
+      }
     }
   }
 }

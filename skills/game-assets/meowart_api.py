@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.14.1"
+MEOWART_API_CLI_VERSION = "2026.10.16.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -5128,6 +5128,14 @@ def submit_spine_part_replace(
     return body
 
 
+def build_spine_editor_handoff(*, project_id: str, node_id: str) -> dict[str, Any]:
+    """Use the same browser workbench, including its canonical defaults and requests."""
+    from urllib.parse import urlencode
+    if not project_id.strip() or not node_id.strip():
+        raise ValueError("Project and Spine node identity are required")
+    return {"browser_required": True, "url": "https://meowa.ai/canvas?" + urlencode({"projectId": project_id, "spineEditorNode": node_id})}
+
+
 def submit_spine_frame_cleanup(
     *,
     api_base: str,
@@ -8051,6 +8059,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["4.2", "3.8.99", "3.8.75"],
     )
 
+    spine_editor = subparsers.add_parser("spine-editor-open", help="Open the full web Spine workbench: keyframes, animation management, joint rebind, atlas and project drafts")
+    spine_editor.add_argument("--project-id", required=True)
+    spine_editor.add_argument("--node-id", required=True)
+
     spine_cleanup_run = subparsers.add_parser(
         "spine-cleanup-run",
         help="Remove editor frames and labels from an uploaded Spine atlas",
@@ -8373,6 +8385,7 @@ def build_parser() -> argparse.ArgumentParser:
         "pindou-run",
         "spine-run",
         "spine-inspect",
+        "spine-editor-open",
         "spine-edit-run",
         "spine-replace-run",
         "spine-cleanup-run",
@@ -8526,6 +8539,7 @@ def main() -> int:
     effective_output_dir = _resolve_output_dir(args.output_dir, run_dir)
     try:
         no_auth_commands = {
+            "spine-editor-open",
             "map-reference-search",
             "map-preset-search",
             "map-reference-download",
@@ -11104,6 +11118,10 @@ def main() -> int:
         if args.command == "free-credits":
             print(_format_public_json(get_free_credit_status(api_base=args.api_base, api_key=args.api_key,
                 timeout=args.timeout, verify=verify)))
+            return 0
+
+        if args.command == "spine-editor-open":
+            print(json.dumps(build_spine_editor_handoff(project_id=args.project_id, node_id=args.node_id), ensure_ascii=False))
             return 0
 
         if args.command == "spine-inspect":
