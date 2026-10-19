@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.17.1"
+MEOWART_API_CLI_VERSION = "2026.10.19.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -4661,7 +4661,7 @@ def submit_spine_agent(
     client_operation_id: str = "",
     character_reference: str = "",
     template_name: str = SPINE_AGENT_DEFAULT_TEMPLATE_NAME,
-    generation_model: str = "image-2",
+    generation_model: str = "image-2.5",
     export_resolution: str = "2K",
     quality: str = "detailed",
     weapon: str = "auto",
@@ -7978,9 +7978,9 @@ def build_parser() -> argparse.ArgumentParser:
     spine_run.add_argument("--client-operation-id", default="")
     spine_run.add_argument(
         "--generation-model",
-        default="image-2",
+        default="image-2.5",
         choices=["image-2", "image-2.5", "nano-banana"],
-        help="Two-head: GPT Image 2 or 2.5. Nano Banana is available only for the four-head template",
+        help="Two-head: GPT Image 2.5 (default) or 2. Nano Banana is available only for the four-head template",
     )
     spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
     spine_run.add_argument(
@@ -7988,7 +7988,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="4.2",
         choices=["4.2", "3.8.99", "3.8.75"],
     )
-    spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES, help="Two-head package: Standard 25 credits/6 calls, Detailed 35/8, Ultimate 55/12; every image uses ordinary quality")
+    spine_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES, help="Two-head package: Standard 25 credits, Detailed 35, Ultimate 55; every image uses Standard quality")
     spine_run.add_argument("--weapon", default="auto", choices=["auto", "yes", "no"])
     spine_run.add_argument(
         "--hair",

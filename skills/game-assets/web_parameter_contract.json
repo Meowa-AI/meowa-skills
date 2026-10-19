@@ -950,7 +950,7 @@
         },
         "generation_model": {
           "flag": "--generation-model",
-          "default": "image-2",
+          "default": "image-2.5",
           "choices": [
             "image-2",
             "image-2.5",
