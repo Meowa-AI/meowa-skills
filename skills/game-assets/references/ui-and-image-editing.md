@@ -7,6 +7,7 @@
 - UI generation and extraction
 - Consistent upgrades and variants
 - Still-image and animated-frame editing
+- [User-supplied mask editing](#edit-a-user-marked-region-with-nano-banana)
 - Validation
 
 ## Important guidance
@@ -174,6 +175,30 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
 - Omitted options follow the web editor's mode defaults: pixel editing uses Nano Banana at 1K, while HD editing uses Image2.5 at 2K. An explicit `--generation-model` or `--resolution` overrides that mode default.
 - `--quality standard|detailed|ultimate` applies to Image-2. `--generation-speed normal|fast` applies to Nano Banana.
 - Pixel mode supports `none`, `standard`, and `advanced` background removal. HD edits keep their normal background unless the dedicated background-removal command is used afterward.
+
+## Edit a user-marked region with Nano Banana
+
+When the user supplies an original image and a mask, pass both as ordinary reference images through `general-image-run --generation-model nano-banana`. The mask guides the edit through the prompt; no separate mask parameter is needed.
+
+- Keep the original and mask on the same canvas, with matching dimensions and orientation. Do not resize or crop them independently.
+- Send the original first and the mask second. State which image is which and what the mask colors mean. For a black-and-white mask, use white for the edit region and black for the preserved region; follow the user's convention if different, and clarify ambiguous markings before submitting.
+- Describe only the requested change, the edit boundary, and what to preserve. Tell the model to return the edited original without the mask or markings.
+
+```bash
+python3 skills/game-assets/meowart_api.py general-image-run \
+  --generation-model nano-banana \
+  --model gemini-nano-banana-2.1 \
+  --reference-image <original.png> \
+  --reference-image <mask.png> \
+  --prompt "Image 1 is the original; image 2 is its mask. Replace the sofa only where the mask is white with a brown leather sofa. Preserve everything under black. Return the edited original without mask markings." \
+  --resolution 1K \
+  --aspect-ratio 1:1 \
+  --output-dir <output-dir>
+```
+
+Choose the supported aspect ratio that matches the original. If the user also supplies a copy of the original with a translucent colored overlay, send original → overlay → black-and-white mask and update the prompt's image numbers and color meanings. This optional three-image technique comes from [NanoBananaEditor](https://github.com/markfulton/NanoBananaEditor/blob/main/docs/architecture.md#masked-edits); it is not required for the two-image use case.
+
+Compare the result with the original inside and outside the mask, checking alignment, unwanted changes, and residual markings. Prompt guidance does not guarantee pixel-identical preservation outside the mask; exact preservation requires compositing the generated edit onto the original with the mask. Keep the original and mask as inputs, not deliverables. Recover interrupted jobs with `general-image-poll` and the original job ID.
 
 ## Edit animated frames
 

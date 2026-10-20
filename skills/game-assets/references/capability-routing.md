@@ -17,6 +17,7 @@ Use this module to select one primary public command. Prefer a specialized capab
 | Generate a UI sheet, HUD, menu, buttons, icons, or extract UI components | `ui-gen-run` | `ui-and-image-editing.md` |
 | Split separated complex patterns in an existing PNG into individual transparent assets locally | `scripts/split-components.py` | `local-tools.md` |
 | Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
+| Edit a region marked by a user-supplied mask | `general-image-run --generation-model nano-banana` with ordered original and mask references | [Mask-guided editing](ui-and-image-editing.md#edit-a-user-marked-region-with-nano-banana) |
 | Clone same-style assets into one grid sheet | `asset-clone-run` | `ui-and-image-editing.md` |
 | Quickly upgrade one asset or create several similarly sized, style-consistent variants | `one-click-upgrade-prompts`, then `one-click-upgrade-run` | `ui-and-image-editing.md` |
 | Edit an animated GIF or WebP while preserving timing and layout | `animation-edit-run` | `ui-and-image-editing.md` |
