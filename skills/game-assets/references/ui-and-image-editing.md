@@ -39,7 +39,7 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Generate or extract UI and asset sheets | `ui-gen-run` | Produce one transparent aggregate sheet plus component segmentation data | Does not return separate cropped component media files |
 | Split an existing complex-pattern PNG locally | `scripts/split-components.py` | Produce individual transparent PNG crops and placement data without an API | Requires separated shapes on transparency or a solid background; see [local tools](local-tools.md) |
 | Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
-| Edit still images | `image-edit-run` | Modify one or more existing visual assets | HD mode keeps its background; remove it afterward when needed |
+| Edit still images | `image-edit-run` | Modify one or more existing visual assets | Pixel and HD default to standard background removal; use none to retain the background |
 | Clone an asset sheet | `asset-clone-run` | Generate 1, 4, 9, 16, 25, or 36 same-style assets in one grid | Returns complete sheets without splitting cells |
 | Edit existing animation frames | `animation-edit-run` | Restyle or modify an animated GIF or WebP | Preserve the source frame timing and layout |
 | Create Pindou bead art | `pindou-run` | Convert a pixel source at source size or generate an HD sized design | HD mode requires a supported target size |
@@ -140,6 +140,7 @@ python3 skills/game-assets/meowart_api.py one-click-upgrade-run \
 - Pixel mode defaults to a 1K service tier and HD mode to 2K. Omit `--resolution` unless the asset contract requires a different tier.
 - Background removal defaults to `none`. Use `standard` or `advanced` for pixel outputs that must be isolated; HD mode supports `none` or `standard`.
 - Open every result and compare style, approximate subject size, anchor, silhouette, transparency, and actual canvas dimensions.
+- Model and resolution defaults are concrete in the parsed request: Pixel uses Nano Banana / 1K, HD uses Image2 / 2K. Explicit choices are preserved.
 
 ## Clone assets
 
@@ -181,6 +182,8 @@ Keep `--clone-count` for the reference grid and the prompt for the intended obje
 Show the final prompt before generation; it will be used directly. Polish only when requested, and inspect that proportions, colors, and item descriptions survived. Showing the prompt does not require an extra approval round when generation is already authorized.
 
 ## Edit still images
+
+Pixel and HD both default to `--remove-bg-method standard`; choose `none` to preserve the background. HD defaults to Image2.5 / 2K with free native removal. See [Transparent asset tips](pixel-and-hd-assets.md#image25-transparent-asset-tips) for limits and existing-image costs.
 
 ```bash
 python3 skills/game-assets/meowart_api.py image-edit-run \

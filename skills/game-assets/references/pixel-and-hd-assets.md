@@ -165,6 +165,20 @@ Image-2 task without submitting it again.
 - Inspect for unintended labels or decorative lettering even when the prompt says `no text`; asset sheets can still introduce short item labels and may need regeneration or editing.
 - Use `ui-gen-run` instead when the generated sheet also needs automatic background removal and component segmentation. That module is prompt-driven and can generate ordinary art assets or sprite sheets in addition to interface graphics.
 
+## Image2.5 transparent asset tips
+
+For isolated props, characters, icons, or UI sheets, request transparency during Image2.5 generation/editing instead of automatically chaining a paid background-removal job. Add a short instruction such as `单个蓝色药瓶，透明背景，不要投影` when appropriate.
+
+| Capability | How to request free native removal with Image2.5 |
+|---|---|
+| General generation | `general-image-run --remove-bg-method standard` (default is `none`) |
+| Still-image editing | `image-edit-run --generation-model image-2.5 --remove-bg-method standard` |
+| Asset cloning | Default Image2.5 and `standard` already request it |
+| HD character/asset-pack presets | Default Image2.5 and `standard` already request it |
+| UI/asset-sheet generation | Default Image2.5, background removal on, and `standard` already request it |
+
+Only the removal add-on is free; generation and reference-image charges still apply. HD presets include one billable template reference. Editing an existing image is still a generation, can change its artwork, and is not a free exact cutout service. Native transparency is best effort: if unavailable, the workflow keeps the background without silently invoking paid removal. Inspect the final alpha before promising transparency. Use `none` for scenes or backgrounds that should stay opaque; `advanced` removal is unavailable for Image2.5. If exact existing pixels must be preserved or native transparency fails, explain the separate removal option and its quote before adding that step.
+
 ## Custom-size pixel generation
 
 Use this mode when one object's final pixel dimensions are explicit and no fixed-size preset fits, or when one source image should be regenerated as pixel art at a specified size:

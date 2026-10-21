@@ -170,7 +170,7 @@ Final downloads use the server-selected URL, including the domestic media domain
 Domestic ready final files may use `media-cn.meowjito.com`; legacy `media.meowjito.com` links remain valid. Follow the exact server-returned final URL and re-query the job to refresh its route. No storage or provider option is required.
 # Image expansion
 
-`image-expander-run --project-id PROJECT --target-coord ROW COL --neighbor-left left.png --custom-prompt "Continue the road"` mirrors the canvas grid. Supply one to four neighbor images (`--neighbor-top/left/right/bottom`), or `--source-image` for an initial cardinal target. Defaults: HD, 1K, auto aspect ratio, top-down-60 view, Nano Banana, normal speed, Detailed Image2 quality (`medium`), 20% overlap, 10% feather. `--basic-prompt` follows the selected view; `--custom-prompt` defaults to empty. Speed applies to Nano Banana; `--image2-quality low/medium/high` means Standard/Detailed/Ultimate and applies to GPT Image2.
+`image-expander-run --target-coord ROW COL --neighbor-left left.png --custom-prompt "Continue the road"` mirrors the canvas grid. Project/chat context is created automatically; reuse the printed IDs with `--project-id` / `--thread-id` for later tiles of the same map. Supply one to four neighbor images (`--neighbor-top/left/right/bottom`), or `--source-image` for an initial cardinal target. Defaults: HD, 1K, auto aspect ratio, top-down-60 view, Nano Banana, normal speed, Detailed Image2 quality (`medium`), 20% overlap, 10% feather. `--basic-prompt` follows the selected view; `--custom-prompt` defaults to empty. `--image2-quality low/medium/high` means Standard/Detailed/Ultimate and applies to GPT Image2.
 
 `image-expander-prompt --project-id PROJECT --source-image map.png --prompt "Continue the road" --direction top-right` supports all cardinal and diagonal directions. Generation saves declared final target tiles only. See `references/maps-tiles-and-textures.md` and `--help` for the full parameter contract.
 
@@ -185,3 +185,10 @@ Use `media-storage-get` to read the account preference. Use `media-storage-set -
 Two-head Spine uses GPT Image 2 (`image-2`, default) or GPT Image 2.5 (`image-2.5`). `--quality standard/detailed/ultimate` selects a 25/35/55-credit package permitting at most 6/8/12 logical image calls, including appearance reference and repairs. Every image is generated at Standard quality; unused calls do not change the fixed package price. Export size does not add credits. The four-head template and existing part-edit/full-reskin commands retain their original model and pricing contracts.
 
 `spine-editor-open --project-id ID --node-id ID`: opens the equivalent full web Spine editor; the browser handles canonical keyframe and rebind requests. No API key is required to build the URL; the website enforces project access.
+
+
+默认动画入口与网页主面板一致：`meowa-animation-run`（16 帧、Pixel、480P）。旧引擎用 `animate-run`，多关键帧用 `keyframes-run`，两者并非新版动画的别名。旧引擎省略图像类型时按输入尺寸选择：不超过 256×256 为 Pixel，否则 HD；显式选择保持不变。Standard 帧数为 4/6/8/10/12/16，Advanced 为 3–16 的任意整数。
+
+生成任务受理后会立即输出 ID。中断后用 `workflow-poll --job-id ID --workflow-id image_edit` 等恢复原任务，workflow ID 对照表见 [任务恢复](references/running-and-outputs.md#polling-and-recovery)。自定义 workflow 用 `custom-workflow-poll`，Spine 用 `spine-poll`；这些命令只读原任务，不会重新生成。扩图和自定义 workflow 首次运行不再要求手填项目／会话 ID；后续操作复用打印出的 ID。
+
+Image2.5 的 `standard` 去背景附加费为零，但生成和参考图仍计费；原生透明失败会保留背景，不会自动转付费抠图。适合生成透明角色、道具、图标和 UI 素材；已有图片经过编辑仍属于一次生成，不能承诺像素完全不变。通用生成需显式开启 `--remove-bg-method standard`；素材克隆、HD GEN、UI 生成默认已开启，万能编辑需选 Image2.5。详见 [透明素材技巧](references/pixel-and-hd-assets.md#image25-transparent-asset-tips)。

@@ -501,6 +501,8 @@ After generation, start `map-preview-server.py --mode side-scrolling --side-scro
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。
 # Image expansion
 
+Omit `--project-id` / `--thread-id` on a first expansion: the runner creates the project and default chat, prints both IDs, and submits to that context. Reuse those IDs for later tiles in the same map. Supplying only a project reuses its active chat. Export still requires that same project ID because the selected assets belong to it. After a timeout, recover with `workflow-poll --job-id <id> --workflow-id image_expander`; do not regenerate the tile.
+
 `image-expander-run --project-id PROJECT --target-coord -1 1 --neighbor-left left.png --neighbor-bottom bottom.png --custom-prompt "Continue the road"` generates one tile from its existing cardinal neighbors. Coordinates range from -16 to 16. Supply one to four `--neighbor-top/left/right/bottom` images, relative to the target. For an initial cardinal expansion, `--source-image center.png` is equivalent to the web's single center reference.
 
 Defaults mirror the canvas: `--mode hd`, `--resolution 1K`, `--aspect-ratio auto`, `--view-preset top-down-60`, `--generation-provider nanobanana`, `--image2-quality medium`, `--overlap-percent 20`, `--feather-percent 10`. Image2 quality `low/medium/high` means Standard/Detailed/Ultimate. Quality applies to GPT Image2; Nano Banana has no speed option. The default editable `--basic-prompt` follows the selected view; `--custom-prompt` defaults to empty. Neighbors are combined into one reference canvas; pricing remains one generation plus one reference where applicable, using the backend calculator.

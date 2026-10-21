@@ -79,7 +79,20 @@ The runner does not save submission responses, job responses, provider responses
 
 ## Polling and recovery
 
-Normal `*-run` commands submit, poll, download, and save the final result. Keep the printed job identifier if polling is interrupted. Top-level `--help` lists the available recovery commands. Use the relevant `*-poll` command with the original job identifier; `general-image-poll` recovers general image jobs for all three models. Recovery waits through transient connection failures, never submits a replacement job, and downloads every declared final output after success.
+Normal `*-run` commands submit, print the accepted job ID before polling, then download and save the final result. Keep that ID if polling is interrupted. Recovery only reads the existing job; it never submits a replacement. Use a dedicated `*-poll` command when available, or `workflow-poll --job-id <id> --workflow-id <workflow>` for the following capabilities:
+
+| Run capability | Recovery workflow ID |
+|---|---|
+| Still-image editing / cloning / animated-frame editing | `image_edit` / `asset_clone` / `frames_edit` |
+| One-click upgrades / custom-size pixel generation | `one_click_upgrade` / `one_click_pixelate` |
+| New frame animation / reference-video editing | `meowa_animation` |
+| Video generation | `seedance_generator` |
+| Background removal / pixelation / seamless loop | `remove_background` / `pixelate` / `pixel_gen_self_loop` |
+| Expansion / Pindou | `image_expander` / `pixel_gen_freesize` |
+| Isometric texture / isometric tileset | `isometric_texture_gen` / `isometric_tileset_gen` |
+| Pixel / HD side-scrolling maps | `side_scrolling_map_gen` / `hd_side_scrolling_map_gen` |
+
+General images use `general-image-poll --job-id <id>`. Custom workflows use `custom-workflow-poll --job-id <id> --workflow-id <catalog-id>`. Spine generation and editing use `spine-poll --job-id <id>` with the same optional `--export-version` as the original run. None requires copying request bodies, source assets, or provider responses. Recovery preserves the final-output-only download policy and rejects unknown/mismatched workflow contracts.
 
 ```bash
 python3 skills/game-assets/meowart_api.py general-image-poll \

@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.21.2"
+MEOWART_API_CLI_VERSION = "2026.10.21.3"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -1769,6 +1769,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "pixel_gen_grid_5x5": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_grid_8x8": frozenset({"final_sprite_paths", "sprite_pack_preview_path", "url"}),
     "pixel_gen_mask_single": frozenset({"final_sprite", "url"}),
+    "pixel_gen_freesize": frozenset({"pixel_image_path", "bead_pattern_path"}),
     "pixel_gen_self_loop": frozenset({"output_path", "url"}),
     "pixel_hex_isometric_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
     "pixel_isometric_16_gen": frozenset({"final_tile_paths", "tile_pack_preview_path", "url"}),
@@ -2316,6 +2317,10 @@ def submit_custom_workflow(
             raise ValueError(f"upload is not an image: {image_path}")
         files.append((name, (image_path.name, image_path.read_bytes(), mime_type)))
 
+    project_id, thread_id = prepare_workflow_project_context(
+        api_base=api_base, api_key=api_key, title="Custom Workflow",
+        project_id=project_id, thread_id=thread_id, timeout=timeout, verify=verify,
+    )
     operation_seed = json.dumps(
         {
             "workflow_id": workflow_id,
@@ -2547,6 +2552,40 @@ def _create_spine_thread(
     if not thread_id:
         raise SkillCompatibilityError("thread create response is missing id")
     return thread_id
+
+
+def prepare_workflow_project_context(
+    *, api_base: str, api_key: str, title: str, project_id: str = "",
+    thread_id: str = "", timeout: int = DEFAULT_TIMEOUT, verify: bool = True,
+) -> tuple[str, str]:
+    if thread_id and not project_id:
+        raise ValueError("--thread-id requires --project-id")
+    if project_id and thread_id:
+        return project_id, thread_id
+    payload = _game_design_api_request(
+        method="GET" if project_id else "POST", api_base=api_base, api_key=api_key,
+        endpoint=f"/api/projects/{quote(project_id, safe='')}" if project_id else "/api/projects",
+        timeout=timeout, verify=verify,
+        **({} if project_id else {"json_body": {"title": title, "projectTitleSource": "manual"}}),
+    )
+    project_id = str(payload.get("id") or project_id).strip()
+    if not project_id:
+        raise SkillCompatibilityError("project response is missing id")
+    thread_id = str(payload.get("activeThreadId") or "").strip()
+    if not thread_id:
+        thread_id = next((str(item.get("id") or "").strip() for item in payload.get("threads") or []
+                          if isinstance(item, dict) and item.get("kind") == "global" and item.get("id")), "")
+    if not thread_id:
+        thread = _game_design_api_request(
+            method="POST", api_base=api_base, api_key=api_key,
+            endpoint=f"/api/projects/{quote(project_id, safe='')}/threads",
+            timeout=timeout, verify=verify, json_body={"title": title, "kind": "global"},
+        )
+        thread_id = str(thread.get("id") or "").strip()
+    if not thread_id:
+        raise SkillCompatibilityError("project response is missing thread context")
+    print(f"[INFO] project_id={project_id} thread_id={thread_id}", flush=True)
+    return project_id, thread_id
 
 
 def _create_spine_source_message(
@@ -3995,8 +4034,8 @@ def run_remove_background(
     jobs_url = str(submit_payload.get("jobs_url") or "").strip()
     if not jobs_url:
         raise RuntimeError("remove-background submit response missing jobs_url")
-    final_payload = poll_job_until_done(
-        jobs_url=jobs_url,
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base, submit_payload=submit_payload, label="remove-background",
         api_key=api_key,
         timeout=timeout,
         max_wait=max_wait,
@@ -4057,8 +4096,8 @@ def run_pixelate(
     jobs_url = str(submit_payload.get("jobs_url") or "").strip()
     if not jobs_url:
         raise RuntimeError("pixelate submit response missing jobs_url")
-    final_payload = poll_job_until_done(
-        jobs_url=jobs_url,
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base, submit_payload=submit_payload, label="pixelate",
         api_key=api_key,
         timeout=timeout,
         max_wait=max_wait,
@@ -4137,8 +4176,8 @@ def run_pixel_gen_self_loop(
     jobs_url = str(submit_payload.get("jobs_url") or "").strip()
     if not jobs_url:
         raise RuntimeError("self-loop submit response missing jobs_url")
-    final_payload = poll_job_until_done(
-        jobs_url=jobs_url,
+    final_payload = wait_submitted_workflow_job(
+        api_base=api_base, submit_payload=submit_payload, label="self-loop",
         api_key=api_key,
         timeout=timeout,
         max_wait=max_wait,
@@ -4160,6 +4199,11 @@ def wait_submitted_workflow_job(
     verify: bool = True,
 ) -> dict[str, Any]:
     jobs_url = str(submit_payload.get("jobs_url") or "").strip()
+    job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
+    if not job_id and jobs_url:
+        job_id = urlparse(jobs_url).path.rstrip("/").rsplit("/", 1)[-1]
+    if job_id:
+        print(f"[INFO] job_id={job_id}", flush=True)
     if jobs_url:
         return poll_job_until_done(
             jobs_url=jobs_url,
@@ -4170,14 +4214,13 @@ def wait_submitted_workflow_job(
             verify=verify,
         )
 
-    api_job_id = str(submit_payload.get("job_id") or submit_payload.get("api_job_id") or "").strip()
-    if not api_job_id:
+    if not job_id:
         raise RuntimeError(f"{label} submit response missing job_id")
     return _wait_for_terminal_payload(
         poll_once=lambda: poll_job(
             api_base=api_base,
             api_key=api_key,
-            api_job_id=api_job_id,
+            api_job_id=job_id,
             timeout=timeout,
             verify=verify,
         ),
@@ -4515,13 +4558,8 @@ IMAGE_EXPANDER_DIRECTIONS = ["center", "top", "left", "right", "bottom", "top-le
 def submit_image_expander(*, args: argparse.Namespace, verify: bool) -> dict[str, Any]:
     """Mirror the asset-backed web tile submission and prompt rewrite."""
     headers = {**_base_headers(args.api_key), "Content-Type": "application/json"}
-    common = dict(api_base=args.api_base, api_key=args.api_key, project_id=args.project_id,
-                  timeout=args.timeout, verify=verify)
     if args.command == "image-expander-prompt":
-        asset_id = upload_project_input_asset(**common, image_path=args.source_image)
-        body = dict(project_id=args.project_id, source_asset_id=asset_id, prompt=args.prompt,
-                    direction=args.direction, mode=args.mode, view_preset=args.view_preset)
-        endpoint = "/api/workflows/image_expander/prompts"
+        sources = [("primary_reference", args.source_image)]
     else:
         row, col = args.target_coord
         if max(abs(row), abs(col)) > IMAGE_EXPANDER_MAX_COORD:
@@ -4544,6 +4582,24 @@ def submit_image_expander(*, args: argparse.Namespace, verify: bool) -> dict[str
             offset = offsets[sources[0][0]]
             if (row, col) == (-offset[0], -offset[1]):
                 sources = [("primary_reference", sources[0][1])]
+    for _, source_path in sources:
+        path = Path(source_path).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"reference image not found: {path}")
+        if not _mime_for_path(path).startswith("image/"):
+            raise ValueError(f"reference file is not an image: {path}")
+    args.project_id, args.thread_id = prepare_workflow_project_context(
+        api_base=args.api_base, api_key=args.api_key, title="Image Expansion",
+        project_id=args.project_id, thread_id=args.thread_id, timeout=args.timeout, verify=verify,
+    )
+    common = dict(api_base=args.api_base, api_key=args.api_key, project_id=args.project_id,
+                  timeout=args.timeout, verify=verify)
+    if args.command == "image-expander-prompt":
+        asset_id = upload_project_input_asset(**common, image_path=args.source_image)
+        body = dict(project_id=args.project_id, source_asset_id=asset_id, prompt=args.prompt,
+                    direction=args.direction, mode=args.mode, view_preset=args.view_preset)
+        endpoint = "/api/workflows/image_expander/prompts"
+    else:
         inputs = [{"role": role, "ordinal": 0,
                    "asset_id": upload_project_input_asset(**common, image_path=path)} for role, path in sources]
         body = {name: getattr(args, name) for name in (
@@ -6591,7 +6647,39 @@ class ImageEditOptionAction(argparse.Action):
 class GameAssetsArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         arguments = list(sys.argv[1:] if args is None else args)
-        parsed = super().parse_args(arguments, namespace)
+        help_actions = []
+        if "general-image-run" in arguments and any(flag in arguments for flag in ("--help", "-h")):
+            model = "image-2.5"
+            for index, argument in enumerate(arguments):
+                if argument == "--generation-model" and index + 1 < len(arguments):
+                    model = arguments[index + 1]
+                elif argument.startswith("--generation-model="):
+                    model = argument.split("=", 1)[1]
+            commands = next(action.choices for action in self._actions if isinstance(action, argparse._SubParsersAction))
+            for action in commands["general-image-run"]._actions:
+                help_actions.append((action, action.choices, action.help))
+                if model != "nano-banana" and action.dest == "resolution":
+                    action.choices = ["1K", "2K"]
+                elif model != "nano-banana" and action.dest == "aspect_ratio":
+                    action.choices = ["1:1", "3:4", "4:3", "9:16", "16:9"]
+                elif (model == "nano-banana" and action.dest == "quality") or (model != "image-2.5" and action.dest == "remove_bg_method"):
+                    action.help = argparse.SUPPRESS
+        try:
+            parsed = super().parse_args(arguments, namespace)
+        finally:
+            for action, choices, help_text in help_actions:
+                action.choices, action.help = choices, help_text
+        if parsed.command in {"image-expander-run", "image-expander-prompt", "custom-workflow-run"} and parsed.thread_id and not parsed.project_id:
+            self.error("--thread-id requires --project-id")
+        if parsed.command in {"animate-run", "animate-submit"}:
+            if parsed.intelligence == "standard" and parsed.output_frames not in {4, 6, 8, 10, 12, 16}:
+                self.error("Standard animation supports 4, 6, 8, 10, 12, or 16 frames; Advanced supports every integer from 3 to 16")
+            if not getattr(parsed, "animation_model_explicit", False) and Image is not None and Path(parsed.image_file).expanduser().is_file():
+                try:
+                    with Image.open(Path(parsed.image_file).expanduser()) as source:
+                        parsed.animation_model = "pixel-engine-v1.1" if max(source.size) <= 256 else "frame-engine-v1.1"
+                except OSError:
+                    pass  # The existing source validation reports invalid image files before submission.
         if parsed.command in {"hd-gen-run", "hd-gen-submit"} and parsed.generation_model == "image-2.5" and parsed.remove_bg_method == "advanced":
             self.error("Image2.5 background removal supports only none or standard (free)")
         if parsed.command == "image-expander-run" and not any(arg.split("=", 1)[0] == "--basic-prompt" for arg in arguments):
@@ -6604,9 +6692,9 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             parsed.alpha_mode = "sharp" if parsed.style_mode == "pixel" else "soft"
         model_explicit = vars(parsed).pop("_image_edit_generation_model_explicit", False)
         resolution_explicit = vars(parsed).pop("_image_edit_resolution_explicit", False)
-        if parsed.command == "image-edit-run" and parsed.mode == "hd":
+        if parsed.command in {"image-edit-run", "one-click-upgrade-run"} and parsed.mode == "hd":
             if not model_explicit:
-                parsed.generation_model = "image-2.5"
+                parsed.generation_model = "image-2.5" if parsed.command == "image-edit-run" else "image-2"
             if not resolution_explicit:
                 parsed.resolution = "2K"
         remove_bg_explicit = vars(parsed).pop("_image_edit_remove_bg_method_explicit", False)
@@ -6911,7 +6999,7 @@ def build_parser() -> argparse.ArgumentParser:
     general_image_run = subparsers.add_parser(
         "general-image-run",
         help="General generation in HD or pixel style with prompt and references",
-        description="General generation (通用生成); no asset template is imposed.",
+        description="General generation (通用生成); no asset template is imposed. Help shows options for the selected --generation-model (default image-2.5); select another model before --help to see its options.",
         epilog=("Replaces image-2.5-run, image-2-run, and nano-banana-run; these remain compatible aliases "
                 "for --generation-model image-2.5, image-2, and nano-banana respectively. "
                 "Recover an interrupted job with general-image-poll --job-id <id>; never resubmit it."),
@@ -6944,7 +7032,8 @@ def build_parser() -> argparse.ArgumentParser:
     for command in ("image-expander-run", "image-expander-prompt"):
         expansion = subparsers.add_parser(command, help="Expand a neighboring map tile" if command.endswith("run") else "Rewrite an editable map expansion prompt")
         add_shared_path_args(expansion)
-        expansion.add_argument("--project-id", required=True)
+        expansion.add_argument("--project-id", default="", help="Reuse a project; omitted creates a project and default chat")
+        expansion.add_argument("--thread-id", default="", help="Reuse a chat in the selected project")
         expansion.add_argument("--mode", default="hd", choices=["pixel", "hd"])
         expansion.add_argument("--view-preset", default="top-down-60", choices=list(IMAGE_EXPANDER_BASIC_PROMPTS))
         expansion.add_argument("--source-image", required=command.endswith("prompt"), default="", help="Original map image; generation uses it only for a target next to the center")
@@ -6952,7 +7041,6 @@ def build_parser() -> argparse.ArgumentParser:
             expansion.add_argument("--prompt", required=True)
             expansion.add_argument("--direction", default="center", choices=IMAGE_EXPANDER_DIRECTIONS)
             continue
-        expansion.add_argument("--thread-id", default="")
         expansion.add_argument("--client-operation-id", default="")
         expansion.add_argument("--target-coord", nargs=2, type=_bounded_integer(-16, 16), required=True, metavar=("ROW", "COL"))
         for side in ("top", "left", "right", "bottom"):
@@ -7065,9 +7153,10 @@ def build_parser() -> argparse.ArgumentParser:
     one_click_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
     one_click_run.add_argument(
         "--generation-model",
-        default="",
+        default="nano-banana",
         choices=GENERATION_MODEL_CHOICES,
         help="Defaults to Nano Banana in pixel mode and Image2 in HD mode",
+        action=ImageEditOptionAction,
     )
     one_click_run.add_argument(
         "--quality",
@@ -7075,7 +7164,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=IMAGE2_QUALITY_CHOICES,
         help="Image2 quality: Standard, Detailed, or Ultimate",
     )
-    one_click_run.add_argument("--resolution", default="", choices=["1K", "2K"])
+    one_click_run.add_argument("--resolution", default="1K", choices=["1K", "2K"], action=ImageEditOptionAction)
     one_click_run.add_argument("--remove-bg-method", default="none", choices=["none", "standard", "advanced"])
 
     video_prompt_list = subparsers.add_parser(
@@ -8029,22 +8118,24 @@ def build_parser() -> argparse.ArgumentParser:
     custom_workflow_run.add_argument("--workflow-id", required=True)
     custom_workflow_run.add_argument("--template-id", required=True)
     custom_workflow_run.add_argument("--params-json", required=True, help="JSON object using catalog fields and defaults; image-upload values are local file paths")
-    custom_workflow_run.add_argument("--project-id", required=True)
-    custom_workflow_run.add_argument("--thread-id", required=True)
+    custom_workflow_run.add_argument("--project-id", default="", help="Reuse a project; omitted creates a project and default chat")
+    custom_workflow_run.add_argument("--thread-id", default="", help="Reuse a chat; omitted uses the project's active chat")
 
     animate_submit_parser = subparsers.add_parser("animate-submit", help="Submit an animate job")
     add_shared_path_args(animate_submit_parser)
     animate_submit_parser.add_argument("--image-file", required=True)
     animate_submit_parser.add_argument("--prompt", default="")
-    animate_submit_parser.add_argument("--output-frames", type=int, default=8, choices=list(range(3, 17)))
+    animate_submit_parser.add_argument("--output-frames", type=int, default=8, choices=list(range(3, 17)), help="Standard: 4/6/8/10/12/16; Advanced: every integer 3-16; default 8")
     animate_submit_parser.add_argument("--output-format", default="spritesheet", choices=["webp", "gif", "spritesheet"])
     animate_submit_parser.add_argument("--animation-type", default="other")
     animate_submit_parser.add_argument(
         "--animation-model",
         default="pixel-engine-v1.1",
         choices=["pixel-engine-v1.1", "frame-engine-v1.1"],
-        help="Animation image type: pixel-engine-v1.1 for Pixel or frame-engine-v1.1 for HD",
+        action=_StoreExplicitArgument,
+        help="Animation image type; omitted follows the web source preset: up to 256x256 Pixel, otherwise HD",
     )
+    animate_submit_parser.set_defaults(animation_model_explicit=False)
     animate_submit_parser.add_argument(
         "--intelligence",
         default="standard",
@@ -8243,6 +8334,24 @@ def build_parser() -> argparse.ArgumentParser:
     animate_poll_parser = subparsers.add_parser("animate-poll", help="Recover one animate job and download its final outputs")
     add_shared_path_args(animate_poll_parser)
     animate_poll_parser.add_argument("--api-job-id", required=True)
+
+    workflow_poll = subparsers.add_parser("workflow-poll", help="Recover a workflow job without resubmitting it")
+    add_shared_path_args(workflow_poll)
+    add_shared_runtime_args(workflow_poll)
+    workflow_poll.add_argument("--job-id", "--api-job-id", dest="api_job_id", required=True)
+    workflow_poll.add_argument("--workflow-id", required=True, choices=sorted(_WORKFLOW_FINAL_OUTPUT_FIELDS))
+
+    custom_poll = subparsers.add_parser("custom-workflow-poll", help="Recover an authorized custom workflow's final outputs")
+    add_shared_path_args(custom_poll)
+    add_shared_runtime_args(custom_poll)
+    custom_poll.add_argument("--job-id", "--api-job-id", dest="api_job_id", required=True)
+    custom_poll.add_argument("--workflow-id", required=True)
+
+    spine_poll = subparsers.add_parser("spine-poll", help="Recover the final package from a Spine generation or edit job")
+    add_shared_path_args(spine_poll)
+    add_shared_runtime_args(spine_poll)
+    spine_poll.add_argument("--job-id", "--api-job-id", dest="api_job_id", required=True)
+    spine_poll.add_argument("--export-version", choices=["4.2", "3.8.99", "3.8.75"], default="4.2")
 
     public_commands = {
         "map-reference-search",
@@ -8566,6 +8675,40 @@ def main() -> int:
             output = export_image_expander(args=args, verify=verify, output_root=str(effective_output_dir))
             print(_format_public_json({"output": str(output)}))
             return 0
+
+        if args.command in {"workflow-poll", "custom-workflow-poll", "spine-poll"}:
+            submitted = {"job_id": args.api_job_id}
+            final = wait_submitted_workflow_job(
+                api_base=args.api_base, api_key=args.api_key, submit_payload=submitted,
+                label=args.command, timeout=args.timeout, max_wait=args.max_wait,
+                poll_interval=args.poll_interval, verify=verify,
+            )
+            downloads = []
+            if str(final.get("status") or "").lower() in {"success", "completed"}:
+                common = dict(output_root=str(effective_output_dir), timeout=args.timeout,
+                              verify=verify, api_key=args.api_key, no_download=args.no_download)
+                if args.command == "custom-workflow-poll":
+                    output_dir, downloads = _save_custom_workflow_outputs(
+                        **common, workflow_id=args.workflow_id, final_payload=final,
+                    )
+                elif args.command == "spine-poll":
+                    output_dir, downloads = save_spine_final_package(
+                        **common, api_base=args.api_base, job_id=args.api_job_id,
+                        slug_seed=args.api_job_id, export_version=args.export_version,
+                    )
+                else:
+                    actual_workflow = _payload_workflow_id(final)
+                    if actual_workflow and actual_workflow != args.workflow_id:
+                        raise SkillCompatibilityError("job workflow does not match --workflow-id")
+                    output_dir, downloads = _save_run_outputs(
+                        **common, slug_seed=args.api_job_id, submit_payload=submitted,
+                        final_payload=final, workflow_id=args.workflow_id,
+                    )
+                print(f"[INFO] saved_dir={output_dir}")
+            print(_format_public_json(_local_run_summary(
+                submit_payload=submitted, final_payload=final, downloads=downloads,
+            )))
+            return _command_exit_code(0 if str(final.get("status") or "").lower() in {"success", "completed"} else 1)
 
         if args.command in {"image-expander-run", "image-expander-prompt"}:
             submitted = submit_image_expander(args=args, verify=verify)
@@ -9089,10 +9232,8 @@ def main() -> int:
                 endpoint = ONE_CLICK_UPGRADE_ENDPOINT
                 workflow_id = "one_click_upgrade"
                 slug_seed = prompts[0]
-                generation_model = getattr(args, "generation_model", "") or (
-                    "nano-banana" if args.mode == "pixel" else "image-2"
-                )
-                resolution = getattr(args, "resolution", "") or ("1K" if args.mode == "pixel" else "2K")
+                generation_model = args.generation_model
+                resolution = args.resolution
                 data = {
                     "prompt_list": json.dumps(prompts, ensure_ascii=False),
                     "count": str(len(prompts)),
@@ -11561,8 +11702,6 @@ def main() -> int:
             animation_model = args.animation_model
             intelligence = args.intelligence
             is_pixel = animation_model == "pixel-engine-v1.1"
-            if intelligence == "standard" and args.output_frames not in {4, 6, 8, 10, 12, 16}:
-                raise ValueError("standard intelligence supports output_frames 4, 6, 8, 10, 12, or 16")
             pixel_config, source_padding = build_animate_source_controls(
                 args.image_file,
                 color_count=args.color_count,
@@ -11609,8 +11748,6 @@ def main() -> int:
             animation_model = args.animation_model
             intelligence = args.intelligence
             is_pixel = animation_model == "pixel-engine-v1.1"
-            if intelligence == "standard" and args.output_frames not in {4, 6, 8, 10, 12, 16}:
-                raise ValueError("standard intelligence supports output_frames 4, 6, 8, 10, 12, or 16")
             pixel_config, source_padding = build_animate_source_controls(
                 args.image_file,
                 color_count=args.color_count,

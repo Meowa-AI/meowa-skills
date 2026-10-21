@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "default_routes": {"animation": "frame_animation_new"},
   "policy": "Public Skill product parameters mirror the selectable web product parameters. Secrets, endpoints, project identity, recovery controls, and debug/provider internals are excluded.",
   "local_tools": {
     "complex_pattern_split": {
@@ -263,6 +264,8 @@
     },
     "image_edit": {
       "command": "image-edit-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "image_edit",
       "web_sources": [
         "types.ts:ImageEditOptions",
         "components/InfiniteCanvas.tsx",
@@ -349,6 +352,8 @@
     },
     "remove_background": {
       "command": "remove-background-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "remove_background",
       "web_sources": [
         "types.ts:RemoveBackgroundOptions",
         "components/InfiniteCanvas.tsx",
@@ -404,6 +409,8 @@
     },
     "animation_edit": {
       "command": "animation-edit-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "frames_edit",
       "web_sources": [
         "types.ts:FramesEditOptions",
         "components/InfiniteCanvas.tsx",
@@ -433,6 +440,8 @@
     },
     "asset_clone": {
       "command": "asset-clone-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "asset_clone",
       "prompt_command": "asset-clone-prompt",
       "prompt_parameters": ["prompt", "clone_count"],
       "web_sources": ["components/AssetCloneDialog.tsx", "services/assetCloneService.ts"],
@@ -452,6 +461,8 @@
     },
     "one_click_upgrade": {
       "command": "one-click-upgrade-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "one_click_upgrade",
       "web_sources": [
         "components/InfiniteCanvas.tsx",
         "services/oneClickUpgradeService.ts"
@@ -468,7 +479,7 @@
         },
         "generation_model": {
           "flag": "--generation-model",
-          "default": "",
+          "default": "nano-banana",
           "conditional_default": {
             "pixel": "nano-banana",
             "hd": "image-2"
@@ -491,7 +502,7 @@
         },
         "resolution": {
           "flag": "--resolution",
-          "default": "",
+          "default": "1K",
           "conditional_default": {
             "pixel": "1K",
             "hd": "2K"
@@ -516,6 +527,8 @@
     },
     "custom_size_pixel": {
       "command": "custom-size-pixel-gen-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "one_click_pixelate",
       "web_sources": [
         "types.ts:PixelGenerationSettings",
         "services/oneClickPixelateService.ts"
@@ -1136,6 +1149,8 @@
     },
     "pindou": {
       "command": "pindou-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "pixel_gen_freesize",
       "web_sources": [
         "types.ts:PixelGenFreesizeOptions",
         "components/InfiniteCanvas.tsx",
@@ -1214,6 +1229,8 @@
     },
     "self_loop": {
       "command": "self-loop-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "pixel_gen_self_loop",
       "web_sources": [
         "types.ts:SelfLoopVariant",
         "components/InfiniteCanvas.tsx",
@@ -1243,6 +1260,7 @@
         "animation_model": {
           "flag": "--animation-model",
           "default": "pixel-engine-v1.1",
+          "conditional_default": {"source_up_to_256x256": "pixel-engine-v1.1", "larger_source": "frame-engine-v1.1"},
           "choices": [
             "pixel-engine-v1.1",
             "frame-engine-v1.1"
@@ -1345,6 +1363,8 @@
     },
     "frame_animation_new": {
       "command": "meowa-animation-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "meowa_animation",
       "web_sources": [
         "types.ts:AnimationAgentSettings",
         "components/SettingsPanel.tsx",
@@ -1522,6 +1542,8 @@
     },
     "video_model": {
       "command": "video-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "seedance_generator",
       "web_sources": [
         "types.ts:AnimationAgentSettings",
         "components/SettingsPanel.tsx",
@@ -1847,6 +1869,8 @@
     },
     "side_scrolling_pixel": {
       "command": "side-scrolling-map-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "side_scrolling_map_gen",
       "web_sources": [
         "types.ts:SideScrollingGenerationSettings",
         "services/sideScrollingService.ts"
@@ -1865,6 +1889,8 @@
     },
     "side_scrolling_hd": {
       "command": "hd-side-scrolling-map-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "hd_side_scrolling_map_gen",
       "web_sources": [
         "types.ts:SideScrollingGenerationSettings",
         "services/sideScrollingService.ts"
@@ -1888,6 +1914,8 @@
     },
     "video_reference_edit": {
       "command": "meowa-animation-edit-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "meowa_animation",
       "web_sources": [
         "components/AnimationEditPanel.tsx",
         "services/animateService.ts"
@@ -2174,6 +2202,8 @@
     },
     "image_expander": {
       "command": "image-expander-run",
+      "recovery_command": "workflow-poll",
+      "recovery_workflow_id": "image_expander",
       "web_sources": [
         "services/imageExpanderService.ts:submitTile",
         "components/InfiniteCanvas.tsx",

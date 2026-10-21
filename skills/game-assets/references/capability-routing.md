@@ -34,7 +34,8 @@ Use this module to select one primary public command. Prefer a specialized capab
 | Create square isometric or hex-isometric map tiles | `isometric-gen-run`, `hex-isometric-gen-run`, or HD variants | `maps-tiles-and-textures.md` |
 | Create parallax-ready foreground, midground, and background layers | `side-scrolling-map-run` or `hd-side-scrolling-map-run` | `maps-tiles-and-textures.md` |
 | Make an image loop horizontally, vertically, or as a texture | `self-loop-run` | `animation-and-video.md` |
-| Create a short sprite animation | `animate-run` | `animation-and-video.md` |
+| Create frame animation with the web default | `meowa-animation-run` | `animation-and-video.md` |
+| Use the established animation engine or intelligence tiers | `animate-run` | `animation-and-video.md` |
 | Control a complex frame animation with intermediate poses | `keyframes-run` | `animation-and-video.md` |
 | Turn a first frame, or first and last frames, into a short clip | `video-run` | `animation-and-video.md` |
 | Create one sound, a sound pack, or variants | `sound-run` | `audio.md` |
@@ -59,7 +60,7 @@ Use this module to select one primary public command. Prefer a specialized capab
 - Treat preset output size and default count as part of the deliverable contract. If no preset matches the requested size or count, explain the gap instead of implying that prompt text can enforce it.
 - Use pixel workflows when their style and exact sprite contract fit. If template styles do not fit, offer general generation in pixel style and inspect the resulting pixel grid and dimensions; prompt wording alone does not guarantee either.
 - Use `image-edit-run` for one precise still-image transformation. Use one-click upgrade when one source should become a coherent upgrade sequence or several style-consistent variants. Use `animation-edit-run` for an existing animated GIF or WebP.
-- Use `animate-run` for most animation because it directly produces WebP, GIF, or sprite-sheet frames. For an ordinary complex action, use `keyframes-run` to constrain intermediate poses while keeping frame-animation output. Its general frame mode still outputs at no more than 480p, regardless of a higher-resolution source. Use `video-run` only when frame animation remains insufficient or higher-resolution video is required.
+- Default to `meowa-animation-run`, matching the web main panel: 16 frames, Pixel, 480P, and prompt optimization. Use `animate-run` only for the established engine, its intelligence tiers or sprite-sheet output; use `keyframes-run` for multiple controlled poses. Their output resolution and frame rules differ; do not substitute them silently. Use `video-run` for a video deliverable or motion that frame animation cannot represent.
 - Use `character-multi-view-run` for a still eight-direction character sheet. Its left and right views are typically mirrored. When the user needs a physically consistent eight-direction turnaround without mirroring, use Frame Animation V2 (`meowa-animation-run`) with the Multi-view prompt and 32-frame loop documented in `pixel-and-hd-assets.md`. That path is a follow-up, not a one-click replacement for the still sheet.
 - Use `texture-reference-search` and `texture-reference-download` first when a standard 64×64 flat material already fits. Use `texture-gen-run` to create and download a new 64×64 seamless texture, and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
 - Use `tileset-gen-run` for a 64px top-down dual-grid atlas. Select `foreground` or `background` with one matching 64×64 texture, or `dual` with both textures. Single-terrain modes can remove the unused background; dual mode cannot. Use `isometric-tileset-run` for an isometric atlas.
