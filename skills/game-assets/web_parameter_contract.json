@@ -77,31 +77,6 @@
           "choices": ["image-2.5", "image-2", "nano-banana"],
           "request_field": "generationProvider"
         },
-        "model": {
-          "flag": "--model",
-          "default": "gemini-3.1-flash-image",
-          "choices": [
-            "gemini-nano-banana-2.1",
-            "gemini-3.1-flash-lite-image",
-            "gemini-3.1-flash-image",
-            "gemini-3-pro-image"
-          ],
-          "request_field": "model"
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generationSpeed",
-          "choices_by_model": {
-            "gemini-nano-banana-2.1": [
-              "normal"
-            ]
-          }
-        },
         "resolution": {
           "flag": "--resolution",
           "default": "1K",
@@ -111,28 +86,7 @@
             "2K",
             "4K"
           ],
-          "request_field": "resolution",
-          "choices_by_model": {
-            "gemini-nano-banana-2.1": [
-              "1K",
-              "2K",
-              "4K"
-            ],
-            "gemini-3.1-flash-lite-image": [
-              "1K"
-            ],
-            "gemini-3.1-flash-image": [
-              "512",
-              "1K",
-              "2K",
-              "4K"
-            ],
-            "gemini-3-pro-image": [
-              "1K",
-              "2K",
-              "4K"
-            ]
-          }
+          "request_field": "resolution"
         },
         "aspect_ratio": {
           "flag": "--aspect-ratio",
@@ -348,15 +302,6 @@
           ],
           "request_field": "image2_quality"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "resolution": {
           "flag": "--resolution",
           "default": "1K",
@@ -474,15 +419,6 @@
           ],
           "request_field": "mode"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "advanced",
@@ -553,15 +489,6 @@
           ],
           "request_field": "image2_quality"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "resolution": {
           "flag": "--resolution",
           "default": "",
@@ -622,15 +549,6 @@
           ],
           "request_field": "generation_provider"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "none",
@@ -683,15 +601,6 @@
           ],
           "request_field": "template_config.direction"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "template_config.generation_speed"
-        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "none",
@@ -717,15 +626,6 @@
           "default": "",
           "request_field": "template_config.direction"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "template_config.generation_speed"
-        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "advanced",
@@ -746,15 +646,6 @@
         "services/pixelGenService.ts"
       ],
       "parameters": {
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "template_config.generation_speed"
-        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "none",
@@ -798,16 +689,6 @@
             "ultimate"
           ],
           "request_field": "quality_mode"
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed",
-          "available_when": "generation_model=nano-banana"
         },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
@@ -872,15 +753,6 @@
             "ultimate"
           ],
           "request_field": "image2_quality"
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
         },
         "resolution": {
           "flag": "--resolution",
@@ -1295,15 +1167,6 @@
           "flag": "--custom-size",
           "default": null,
           "request_field": "custom_size"
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
         }
       }
     },
@@ -1332,15 +1195,6 @@
             "2K"
           ],
           "request_field": "canvas_resolution"
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
         },
         "orientation": {
           "flag": "--orientation",
@@ -1375,15 +1229,6 @@
             "four-way"
           ],
           "request_field": "mode/direction"
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
         }
       }
     },
@@ -1904,15 +1749,6 @@
         "services/textureGenService.ts"
       ],
       "parameters": {
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "similar_tiles": {
           "flag": "--similar-tiles",
           "default": false,
@@ -1942,15 +1778,6 @@
         "services/textureGenService.ts"
       ],
       "parameters": {
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "similar_tiles": {
           "flag": "--similar-tiles",
           "default": true,
@@ -1970,15 +1797,6 @@
         "services/textureGenService.ts"
       ],
       "parameters": {
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "similar_tiles": {
           "flag": "--similar-tiles",
           "default": true,
@@ -2015,15 +1833,6 @@
           ],
           "request_field": "generation_provider"
         },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "similar_tiles": {
           "flag": "--similar-tiles",
           "default": true,
@@ -2043,15 +1852,6 @@
         "services/sideScrollingService.ts"
       ],
       "parameters": {
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "remove_bg_method": {
           "flag": "--remove-bg-method",
           "default": "standard",
@@ -2070,15 +1870,6 @@
         "services/sideScrollingService.ts"
       ],
       "parameters": {
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "request_field": "generation_speed"
-        },
         "art_style": {
           "flag": "--art-style",
           "default": "2d_hd",
@@ -2439,18 +2230,6 @@
             "nanobanana",
             "image2"
           ]
-        },
-        "generation_speed": {
-          "flag": "--generation-speed",
-          "default": "normal",
-          "request_field": "generation_speed",
-          "choices": [
-            "normal",
-            "fast"
-          ],
-          "available_when": {
-            "generation_provider": "nanobanana"
-          }
         },
         "image2_quality": {
           "flag": "--image2-quality",

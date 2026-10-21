@@ -74,7 +74,6 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
   --aspect-ratio 4:3 \
   --quality standard \
   --generation-model image-2.5 \
-  --generation-speed normal \
   --background-color '#cccccc' \
   --remove-bg-method standard \
   --output-dir <output-dir>
@@ -99,7 +98,7 @@ python3 skills/game-assets/meowart_api.py ui-gen-run \
 - Supported aspect ratios are 4:3, 3:4, 16:9, 9:16, and 1:1.
 - Treat `1K` and `2K` as service resolution tiers, not promises of one universal pixel dimension; inspect the saved image for its actual dimensions.
 - Use `standard` for quick drafts, `detailed` for normal production work, and `ultimate` for a final asset whose small text or dense ornament needs the highest fidelity.
-- The default model is `image-2.5` with `--quality standard`. Select `--generation-model nano-banana` or `image-2` to switch models; Image 2 defaults to `--quality detailed`. Use `--generation-speed` for the Nano Banana path. Image 2.5 charges 1/5/10 credits at 1K or 2/10/20 at 2K plus 2 credits per reference, and provides native standard background removal at no extra cost; `advanced` is unavailable. Background removal and component splitting are enabled by default and can be disabled with `--no-remove-background` and `--no-split-components`.
+- The default model is `image-2.5` with `--quality standard`. Select `--generation-model nano-banana` or `image-2` to switch models; Image 2 defaults to `--quality detailed`. Image 2.5 charges 1/5/10 credits at 1K or 2/10/20 at 2K plus 2 credits per reference, and provides native standard background removal at no extra cost; `advanced` is unavailable. Background removal and component splitting are enabled by default and can be disabled with `--no-remove-background` and `--no-split-components`.
 - Use `standard` background removal for simple, high-contrast edges and `advanced` for transparency around detailed or visually complex edges.
 - Describe the whole UI system: genre, hierarchy, palette, materials, states, and required components.
 - Generation is not limited to interface graphics. Describe an ordinary asset batch or sprite sheet when that is the desired output.
@@ -150,7 +149,7 @@ Model selection for asset cloning:
 
 - **Color fidelity:** GPT Image2.5 offers richer, more vivid colors and better reproduction of the reference palette. Nano Banana uses more conservative palettes and may depart from the reference colors.
 - **Shape control:** Nano Banana provides stronger control over silhouettes, crisp pixel edges, and consistent volume and scale, making it preferable for pixel assets with strict shape and size constraints. GPT Image2.5 has weaker pixel texture and is more prone to size variation.
-- **Background removal:** GPT Image2.5 adds no background-removal credits. Nano Banana, including 2.1, charges extra when background removal is enabled; use the current quote.
+- **Background removal:** GPT Image2.5 adds no background-removal credits. Nano Banana charges extra when background removal is enabled; use the current quote.
 
 Use `asset-clone-prompt --clone-count 4 --prompt "参考图 1 的布局，生成4 个不同外观的道具，保持美术风格一致。 红色的宝石"` to polish a prompt without generating an image. Use the same `--clone-count` as generation (default 1); polishing preserves that count. Pass the returned prompt to `asset-clone-run --prompt <polished-prompt> --skip-prompt-optimization` to use it verbatim. Without that flag, generation optimizes the prompt. The default prompt is `参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。`. When `--prompt` is omitted, the default prompt uses `--clone-count` (default 1). Explicit prompts are preserved.
 
@@ -161,7 +160,6 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
   --mode pixel \
   --strict \
   --generation-model nano-banana \
-  --generation-speed normal \
   --resolution 1K \
   --remove-bg-method standard \
   --output-dir <output-dir>
@@ -173,7 +171,7 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
 - Use `--regional-pixelation` for a multi-asset image whose detected regions need separate pixel-size handling. It is mutually exclusive with `--strict` and adds the same 2-credit product add-on shown on the web.
 - Use `--multi-pixelation` to receive three pixelated results at no extra charge. Regional pixelation enables it by default; add `--no-multi-pixelation` to receive one result. It also works without regional pixelation.
 - Omitted options follow the web editor's mode defaults: pixel editing uses Nano Banana at 1K, while HD editing uses Image2.5 at 2K. An explicit `--generation-model` or `--resolution` overrides that mode default.
-- `--quality standard|detailed|ultimate` applies to Image-2. `--generation-speed normal|fast` applies to Nano Banana.
+- `--quality standard|detailed|ultimate` applies to Image-2. Nano Banana has no speed option.
 - Pixel mode supports `none`, `standard`, and `advanced` background removal. HD edits keep their normal background unless the dedicated background-removal command is used afterward.
 
 ## Edit a user-marked region with Nano Banana
@@ -187,7 +185,6 @@ When the user supplies an original image and a mask, pass both as ordinary refer
 ```bash
 python3 skills/game-assets/meowart_api.py general-image-run \
   --generation-model nano-banana \
-  --model gemini-nano-banana-2.1 \
   --reference-image <original.png> \
   --reference-image <mask.png> \
   --prompt "Image 1 is the original; image 2 is its mask. Replace the sofa only where the mask is white with a brown leather sofa. Preserve everything under black. Return the edited original without mask markings." \
@@ -208,7 +205,6 @@ python3 skills/game-assets/meowart_api.py animation-edit-run \
   --reference-image <armor-reference.png> \
   --prompt "Apply the armor design consistently to every frame" \
   --mode pixel \
-  --generation-speed normal \
   --remove-bg-method advanced \
   --output-dir <output-dir>
 ```

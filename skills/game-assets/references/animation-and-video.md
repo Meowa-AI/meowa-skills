@@ -57,7 +57,6 @@ Use `animation-edit-run` from the UI and image-editing module when the source is
 python3 skills/game-assets/meowart_api.py self-loop-run \
   --image-file <background.png> \
   --variant four-way \
-  --generation-speed normal \
   --resolution 1K \
   --output-dir <output-dir>
 ```

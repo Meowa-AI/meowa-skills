@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.19.1"
+MEOWART_API_CLI_VERSION = "2026.10.21.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -82,15 +82,8 @@ MEOWART_ENDPOINT_HINT = (
 GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
 NANO_BANANA_MODEL = "gemini-3.1-flash-image"
 IMAGE_2_MODEL = "gpt-image-2"
-NANO_BANANA_MODELS = (
-    "gemini-nano-banana-2.1",
-    "gemini-3.1-flash-lite-image",
-    "gemini-3.1-flash-image",
-    "gemini-3-pro-image",
-)
 GENERATION_MODEL_CHOICES = ("nano-banana", "image-2")
 UI_GENERATION_MODEL_CHOICES = (*GENERATION_MODEL_CHOICES, "image-2.5")
-GENERATION_SPEED_CHOICES = ("normal", "fast")
 IMAGE2_QUALITY_CHOICES = ("standard", "detailed", "ultimate")
 SPINE_AGENT_DEFAULT_TEMPLATE_NAME = (
     "character_template_2head_celestial_librarian"
@@ -3432,7 +3425,7 @@ def submit_hd_gen(
         "quality_mode": quality_mode,
         "remove_bg_method": remove_bg_method,
         "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2_5" if generation_model == "image-2.5" else "image2",
-        "generation_speed": generation_speed,
+        "generation_speed": "normal",
     }
     if project_id is not None:
         data["project_id"] = project_id
@@ -4096,7 +4089,7 @@ def submit_pixel_gen_self_loop(
         "resolution": resolution,
         "mode": mode,
         "direction": direction,
-        "generation_speed": generation_speed,
+        "generation_speed": "normal",
     }
     files = {"file": (path.name, path.read_bytes(), _mime_for_path(path))}
     url = _normalize_base_url(api_base, "/api/workflows/pixel_gen_self_loop/run")
@@ -4243,7 +4236,6 @@ def submit_general_image(
     resolution: str = "1K",
     aspect_ratio: str = "1:1",
     quality: str = "standard",
-    model: str = NANO_BANANA_MODEL,
     generation_speed: str = "normal",
     remove_bg_method: str = "none",
     timeout: int = DEFAULT_TIMEOUT,
@@ -4267,28 +4259,15 @@ def submit_general_image(
         reference_images=reference_images,
     )
     is_nano_banana = normalized_capability == "nano-banana"
-    normalized_model = str(model or NANO_BANANA_MODEL).strip()
-    if is_nano_banana and normalized_model not in NANO_BANANA_MODELS:
-        raise ValueError(f"model must be one of: {', '.join(NANO_BANANA_MODELS)}")
-    if is_nano_banana:
-        if normalized_model == "gemini-3.1-flash-lite-image" and resolution != "1K":
-            raise ValueError("gemini-3.1-flash-lite-image supports only 1K")
-        if resolution == "512" and normalized_model != "gemini-3.1-flash-image":
-            raise ValueError("512 resolution is available only for gemini-3.1-flash-image")
-        if normalized_model == "gemini-3-pro-image" and aspect_ratio in {"1:4", "4:1", "1:8", "8:1"}:
-            raise ValueError("gemini-3-pro-image does not support extreme 1:4, 4:1, 1:8, or 8:1 ratios")
+    normalized_model = NANO_BANANA_MODEL
     if not is_nano_banana:
         normalized_model = "gpt-image-2.5-sunburst" if normalized_capability == "image-2.5" else IMAGE_2_MODEL
-    if generation_speed not in GENERATION_SPEED_CHOICES:
-        raise ValueError("generation_speed must be one of: normal, fast")
-    if is_nano_banana and normalized_model == "gemini-nano-banana-2.1" and generation_speed != "normal":
-        raise ValueError("Nano Banana 2.1 supports only normal generation_speed")
     payload = {
         "generationProvider": "nanobanana" if is_nano_banana else "image2_5" if normalized_capability == "image-2.5" else "image2",
         "model": normalized_model,
         "image2Quality": "medium" if is_nano_banana else quality_map[normalized_quality],
-        "generationSpeed": generation_speed,
-        "resolution": resolution,
+        "generationSpeed": "normal",
+        "resolution": "512px" if is_nano_banana and resolution == "512" else resolution,
         "aspectRatio": aspect_ratio,
         "requestBody": request_body,
         **({"removeBgMethod": remove_bg_method} if normalized_capability == "image-2.5" else {}),
@@ -4317,7 +4296,6 @@ def run_general_image(
     resolution: str = "1K",
     aspect_ratio: str = "1:1",
     quality: str = "standard",
-    model: str = NANO_BANANA_MODEL,
     generation_speed: str = "normal",
     remove_bg_method: str = "none",
     timeout: int = DEFAULT_TIMEOUT,
@@ -4334,7 +4312,6 @@ def run_general_image(
         resolution=resolution,
         aspect_ratio=aspect_ratio,
         quality=quality,
-        model=model,
         generation_speed=generation_speed,
         remove_bg_method=remove_bg_method,
         timeout=timeout,
@@ -5705,7 +5682,7 @@ def submit_character_multi_view_generator(
     data: dict[str, str] = {
         "pixel": "true" if normalized_mode == "pixel" else "false",
         "canvas_resolution": normalized_canvas_resolution,
-        "generation_speed": generation_speed,
+        "generation_speed": "normal",
         "orientation": orientation,
         "direction_mode": direction_mode,
         "aspect_ratio": aspect_ratio,
@@ -5848,8 +5825,6 @@ def submit_ui_generator(
         raise ValueError("generation_model must be one of: nano-banana, image-2, image-2.5")
     if generation_model == "image-2.5" and normalized_remove_bg_method == "advanced":
         raise ValueError("Image 2.5 background removal supports only none or standard")
-    if generation_speed not in GENERATION_SPEED_CHOICES:
-        raise ValueError("generation_speed must be one of: normal, fast")
     effective_remove_bg_method = normalized_remove_bg_method if remove_background else "none"
     data: dict[str, str] = {
         "prompt": prompt,
@@ -5863,7 +5838,7 @@ def submit_ui_generator(
             if generation_model == "image-2.5"
             else "image2"
         ),
-        "generation_speed": generation_speed,
+        "generation_speed": "normal",
         "background_color": background_color,
         "remove_background": "true" if remove_background else "false",
         "remove_bg_method": effective_remove_bg_method,
@@ -5978,7 +5953,7 @@ def submit_map_workflow(
     data: dict[str, str] = {
         "prompt": prompt,
         "mode": mode,
-        "generation_speed": generation_speed,
+        "generation_speed": "normal",
         "similar_tiles": "true" if similar_tiles else "false",
         "tile_only": "true" if tile_only and mode == "standard" else "false",
     }
@@ -6648,8 +6623,6 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             if parsed.generation_model != "nano-banana":
                 if parsed.resolution not in {"1K", "2K"} or parsed.aspect_ratio not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
                     self.error("Selected image model supports 1K/2K and the standard five aspect ratios")
-                if explicit.intersection({"--model", "--generation-speed"}):
-                    self.error("Model variant and generation speed apply only to Nano Banana")
                 if parsed.generation_model == "image-2" and "--remove-bg-method" in explicit:
                     self.error("Background removal is available only with Image2.5")
             elif explicit.intersection({"--quality", "--remove-bg-method"}):
@@ -6774,11 +6747,6 @@ def build_parser() -> argparse.ArgumentParser:
             if "heptaploid" in modes else "Reference image; can be repeated"
         ))
         command_parser.add_argument("--mode", default="standard", choices=modes)
-        command_parser.add_argument(
-            "--generation-speed",
-            default="normal",
-            choices=GENERATION_SPEED_CHOICES,
-        )
         command_parser.set_defaults(similar_tiles=similar_tiles_default)
         command_parser.add_argument("--similar-tiles", action="store_true", dest="similar_tiles")
         command_parser.add_argument("--no-similar-tiles", action="store_false", dest="similar_tiles")
@@ -6885,17 +6853,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Canvas tier; recommended shared default is 1K",
     )
     nano_banana_run.add_argument(
-        "--model",
-        default=NANO_BANANA_MODEL,
-        choices=NANO_BANANA_MODELS,
-        help="Nano Banana model exposed by the web product; 2.1 supports 1K/2K/4K and normal speed only",
-    )
-    nano_banana_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
-    nano_banana_run.add_argument(
         "--aspect-ratio",
         default="1:1",
         choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"],
@@ -6965,9 +6922,7 @@ def build_parser() -> argparse.ArgumentParser:
                                    help="Image generation model; default Image2.5")
     for action in nano_banana_run._actions[1:]:
         cloned_action = copy.copy(action)
-        if action.dest in {"model", "generation_speed"}:
-            cloned_action.help = f"Nano Banana only. {action.help or ''}".strip()
-        elif action.dest in {"resolution", "aspect_ratio"}:
+        if action.dest in {"resolution", "aspect_ratio"}:
             supported = next(item.choices for item in image_2_run._actions if item.dest == action.dest)
             cloned_action.help = f"{action.help}; Image2/Image2.5: {', '.join(supported)}"
         general_image_run._add_action(cloned_action)
@@ -7007,7 +6962,6 @@ def build_parser() -> argparse.ArgumentParser:
         expansion.add_argument("--resolution", default="1K", choices=["1K", "2K"])
         expansion.add_argument("--aspect-ratio", default="auto", choices=["auto", "16:9", "9:16", "4:3", "3:4", "1:1"])
         expansion.add_argument("--generation-provider", default="nanobanana", choices=["nanobanana", "image2"])
-        expansion.add_argument("--generation-speed", default="normal", choices=["normal", "fast"], help="Applies to Nano Banana")
         expansion.add_argument("--image2-quality", default="medium", choices=["low", "medium", "high"], help="GPT Image2: low=Standard, medium=Detailed, high=Ultimate")
         expansion.add_argument("--overlap-percent", type=_bounded_integer(10, 50), default=20)
         expansion.add_argument("--feather-percent", type=_bounded_integer(0, 49), default=10)
@@ -7057,11 +7011,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=IMAGE2_QUALITY_CHOICES,
         help="Image2 quality: Standard, Detailed, or Ultimate",
     )
-    image_edit_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
     image_edit_run.set_defaults(aspect_ratio="auto")
     image_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
 
@@ -7091,11 +7040,6 @@ def build_parser() -> argparse.ArgumentParser:
     animation_edit_run.add_argument("--prompt", required=True, help="Describe the requested animation edit")
     animation_edit_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
     animation_edit_run.add_argument("--remove-bg-method", default="advanced", choices=["none", "standard", "advanced"])
-    animation_edit_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
 
     one_click_prompts = subparsers.add_parser(
         "one-click-upgrade-prompts",
@@ -7130,11 +7074,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="standard",
         choices=IMAGE2_QUALITY_CHOICES,
         help="Image2 quality: Standard, Detailed, or Ultimate",
-    )
-    one_click_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
     )
     one_click_run.add_argument("--resolution", default="", choices=["1K", "2K"])
     one_click_run.add_argument("--remove-bg-method", default="none", choices=["none", "standard", "advanced"])
@@ -7201,7 +7140,6 @@ def build_parser() -> argparse.ArgumentParser:
     side_map_run.add_argument("--background", required=True)
     side_map_run.add_argument("--foreground", required=True)
     side_map_run.add_argument("--remove-bg-method", default="standard", choices=["standard", "advanced"])
-    side_map_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     side_map_run.add_argument("--loop-midground", action="store_true", help="Make the midground loop horizontally")
     side_map_run.add_argument("--loop-background", action="store_true", help="Make the background loop horizontally")
     side_map_run.add_argument("--loop-foreground", action="store_true", help="Make the foreground loop horizontally")
@@ -7217,7 +7155,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["2d_hd", "2d_cartoon", "2d_ink", "clay", "low_poly_3d", "steampunk", "anime_hd"],
     )
     hd_side_map_run.add_argument("--custom-art-style", default="")
-    hd_side_map_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     hd_side_map_run.add_argument("--loop-midground", action="store_true", help="Make the midground loop horizontally")
     hd_side_map_run.add_argument("--loop-background", action="store_true", help="Make the background loop horizontally")
     hd_side_map_run.add_argument("--loop-foreground", action="store_true", help="Make the foreground loop horizontally")
@@ -7233,7 +7170,6 @@ def build_parser() -> argparse.ArgumentParser:
     pixel_submit.add_argument("--resolution", default="", help=argparse.SUPPRESS)
     pixel_submit.add_argument("--aspect-ratio", default="1:1")
     pixel_submit.add_argument("--direction", default="", help="Preset direction exposed by the selected web preset")
-    pixel_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     pixel_submit.add_argument("--remove-bg-method", default="advanced", choices=["none", "standard", "advanced"])
     pixel_submit.add_argument("--reference-file", default="", help="Optional user reference image sent as reference_file")
     pixel_submit.add_argument("--reference-files", action="append", default=[], help="Optional user reference image; can be repeated")
@@ -7275,11 +7211,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "standard"],
         help="Keep the composed background or remove a simple background",
     )
-    large_pixel_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
 
     pixel_universal_run = subparsers.add_parser(
         "pixel-universal-gen-run",
@@ -7297,11 +7228,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--aspect-ratio",
         default="4:3",
         choices=["4:3", "3:4", "2:1", "1:2", "2:3", "3:2"],
-    )
-    pixel_universal_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
     )
     pixel_universal_run.add_argument(
         "--view",
@@ -7366,11 +7292,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         choices=["none", "standard", "advanced"],
     )
-    custom_size_pixel_run.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
     custom_size_pixel_run.set_defaults(fill_canvas=True)
     custom_size_pixel_run.add_argument(
         "--fill-canvas",
@@ -7432,7 +7353,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=UI_GENERATION_MODEL_CHOICES,
         help="Generation model (default: image-2.5)",
     )
-    hd_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES, help="Generation speed for nano-banana only")
     hd_submit.add_argument("--direction", default="", help="Preset direction exposed by the selected web preset")
     hd_submit.add_argument(
         "--remove-bg-method",
@@ -7490,11 +7410,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     character_multi_view_submit.add_argument("--mode", default="hd", choices=["pixel", "hd"])
     character_multi_view_submit.add_argument("--canvas-resolution", default="1K", choices=["1K", "2K"])
-    character_multi_view_submit.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
     character_multi_view_submit.add_argument(
         "--orientation",
         default="纵版",
@@ -7607,11 +7522,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help=argparse.SUPPRESS,
     )
-    self_loop_submit.add_argument(
-        "--generation-speed",
-        default="normal",
-        choices=GENERATION_SPEED_CHOICES,
-    )
 
     self_loop_run = subparsers.add_parser("self-loop-run", help="Create a seamless loop from an image")
     for action in self_loop_submit._actions[1:]:
@@ -7720,7 +7630,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="image-2.5",
         choices=UI_GENERATION_MODEL_CHOICES,
     )
-    ui_submit.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
     ui_submit.add_argument(
         "--background-color",
         default="#cccccc",
@@ -7954,7 +7863,6 @@ def build_parser() -> argparse.ArgumentParser:
     pindou_run.add_argument("--prompt", default="")
     pindou_run.add_argument("--size-mode", default="52", choices=["source", "52", "78", "104", "custom"])
     pindou_run.add_argument("--custom-size", type=int, default=None)
-    pindou_run.add_argument("--generation-speed", default="normal", choices=GENERATION_SPEED_CHOICES)
 
     spine_run = subparsers.add_parser("spine-run", help="Generate a reskinned Spine character package")
     add_shared_path_args(spine_run)
@@ -8413,6 +8321,8 @@ def build_parser() -> argparse.ArgumentParser:
         if action.dest == "nano-banana-poll":
             action.metavar += " (general-image-" + action.dest.rsplit("-", 1)[1] + ")"
 
+    for command_parser in subparsers.choices.values():
+        command_parser.set_defaults(generation_speed="normal")
     return parser
 
 
@@ -8950,7 +8860,6 @@ def main() -> int:
                 resolution=args.resolution,
                 aspect_ratio=args.aspect_ratio,
                 quality=getattr(args, "quality", "standard"),
-                model=getattr(args, "model", NANO_BANANA_MODEL),
                 generation_speed=getattr(args, "generation_speed", "normal"),
                 remove_bg_method=getattr(args, "remove_bg_method", "none"),
                 timeout=args.timeout,
@@ -9085,7 +8994,7 @@ def main() -> int:
                         "detailed": "medium",
                         "ultimate": "high",
                     }[args.quality],
-                    "generation_speed": args.generation_speed,
+                    "generation_speed": "normal",
                 }
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
 
@@ -9143,7 +9052,7 @@ def main() -> int:
                     "generation_provider": (
                         "nanobanana" if generation_model == "nano-banana" else "image2"
                     ),
-                    "generation_speed": generation_speed,
+                    "generation_speed": "normal",
                 }
                 files.extend(
                     ("reference_images", _upload_part(path, label="reference image"))
@@ -9164,7 +9073,7 @@ def main() -> int:
                     "prompt": args.prompt,
                     "mode": args.mode,
                     "remove_bg_method": args.remove_bg_method,
-                    "generation_speed": args.generation_speed,
+                    "generation_speed": "normal",
                 }
                 files.append(("source_animation", _upload_part(args.animation_file, label="animation file")))
                 files.extend(("reference_images", _upload_part(path, label="reference image")) for path in references)
@@ -9318,7 +9227,7 @@ def main() -> int:
                     "mode": args.mode,
                     "prompt": args.prompt,
                     "size_mode": args.size_mode,
-                    "generation_speed": args.generation_speed,
+                    "generation_speed": "normal",
                 }
                 if args.custom_size is not None:
                     data["custom_size"] = str(args.custom_size)
@@ -9450,7 +9359,7 @@ def main() -> int:
             template_config = _parse_json_arg(args.template_config, name="template_config")
             template_config.update(
                 {
-                    "generation_speed": args.generation_speed,
+                    "generation_speed": "normal",
                     "remove_bg_method": args.remove_bg_method,
                 }
             )
@@ -9494,7 +9403,7 @@ def main() -> int:
             template_config = _parse_json_arg(args.template_config, name="template_config")
             template_config.update(
                 {
-                    "generation_speed": args.generation_speed,
+                    "generation_speed": "normal",
                     "remove_bg_method": args.remove_bg_method,
                 }
             )
@@ -9705,7 +9614,7 @@ def main() -> int:
                 "quality_mode": args.quality_mode,
                 "remove_bg_method": args.remove_bg_method,
                 "generation_model": args.generation_model,
-                "generation_speed": args.generation_speed,
+                "generation_speed": "normal",
                 "reference_file": args.reference_file,
                 "reference_files": list(args.reference_files or []),
                 "project_id": args.project_id,
@@ -9760,7 +9669,7 @@ def main() -> int:
                 "quality_mode": args.quality_mode,
                 "remove_bg_method": args.remove_bg_method,
                 "generation_model": args.generation_model,
-                "generation_speed": args.generation_speed,
+                "generation_speed": "normal",
                 "reference_file": args.reference_file,
                 "reference_files": list(args.reference_files or []),
                 "project_id": args.project_id,
@@ -10592,7 +10501,7 @@ def main() -> int:
                 "remove_bg_method": args.remove_bg_method,
                 "generation_mode": args.generation_mode,
                 "generation_model": args.generation_model,
-                "generation_speed": args.generation_speed,
+                "generation_speed": "normal",
                 "background_color": args.background_color,
                 "remove_background": args.remove_background,
                 "split_components": args.split_components,
@@ -10641,7 +10550,7 @@ def main() -> int:
                 "remove_bg_method": args.remove_bg_method,
                 "generation_mode": args.generation_mode,
                 "generation_model": args.generation_model,
-                "generation_speed": args.generation_speed,
+                "generation_speed": "normal",
                 "background_color": args.background_color,
                 "remove_background": args.remove_background,
                 "split_components": args.split_components,
@@ -10708,7 +10617,7 @@ def main() -> int:
                 "template": getattr(args, "template", ""),
                 "style_name": getattr(args, "style_name", ""),
                 "style_description": getattr(args, "style_description", ""),
-                "generation_speed": generation_speed,
+                "generation_speed": "normal",
                 "similar_tiles": similar_tiles,
                 "tile_only": tile_only,
                 "generation_model": getattr(args, "generation_model", "nano-banana"),

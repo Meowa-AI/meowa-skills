@@ -121,7 +121,7 @@ python3 skills/game-assets/meowart_api.py general-image-run \
 
 Repeat `--reference-image` for visual constraints. Use `general-image-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted task without resubmitting it.
 
-The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. `--model` and `--generation-speed` are Nano Banana options. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana retains its model-dependent resolution and aspect-ratio options.
+The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. Nano Banana uses automatic internal routing and one credit rate. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana supports 512/1K/2K/4K and all 14 aspect ratios.
 
 Use Nano Banana for flexible composition, broad aspect-ratio support, and reference-guided generation:
 
@@ -254,13 +254,12 @@ python3 skills/game-assets/meowart_api.py character-multi-view-run \
   --mode pixel \
   --canvas-resolution 1K \
   --orientation 纵版 \
-  --generation-speed normal \
   --extra-constraint "角色行走动作，迈开双腿，一前一后" \
   --output-dir <output-dir>
 ```
 
 - The web-aligned default is HD mode. Pixel mode supports 1K or 2K; HD mode uses 2K.
-- Select the same `横版` or `纵版` orientation shown by the web editor. Pixel mode also exposes `normal` or `fast` generation speed.
+- Select the same `横版` or `纵版` orientation shown by the web editor. Nano Banana uses unified generation pricing.
 - Put pose, clothing, silhouette, or consistency requirements in `--extra-constraint`.
 - The generated left and right views are typically mirrored. That is fast for a still eight-direction sheet, but it is not physically consistent: asymmetric clothing, weapons, or handedness will flip.
 - This command is not a one-click unmirrored turnaround. When the user needs eight-direction views that obey physical left/right instead of mirroring, use Frame Animation V2 (`meowa-animation-run`) with the same Multi-view shortcut as the web UI:
@@ -316,4 +315,4 @@ The public command always uses automatic pixel-size detection. Review the result
 
 Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.
 
-Nano Banana 2.1 is available in general generation: `nano-banana-run --model gemini-nano-banana-2.1 --prompt "..."`. It supports 1K/2K/4K (5/10/20 credits), all 14 aspect ratios, and only `--generation-speed normal` (default). Each reference image adds 2 credits. The default model remains `gemini-3.1-flash-image`.
+Nano Banana exposes one product model. Internal version selection is automatic. Generation costs 10/20/40 credits at 1K/2K/4K; 512px costs 5. Each reference image adds 2 credits.
