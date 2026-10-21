@@ -139,7 +139,9 @@ python3 skills/game-assets/meowart_api.py <command> --help
 - **形体控制**：Nano Banana 对轮廓、像素边缘和体积尺度的一致性控制更强，适合形体及尺寸约束严格的像素资产；GPT Image2.5 像素质感相对较弱，资产尺寸更容易变化。
 - **去背景**：GPT Image2.5 去背景不收附加积分；Nano Banana开启去背景需额外积分，以当前报价为准。
 
-`asset-clone-prompt --clone-count 4 --prompt "..."` 使用同一个 API 的 `prompt_only=true` 单独润色提示词，不生成图片；`--clone-count` 与生成使用同一数量（默认 1），润色后的指令保留该数量。将返回的提示词传给 `asset-clone-run --prompt "..." --skip-prompt-optimization` 可直接使用；不带该标志时生成阶段会运行提示词优化。默认提示词为「参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。」 素材克隆省略 `--prompt` 时，默认指令中的数量跟随 `--clone-count`（默认 1）；显式传入的提示词保持原样。
+素材克隆默认跳过润色（`--skip-prompt-optimization` 已开启）。省略 `--prompt` 时使用「参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。」，数量随 `--clone-count`（默认 1）变化；有额外要求或图内实际数量不同时，显式传入完整 `--prompt`，原样使用，不追加模板、不改数量。`--clone-count` 是拼接格数，仅支持 1、4、9、16、25、36，尽量匹配输入张数；单张组合图通常保持 1，在 prompt 中写实际 N 个物体，避免整图重复拼接。详见 [素材克隆数量规则](references/ui-and-image-editing.md#match-the-count-to-the-input)。
+
+仅在需要润色时使用 `asset-clone-prompt --clone-count 4 --prompt "..."`，它通过同一 API 的 `prompt_only=true` 返回提示词，不生成图片。润色会将基础句数量改为 `--clone-count`，不适合图内物体数与格数不同的情况；检查返回内容后传给 `asset-clone-run --prompt "..."` 即可。
 万能编辑 `--multi-pixelation` 返回三张像素化结果，不额外收费。`--regional-pixelation` 默认启用多重像素化，可用 `--no-multi-pixelation` 单独关闭；不分区时也可单独开启。
 
 HD hex 公开 `--mode standard`（默认）和 `tetraploid`。七倍体与 Image2 暂时关闭。

@@ -1,6 +1,6 @@
 {
-  "version": "2026.10.21.1",
+  "version": "2026.10.21.2",
   "artifact_policy_version": 1,
   "runner": "meowart_api.py",
-  "sha256": "e2b1c73ba3e3a07213ac60127368100d58bb371ba8ae67be7b6a2325f1633de8"
+  "sha256": "28c6619f79f42713ede6c3a219b50f8ba13d33a6704353432e47e1c61b21941f"
 }

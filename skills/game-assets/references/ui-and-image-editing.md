@@ -141,9 +141,9 @@ python3 skills/game-assets/meowart_api.py one-click-upgrade-run \
 - Background removal defaults to `none`. Use `standard` or `advanced` for pixel outputs that must be isolated; HD mode supports `none` or `standard`.
 - Open every result and compare style, approximate subject size, anchor, silhouette, transparency, and actual canvas dimensions.
 
-## Edit still images
+## Clone assets
 
-Use `asset-clone-run --reference-image <source.png> --clone-count 4 --prompt "A sword, a dagger, a red gem" --output-dir <output-dir>` for a complete 2×2 sheet. Repeat `--reference-image` for more references. Inputs must share dimensions; when they do not, specify `--cell-width`, `--cell-height`, and `--fit-mode pad|crop` for centered correction without scaling. Pixel and HD both default to Image2.5, 1K, and Detailed quality with standard background removal. Pixel mode enables regional quantization and three complete pixelation variants. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal. Use `--quality standard|detailed|ultimate` for Image2.5. Canvas selection follows Universal Edit. Pixel scale must be at least 2; HD scale must be at least 0.5. Oversize references are rejected before composition or charging.
+Use `asset-clone-run --reference-image <source.png> --clone-count 4 --prompt "A sword, a dagger, a red gem, a blue shield" --output-dir <output-dir>` for a complete 2×2 sheet. Repeat `--reference-image` for more references. Inputs must share dimensions; when they do not, specify `--cell-width`, `--cell-height`, and `--fit-mode pad|crop` for centered correction without scaling. Pixel and HD both default to Image2.5, 1K, and Detailed quality with standard background removal. Pixel mode enables regional quantization and three complete pixelation variants. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal. Use `--quality standard|detailed|ultimate` for Image2.5. Canvas selection follows Universal Edit. Pixel scale must be at least 2; HD scale must be at least 0.5. Oversize references are rejected before composition or charging.
 
 Model selection for asset cloning:
 
@@ -151,7 +151,36 @@ Model selection for asset cloning:
 - **Shape control:** Nano Banana provides stronger control over silhouettes, crisp pixel edges, and consistent volume and scale, making it preferable for pixel assets with strict shape and size constraints. GPT Image2.5 has weaker pixel texture and is more prone to size variation.
 - **Background removal:** GPT Image2.5 adds no background-removal credits. Nano Banana charges extra when background removal is enabled; use the current quote.
 
-Use `asset-clone-prompt --clone-count 4 --prompt "参考图 1 的布局，生成4 个不同外观的道具，保持美术风格一致。 红色的宝石"` to polish a prompt without generating an image. Use the same `--clone-count` as generation (default 1); polishing preserves that count. Pass the returned prompt to `asset-clone-run --prompt <polished-prompt> --skip-prompt-optimization` to use it verbatim. Without that flag, generation optimizes the prompt. The default prompt is `参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。`. When `--prompt` is omitted, the default prompt uses `--clone-count` (default 1). Explicit prompts are preserved.
+Generation skips prompt optimization by default (`--skip-prompt-optimization` is already enabled). Omit `--prompt` to use `参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。`, with its quantity replaced by `--clone-count` (default 1). An explicit `--prompt` replaces the entire default and is used verbatim. Use `asset-clone-prompt --clone-count 4 --prompt "..."` only when polishing is requested; it generates no image but rewrites the base quantity to that count. Inspect its result and pass it to `asset-clone-run --prompt <polished-prompt>`.
+
+### Match the count to the input
+
+`--clone-count` controls reference-grid cells and accepts only **1, 4, 9, 16, 25, or 36** (n²).
+
+- **Separate images:** match their count where possible; four one-object images normally use `4`. For non-square counts, default to the next supported square and explain that missing cells repeat references; excess references are ignored.
+- **One composite image:** count its actual N objects in the prompt. Keep `--clone-count 1` to preserve the whole layout, but change `生成1 个` to `生成N 个`. Setting the flag to N repeats the entire image across N cells; it does not split objects.
+- **Prompt/grid mismatch:** pass a complete prompt with the intended N; generation preserves it. Example: one image of four props uses `--clone-count 1 --prompt "参考图 1 的布局，生成4 个不同外观的道具，保持美术风格一致。"`. Avoid `asset-clone-prompt` here because polishing rewrites the base count to the flag's value.
+
+### Help the user adjust the prompt
+
+For `--clone-count 4`, the built-in prompt is `参考图 1 的布局，生成4 个不同外观的美术资产，保持美术风格一致。`. For custom requirements, start from this sentence, replace `美术资产` with `角色`, `道具`, `图标`, or `UI` if needed, append only the desired changes, and pass the full text through `--prompt`.
+
+Offer only examples relevant to the request:
+
+| Goal | Short text to append |
+|---|---|
+| Preserve proportions and scale | `保持参考物体的宽高比例、视角和在格子中的大小，不拉伸。` |
+| Set a shared palette | `所有物体以蓝色和银色为主。` |
+| Vary one object type | `四颗不同外观的宝石：红色菱形，蓝色水滴形，绿色六边形，紫色圆形。` |
+| Specify four different objects | `红色短剑，蓝色圆盾，绿色药瓶，金色钥匙。` |
+
+Combine a shared constraint and a comma-separated list when needed: `参考图 1 的布局，生成4 个不同外观的道具，保持美术风格一致。保持参考物体的宽高比例、视角和在格子中的大小，不拉伸。红色短剑，蓝色圆盾，绿色药瓶，金色钥匙。`
+
+Keep `--clone-count` for the reference grid and the prompt for the intended object count as explained above. When specifying every object, list exactly the intended N; a broad request such as `四个不同外观的药瓶` needs no invented item list. Proportion wording guides generation and does not guarantee exact pixel dimensions or geometry. Cell dimensions and `--fit-mode` control reference preparation, not the generated silhouette.
+
+Show the final prompt before generation; it will be used directly. Polish only when requested, and inspect that proportions, colors, and item descriptions survived. Showing the prompt does not require an extra approval round when generation is already authorized.
+
+## Edit still images
 
 ```bash
 python3 skills/game-assets/meowart_api.py image-edit-run \

@@ -201,7 +201,9 @@ JSON 的 `generation_provider` 可选 `nanobanana`（默认）、`image2`、`ima
 仅模型可切换：内部生成固定 1K、1:1，Nano Banana 固定普通模式，GPT Image2 固定精细，GPT Image2.5 固定极致；不接受质量、分辨率或路由参数。
 原有类型、风格、Padding 和额外要求按所选模板提供。GPT Image2.5 使用原生透明，20 积分；其他模型含高级抠图，30 积分。透明失败则任务失败，不追加抠图。
 
-Asset cloning (`asset-clone-run`) uses `--clone-count` in its default prompt (default 1); explicit prompts are preserved. `asset-clone-prompt` also accepts `--clone-count` (default 1) and preserves it when polishing. It defaults to Image2.5, 1K, and Detailed quality in both pixel and HD modes. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal.
+Asset cloning (`asset-clone-run`) skips prompt optimization by default. Omit `--prompt` to use the built-in layout-and-style sentence with the quantity from `--clone-count` (default 1). For custom requirements or a different actual object count, pass the complete `--prompt`; it is used verbatim, without adding the template or replacing quantities. `asset-clone-prompt` is optional explicit polishing and uses `--clone-count` in its base sentence. Generation defaults to Image2.5, 1K, and Detailed quality in both pixel and HD modes. Nano Banana uses fixed Standard quality and defaults to no background removal; Image2.5 defaults to standard background removal.
+
+For asset cloning, explain the built-in prompt and help the user add only the needed proportion, color, or appearance constraints. `--clone-count` accepts only 1, 4, 9, 16, 25, or 36 reference-grid cells; distinguish this from the actual object count inside a composite image. Show the final prompt before generation. Read [Clone assets](references/ui-and-image-editing.md#clone-assets) for count selection, short examples, and how to preview or skip prompt optimization.
 
 素材克隆的模型选择：
 

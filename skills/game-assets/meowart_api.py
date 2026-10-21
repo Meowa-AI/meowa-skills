@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.21.1"
+MEOWART_API_CLI_VERSION = "2026.10.21.2"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -7017,9 +7017,9 @@ def build_parser() -> argparse.ArgumentParser:
     asset_clone_run = subparsers.add_parser("asset-clone-run", help="Clone a sheet of consistent game-art assets")
     add_shared_path_args(asset_clone_run)
     asset_clone_run.add_argument("--reference-image", action="append", required=True, help="Input image; repeat up to 36 times")
-    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", help="Shared requirements and asset descriptions; the default prompt uses --clone-count", action=ImageEditOptionAction)
-    asset_clone_run.add_argument("--skip-prompt-optimization", action="store_true", help="Use the supplied prompt without AI optimization")
-    asset_clone_run.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36])
+    asset_clone_run.add_argument("--prompt", default="参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", help="Use this text verbatim; when omitted, the built-in prompt uses --clone-count", action=ImageEditOptionAction)
+    asset_clone_run.add_argument("--skip-prompt-optimization", action="store_true", default=True, help="Use the prompt without AI optimization (default); use asset-clone-prompt to polish explicitly")
+    asset_clone_run.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36], help="Square reference-grid cell count; match input image count where possible. For one composite image, keep 1 and describe its actual object count in --prompt")
     asset_clone_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
     asset_clone_run.add_argument("--generation-model", default="image-2.5", choices=["nano-banana", "image-2.5"], action=ImageEditOptionAction)
     asset_clone_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
