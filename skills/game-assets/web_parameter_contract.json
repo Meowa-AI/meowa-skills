@@ -82,7 +82,6 @@
           "flag": "--resolution",
           "default": "1K",
           "choices": [
-            "512",
             "1K",
             "2K",
             "4K"

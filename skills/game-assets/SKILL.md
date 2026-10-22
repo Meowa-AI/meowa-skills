@@ -213,7 +213,7 @@ For asset cloning, explain the built-in prompt and help the user add only the ne
 - **形体控制**：Nano Banana 对轮廓、像素边缘和体积尺度的一致性控制更强，适合形体及尺寸约束严格的像素资产；GPT Image2.5 像素质感相对较弱，资产尺寸更容易变化。
 - **去背景**：GPT Image2.5 去背景不收附加积分；Nano Banana开启去背景需额外积分，以当前报价为准。
 
-Nano Banana exposes one product model. Internal version selection is automatic. Generation costs 10/20/40 credits at 1K/2K/4K; 512px costs 5. Each reference image adds 2 credits.
+Nano Banana exposes one product model. Generation uses Nano Banana 2.1. Generation costs 10/20/40 credits at 1K/2K/4K. Each reference image adds 2 credits.
 
 
 Final downloads use the server-selected URL, including the domestic media domain. Re-query an existing successful job to obtain its current route; never guess a replacement hostname. Small image downloads share a 45-second budget across at most three attempts, and files are saved only after a complete media response. Large media uses bounded inactive reads. `general-image-run` mirrors the web model selector (default Image2.5, Standard, 1K, 1:1, no background removal); `general-image-poll` resumes the original job. Model-specific legacy commands retain the same requests. The runner is statically distributed; there is no remote bootstrap execution.

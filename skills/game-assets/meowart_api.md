@@ -160,7 +160,7 @@ References are limited to 4.5 seconds. Output duration is selected automatically
 
 Video-reference editing: both `meowa-animation-edit-prompts` and `meowa-animation-edit-run` accept `--background-color '#RRGGBB'` (default `#ffffff`). The same color fills transparent pixels in every reference-animation frame and the appearance image; opaque pixels are unchanged. Use the same color for polishing and generation. Background filling adds no credits.
 
-Nano Banana exposes one product model. Internal version selection is automatic. Generation costs 10/20/40 credits at 1K/2K/4K; 512px costs 5. Each reference image adds 2 credits.
+Nano Banana exposes one product model. Generation uses Nano Banana 2.1. Generation costs 10/20/40 credits at 1K/2K/4K. Each reference image adds 2 credits.
 
 HD frame animation: `meowa-animation-run` and `meowa-animation-edit-run` accept `--auto-scale-to-input` (default off). It restores the final WebP to the input dimensions using smooth scaling, preserves the original as a second WebP, and adds no credits. With background removal, only the final transparent animation is scaled.
 

@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.21.4"
+MEOWART_API_CLI_VERSION = "2026.10.22.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -80,7 +80,7 @@ MEOWART_ENDPOINT_HINT = (
     "or a documented workflow command for specialized assets."
 )
 GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
-NANO_BANANA_MODEL = "gemini-3.1-flash-image"
+NANO_BANANA_MODEL = "gemini-nano-banana-2.1"
 IMAGE_2_MODEL = "gpt-image-2"
 GENERATION_MODEL_CHOICES = ("nano-banana", "image-2")
 UI_GENERATION_MODEL_CHOICES = (*GENERATION_MODEL_CHOICES, "image-2.5")
@@ -4310,7 +4310,7 @@ def submit_general_image(
         "model": normalized_model,
         "image2Quality": "medium" if is_nano_banana else quality_map[normalized_quality],
         "generationSpeed": "normal",
-        "resolution": "512px" if is_nano_banana and resolution == "512" else resolution,
+        "resolution": resolution,
         "aspectRatio": aspect_ratio,
         "requestBody": request_body,
         **({"removeBgMethod": remove_bg_method} if normalized_capability == "image-2.5" else {}),
@@ -6937,7 +6937,7 @@ def build_parser() -> argparse.ArgumentParser:
     nano_banana_run.add_argument(
         "--resolution",
         default="1K",
-        choices=["512", "1K", "2K", "4K"],
+        choices=["1K", "2K", "4K"],
         help="Canvas tier; recommended shared default is 1K",
     )
     nano_banana_run.add_argument(

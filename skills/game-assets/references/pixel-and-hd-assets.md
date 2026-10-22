@@ -121,7 +121,7 @@ python3 skills/game-assets/meowart_api.py general-image-run \
 
 Repeat `--reference-image` for visual constraints. Use `general-image-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted task without resubmitting it.
 
-The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. Nano Banana uses automatic internal routing and one credit rate. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana supports 512/1K/2K/4K and all 14 aspect ratios.
+The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. Nano Banana uses automatic internal routing and one credit rate. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana supports 1K/2K/4K and all 14 aspect ratios.
 
 Use Nano Banana for flexible composition, broad aspect-ratio support, and reference-guided generation:
 
@@ -329,4 +329,4 @@ The public command always uses automatic pixel-size detection. Review the result
 
 Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.
 
-Nano Banana exposes one product model. Internal version selection is automatic. Generation costs 10/20/40 credits at 1K/2K/4K; 512px costs 5. Each reference image adds 2 credits.
+Nano Banana exposes one product model. Generation uses Nano Banana 2.1. Generation costs 10/20/40 credits at 1K/2K/4K. Each reference image adds 2 credits.
