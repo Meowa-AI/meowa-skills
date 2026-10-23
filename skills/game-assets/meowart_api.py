@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.22.1"
+MEOWART_API_CLI_VERSION = "2026.10.23.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -1539,7 +1539,8 @@ def _download_file(
                 raise requests.Timeout("media download deadline exceeded")
             partial.replace(target_path)
             return content_type
-        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as exc:
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError,
+                requests.exceptions.ChunkedEncodingError) as exc:
             last_error = exc
             status = int(getattr(response, "status_code", 0) or 0)
             if isinstance(exc, requests.HTTPError) and status not in {429, 500, 502, 503, 504}:
