@@ -121,7 +121,7 @@ python3 skills/game-assets/meowart_api.py general-image-run \
 
 Repeat `--reference-image` for visual constraints. Use `general-image-poll --job-id <original-job-id> --output-dir <output-dir>` to recover an interrupted task without resubmitting it.
 
-The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. Nano Banana uses automatic internal routing and one credit rate. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana supports 1K/2K/4K and 13 aspect ratios, excluding 21:9 and 9:21.
+The old `image-2.5-run`, `image-2-run`, and `nano-banana-run` commands remain compatible; see the [command mapping](../SKILL.md#choose-general-generation-or-a-template). `--quality` is available for Image2 and Image2.5; `--remove-bg-method` only for Image2.5. Nano Banana uses automatic internal routing and one credit rate; temperature is not configurable. Image2 and Image2.5 support 1K/2K and 1:1, 3:4, 4:3, 9:16, 16:9; Nano Banana supports 1K/2K/4K and 13 aspect ratios, excluding 21:9 and 9:21.
 
 Use Nano Banana for flexible composition, broad aspect-ratio support, and reference-guided generation:
 

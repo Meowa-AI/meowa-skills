@@ -186,6 +186,7 @@ Pixel background removal supports `--preserve-translucency` (default off) for bo
 ### 通用生成 `general-image-run`
 
 `general-image-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
+Nano Banana 不提供 temperature 设置。
 质量仅支持 `standard/detailed/ultimate`，对应网页 普通/精细/极致 与 canonical `low/medium/high`。
 `--resolution 1K|2K` 默认 1K；`--aspect-ratio` 默认 1:1，支持 1:1、3:4、4:3、9:16、16:9。
 可重复 `--reference-image` 传参考图；失败或中断用 `general-image-poll --job-id ...` 恢复，勿重复提交。
