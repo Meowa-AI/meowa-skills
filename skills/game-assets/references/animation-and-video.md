@@ -4,8 +4,8 @@
 
 Use this order rather than routing directly to video:
 
-1. Default to `meowa-animation-run`, matching the web main panel (16 frames, Pixel, 480P). See [Frame animation (new)](#frame-animation-new). Choose HD explicitly for HD art.
-2. Use `animate-run` for the established engine or its intelligence tiers, and `keyframes-run` for two or more controlled poses. These are separate web capabilities, with different frame limits and output formats.
+1. Choose V1 or V2 using the [routing comparison](capability-routing.md#choose-v1-or-v2-animation). Default to V2 (`meowa-animation-run`), matching the web main panel (16 frames, Pixel, 480P), except where V1 Pixel better suits the motion. See [Frame animation (new)](#frame-animation-new). Choose HD explicitly for HD art.
+2. Recommend V1 Pixel (`animate-run`) only for simple idle, walk, or run, following the comparison above; use `keyframes-run` for two or more controlled poses. These are separate web capabilities, with different frame limits and output formats.
 3. Use `video-run` only when ordinary animation and keyframe control remain insufficient, or when the deliverable genuinely needs higher-resolution video.
 
 ## How to create a high-quality animation
@@ -134,6 +134,14 @@ With standard background removal, `--remove-bg-batch-size` accepts `2`, `4`, `8`
 Add `--last-image-file <last-frame.png>` for first-to-last-frame control. The two images must have identical dimensions. When a last frame is supplied, the runner ignores `--animation-mode loop` and submits `non_loop`, because the exact last frame is the endpoint, and an omitted `--output-frames` defaults to 24 (3 seconds) instead of 16, matching the web UI: 2-second first/last clips tend to freeze between the two frames. Pass `--output-frames` explicitly to keep another duration.
 
 Use `--style-mode hd` for smooth high-definition output. HD supports `none` and `standard` background removal; `advanced` is temporarily unavailable. Source padding stays independent from style and is applied before generation. The final downloaded WebP always loops; `--animation-mode` controls the motion design rather than the playback metadata.
+
+### V2 review and frame cleanup
+
+Review V2 output frame by frame and in playback before handoff. Looping playback metadata alone does not guarantee a seamless motion cycle.
+
+- **Extra run frames:** V2 running animations often contain a few extra frames that disrupt the loop. The agent should extract frames from the declared final animation, inspect the full cycle and last-to-first transition, and trim redundant frames when needed. Replay the shortened cycle to verify the gait, rhythm, and loop boundary; do not delete frames solely to reach a preset count.
+- **Bright opening frames:** occasionally the first one or two frames are brighter than the rest. Check for an opening flash and remove those frames if they are defective and the remaining motion still works. Do not remove them automatically when they contain a required starting pose or meaningful action.
+- **Save and verify:** keep the downloaded original and save the cleaned animation separately. Preserve canvas size, alpha, and retained-frame durations; apply the same frame selection to removed-background and retained-background variants. Update the local `final_outputs.json` with reviewed final deliverables, then verify the exported files in playback. Keep extracted frames and other review artifacts out of the deliverables.
 
 ## Keyframe-controlled animation
 
