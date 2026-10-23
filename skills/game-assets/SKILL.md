@@ -42,6 +42,8 @@ Use `general-image-poll --job-id <id>` to recover any of these jobs; `image-2.5-
 
 For a local edit marked by a user-supplied mask, send the original and mask as ordered references through Nano Banana general generation. Read [mask-guided editing](references/ui-and-image-editing.md#edit-a-user-marked-region-with-nano-banana) for the input order and prompt.
 
+Nano Banana does not offer `21:9` or `9:21` aspect ratios.
+
 **Template-driven HD and pixel generation** adds a template's style, layout, size, and count constraints. Before using any template-dependent capability, tell the user that a template must be selected, discover the current catalog, and list suitable options for their request with the available size, count, style, and preview information. Let the user choose; use an already specified template without asking again. If the available styles do not fit, offer general generation with their prompt and references.
 
 General generation's pixel style does not guarantee the exact sprite dimensions or pixel-grid cleanup of a pixel workflow. Inspect those properties before promising a game-ready sprite. See [Capability routing](references/capability-routing.md) for discovery commands and capability selection.

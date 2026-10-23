@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.23.1"
+MEOWART_API_CLI_VERSION = "2026.10.23.2"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -6944,7 +6944,7 @@ def build_parser() -> argparse.ArgumentParser:
     nano_banana_run.add_argument(
         "--aspect-ratio",
         default="1:1",
-        choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"],
+        choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "1:4", "4:1", "1:8", "8:1"],
         help="Canvas ratio; recommended shared default is 1:1",
     )
     nano_banana_poll = subparsers.add_parser(
