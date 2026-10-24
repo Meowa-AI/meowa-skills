@@ -2,6 +2,12 @@
 
 Use the persistent Game Designer Agent for game concepts, mechanics, systems, balance, progression, content planning, research, critique, and design documents. Do not use an image-generation command merely to answer a planning question.
 
+## Recommended scope and session length
+
+Use the Game Designer primarily for early- to mid-stage prototype design: shaping the game concept, defining core gameplay, and developing key systems. Aim to keep each session within 50 user–Agent exchanges; avoid extending a single conversation into hundreds of rounds. This is a usage recommendation, not a service-enforced limit.
+
+Once the overall design has taken shape, download the design documents and continue iterating on them locally. Long-running sessions accumulate conversation history and can cause documents to balloon. Built-in context compression helps, but does not eliminate the resulting increases in latency and cost or the decline in design quality. Guide users toward a local document handoff as the design stabilizes.
+
 ## Start a design run
 
 ```bash
