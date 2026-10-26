@@ -50,6 +50,67 @@
     }
   },
   "features": {
+    "game_development_create": {
+      "command": "game-development-create",
+      "web_sources": [
+        "components/ProjectsPage.tsx",
+        "services/gameDevelopmentService.ts:ensureGameProject"
+      ],
+      "parameters": {
+        "title": {
+          "flag": "--title",
+          "required": true,
+          "request_field": "title",
+          "max_length": 512
+        }
+      }
+    },
+    "game_development": {
+      "command": "game-development-run",
+      "web_sources": [
+        "components/GameDevelopmentPage.tsx",
+        "services/gameDevelopmentService.ts",
+        "components/GamePublicationPanel.tsx"
+      ],
+      "parameters": {
+        "prompt": {
+          "flag": "--prompt",
+          "required": true,
+          "request_field": "prompt",
+          "max_length": 8000
+        }
+      },
+      "equivalent_commands": {
+        "capabilities": "game-development-capabilities",
+        "open": "game-development-open",
+        "read": "game-development-read",
+        "cancel": "game-development-cancel",
+        "preview": "game-development-preview",
+        "export": "game-development-export",
+        "publication": "game-development-publication",
+        "publish": "game-development-publish",
+        "unpublish": "game-development-unpublish",
+        "assets": "game-development-assets",
+        "import": "game-development-import"
+      },
+      "publication_identity": {
+        "publish": ["revision", "generation", "build_id"],
+        "unpublish": ["revision", "generation"]
+      },
+      "replay_default": 0
+    },
+    "game_development_import": {
+      "command": "game-development-import",
+      "read_command": "game-development-assets",
+      "web_sources": ["components/GameAssetsPanel.tsx", "services/gameDevelopmentService.ts:gameAssetsRequest"],
+      "parameters": {
+        "source_url": {"flag": "--source-url", "required": true, "request_field": "source_url", "max_length": 2048}
+      },
+      "media_types": ["image/png", "image/jpeg", "image/gif", "image/webp"],
+      "file_limit_bytes": 8388608,
+      "project_limit_bytes": 16777216,
+      "project_limit_files": 64
+    },
     "media_storage": {
       "command": "media-storage-set",
       "read_command": "media-storage-get",

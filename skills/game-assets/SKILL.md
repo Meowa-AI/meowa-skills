@@ -1,9 +1,11 @@
 ---
 name: game-assets
-description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS or voice clone), bundled Meowa CLI execution, or final game-project deliverable validation.
+description: Develop TypeScript/Three.js games in isolated workspaces, plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS or voice clone), bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets
+
+For playable TypeScript/Three.js games, use the developer-only beta [Game development workbench](references/game-development.md). It supports project creation, development tasks, activity replay, cancellation, private previews, owned image imports, saved source export, and explicit publishing/unpublishing when enabled. Publish only when the user requests public access.
 
 For coordinate-based map expansion, use `image-expander-run`; for editable expansion prompts, use `image-expander-prompt`; for selected final tile exports, use `image-expander-export`. See [maps, tiles, and textures](references/maps-tiles-and-textures.md) for matching canvas parameters and neighbor coordinates.
 

@@ -1,5 +1,7 @@
 # Meowa CLI 快速开始
 
+游戏开发工作台命令、项目重试与活动恢复见 [game-development.md](references/game-development.md)。使用 `game-development-import --project-id ID --source-url URL` 导入有权使用的最终图片，使用 `game-development-assets --project-id ID` 查看已暂存素材；素材在下一轮开发时同步，不会自动启动任务或发布游戏。
+
 单图任务只返回最终图片；多图素材包可以附带独立预览。
 
 这份文档只负责安装、Meowa 账户认证和首次运行。具体美术能力、参数选择和工作流协作方式由 `SKILL.md` 及 `references/` 中的对应模块说明。
