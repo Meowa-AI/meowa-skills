@@ -15,6 +15,8 @@ For Image2.5 free native background removal, see [Transparent asset tips](refere
 
 For HD frame animation V2, `--auto-scale-to-input` (default off, no extra credits) restores the final animation to the input dimensions with smooth scaling and retains the original animation as a second output. With background removal, only the final transparent animation is resized.
 
+For V2 first-frame or first/last-frame animation, prefer leaving `--audio-description` empty with prompt optimization enabled so polishing selects the main sound effect from the action. If writing it yourself, briefly describe only the principal sound, not the action sequence. Outputs are lossless WebP plus a separate WAV when audio is generated; see [animation audio and timing](references/animation-and-video.md#frame-animation-v2-audio-and-timing).
+
 ## Establish the asset contract
 
 Determine these requirements before selecting a command:
