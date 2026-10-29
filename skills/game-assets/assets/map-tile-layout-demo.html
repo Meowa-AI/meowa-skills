@@ -92,6 +92,7 @@
             <option value="hd-isometric">HD Isometric</option>
             <option value="hd-hex-isometric">HD Hex Isometric</option>
             <option value="dual-grid">Top-down Dual-grid 15</option>
+            <option value="dual-grid-pro">Top-down Dual-grid Pro</option>
             <option value="iso-dual-grid">Isometric Dual-grid 15</option>
             <option value="side-scrolling">Side View</option>
           </select>
@@ -119,6 +120,7 @@
 
       <div class="toolbar">
         <button id="paintButton" class="active tile-only" type="button">画笔</button>
+        <button id="proVariantButton" type="button" hidden>Pro：直角 → 切换斜角</button>
         <button id="eraseButton" class="tile-only" type="button">橡皮</button>
         <button id="fillButton" class="tile-only" type="button">填充</button>
         <button id="clearButton" class="tile-only" type="button">清空地图</button>
@@ -130,7 +132,7 @@
         <button id="sideExportButton" class="primary side-only" type="button" disabled>导出当前帧</button>
       </div>
 
-      <div id="status" class="status">请选择用户生成的 PNG 或 WebP。普通 isometric/hex 可加载多张独立地块；dual-grid 模式加载一张 4×4 图集。</div>
+      <div id="status" class="status">请选择用户生成的 PNG 或 WebP。普通 isometric/hex 可加载多张独立地块；Dual-grid 加载一张图集；Pro 依次加载直角、斜角两张配套图集。</div>
       <div id="tileWorkspace" class="workspace tile-only">
         <div class="canvas-shell"><canvas id="mapCanvas" class="pixel-sampling" width="1" height="1"></canvas></div>
         <aside class="palette"><h2>已加载地块</h2><div id="paletteList" class="palette-list"></div></aside>
@@ -157,7 +159,7 @@
     const MAX_CANVAS_PIXELS = 64 * 1024 * 1024;
     const state = {
       images: [], selectedId: "", cells: [], tool: "paint", pointerDown: false,
-      lastCell: "", renderQueued: false, libraries: Object.create(null),
+      proVariant: 0, lastCell: "", renderQueued: false, libraries: Object.create(null),
     };
     const sideState = {
       layers: [], player: null, selectedLayerRole: "foreground", active: false,
@@ -203,6 +205,8 @@
     });
     const isHdMode = () => elements.mode.value === "hd-isometric" || elements.mode.value === "hd-hex-isometric";
     const isHexMode = () => elements.mode.value === "hex" || elements.mode.value === "hd-hex-isometric";
+    const isProMode = () => elements.mode.value === "dual-grid-pro";
+    const isTopDownDual = () => ["dual-grid", "dual-grid-pro"].includes(elements.mode.value);
     const isProjected = () => ["isometric", "hex", "hd-isometric", "hd-hex-isometric"].includes(elements.mode.value);
     const configureCanvasSampling = (canvas, context, smooth) => {
       context.imageSmoothingEnabled = smooth;
@@ -325,8 +329,14 @@
     };
 
     const useLoadedImages = (loaded) => {
+      if (isProMode() && (loaded.length !== 2 || loaded.some(item => item.width !== loaded[0].width || item.height !== loaded[0].height || item.width !== item.height || item.width % 4 !== 0))) {
+        loaded.forEach(item => { if (item.url) URL.revokeObjectURL(item.url); });
+        throw new Error("Dual-grid Pro 需要依次加载直角、斜角两张相同尺寸的正方形 4×4 图集。");
+      }
       releaseImages();
-      state.images = isProjected() ? loaded : loaded.slice(0, 1);
+      state.proVariant = 0;
+      document.querySelector("#proVariantButton").textContent = "Pro：直角 → 切换斜角";
+      state.images = isProjected() || isProMode() ? loaded : loaded.slice(0, 1);
       loaded.slice(state.images.length).forEach((item) => { if (item.url) URL.revokeObjectURL(item.url); });
       state.selectedId = state.images[0]?.id || "";
       resetCells();
@@ -361,7 +371,7 @@
     const atlasMetrics = () => {
       const atlas = state.images[0];
       if (!atlas) return null;
-      if (elements.mode.value === "dual-grid") {
+      if (isTopDownDual()) {
         const size = atlas.width / 4;
         if (!Number.isInteger(size) || atlas.height !== size * 4) {
           throw new Error(`Top-down dual-grid 图集必须是 4×4 个正方形地块；当前为 ${atlas.width}×${atlas.height}。`);
@@ -404,7 +414,7 @@
       const { columns, rows } = dimensions();
       let atlas = null;
       try { atlas = atlasMetrics(); } catch (error) { return { error }; }
-      if (elements.mode.value === "dual-grid") {
+      if (isTopDownDual()) {
         const size = atlas?.tileSize || TILE_SIZE;
         const cells = [];
         for (let row = 0; row <= rows; row += 1) {
@@ -523,7 +533,7 @@
     };
 
     const drawDualGrid = (ctx, geometry) => {
-      const atlas = state.images[0];
+      const atlas = state.images[isProMode() ? state.proVariant : 0];
       if (!atlas || !geometry.atlas) return;
       const { tileWidth, tileHeight } = geometry.atlas;
       const ordered = elements.mode.value === "iso-dual-grid"
@@ -546,7 +556,7 @@
       const { columns, rows } = dimensions();
       const size = projectedCellSize(geometry.atlas?.tileSize || TILE_SIZE);
       const edges = new Map();
-      if (elements.mode.value === "dual-grid") {
+      if (isTopDownDual()) {
         for (let row = 0; row < rows; row += 1) {
           for (let column = 0; column < columns; column += 1) {
             if (isFilled(column, row)) continue;
@@ -626,7 +636,7 @@
       const samplingLabel = isHdMode() ? "平滑高清" : "最近邻";
       setStatus(state.images.length
         ? `已加载 ${state.images.length} 张图片；地图中有 ${filled} 个地块锚点，逻辑画布 ${width}×${height}，${samplingLabel}预览 ${zoom}×${isHdMode() ? `，内部缓冲 ${backingWidth}×${backingHeight}` : ""}。`
-        : "请选择用户生成的 PNG 或 WebP。Isometric/Hex 可加载多张独立地块；dual-grid 模式加载一张 4×4 图集。");
+        : "请选择用户生成的 PNG 或 WebP。Isometric/Hex 可加载多张独立地块；Dual-grid 加载一张图集；Pro 依次加载直角、斜角两张配套图集。");
     };
 
     const queueRender = () => {
@@ -692,7 +702,7 @@
       const { columns, rows } = dimensions();
       const size = projectedCellSize(geometry.atlas?.tileSize || TILE_SIZE);
       const raw = { x: point.x - geometry.bounds.offsetX, y: point.y - geometry.bounds.offsetY };
-      if (elements.mode.value === "dual-grid") {
+      if (isTopDownDual()) {
         const column = Math.floor(raw.x / size); const row = Math.floor(raw.y / size);
         return column >= 0 && row >= 0 && column < columns && row < rows ? { column, row } : null;
       }
@@ -752,6 +762,7 @@
     const isSideMode = () => elements.mode.value === "side-scrolling";
     const updateModeUI = () => {
       const side = isSideMode();
+      document.querySelector("#proVariantButton").hidden = !isProMode();
       document.body.classList.toggle("side-mode", side);
       document.querySelectorAll(".tile-only").forEach((element) => { element.style.display = side ? "none" : ""; });
       document.querySelectorAll(".side-only").forEach((element) => {
@@ -922,6 +933,11 @@
       } catch (error) { setStatus(error.message || "图片读取失败。", true); }
     });
 
+    document.querySelector("#proVariantButton").addEventListener("click", (event) => {
+      state.proVariant = 1 - state.proVariant;
+      event.currentTarget.textContent = state.proVariant ? "Pro：斜角 → 切换直角" : "Pro：直角 → 切换斜角";
+      render();
+    });
     elements.mode.addEventListener("change", () => {
       updateModeUI();
       if (!isSideMode()) activateModeLibrary();
@@ -1053,7 +1069,7 @@
           });
           if (response.ok) preload = await response.json();
         }
-        if (["isometric", "hex", "hd-isometric", "hd-hex-isometric", "dual-grid", "iso-dual-grid", "side-scrolling"].includes(preload.mode)) {
+        if (["isometric", "hex", "hd-isometric", "hd-hex-isometric", "dual-grid", "dual-grid-pro", "iso-dual-grid", "side-scrolling"].includes(preload.mode)) {
           elements.mode.value = preload.mode;
         }
         elements.columns.value = String(clampInteger(preload.columns, 2, 32, 8));
@@ -1062,7 +1078,7 @@
         elements.grid.checked = preload.grid !== false;
         if (preload.libraries && typeof preload.libraries === "object") {
           const entries = Object.entries(preload.libraries).filter(([mode, images]) => (
-            ["isometric", "hex", "hd-isometric", "hd-hex-isometric", "dual-grid", "iso-dual-grid"].includes(mode)
+            ["isometric", "hex", "hd-isometric", "hd-hex-isometric", "dual-grid", "dual-grid-pro", "iso-dual-grid"].includes(mode)
               && Array.isArray(images) && images.length
           ));
           const decoded = await Promise.all(entries.map(async ([mode, images]) => (

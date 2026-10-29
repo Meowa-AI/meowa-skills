@@ -1,9 +1,11 @@
 ---
 name: game-assets
-description: Plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS or voice clone), bundled Meowa CLI execution, or final game-project deliverable validation.
+description: Develop TypeScript/Three.js games in isolated workspaces, plan games and create, edit, upgrade, animate, and prepare production-ready game assets with Meowa. Use for Game Designer research and design documents, pixel or HD sprites, consistent variants, multi-view or Spine characters, UI sheets, image and frame edits, Pindou bead art, textures, terrain tilesets, maps, video, sound effects, music, spoken dialogue (TTS or voice clone), bundled Meowa CLI execution, or final game-project deliverable validation.
 ---
 
 # Meowa Game Assets
+
+For playable TypeScript/Three.js games, use the developer-only beta [Game development workbench](references/game-development.md). It supports a separate owned game library, idea-based creation without automatic execution, development tasks, activity replay, cancellation, private previews, owned image imports, saved source export, and explicit publishing/unpublishing when enabled. Publish only when the user requests public access.
 
 For coordinate-based map expansion, use `image-expander-run`; for editable expansion prompts, use `image-expander-prompt`; for selected final tile exports, use `image-expander-export`. See [maps, tiles, and textures](references/maps-tiles-and-textures.md) for matching canvas parameters and neighbor coordinates.
 
@@ -12,6 +14,8 @@ Plan a game or create game-ready visual and audio assets. For game concepts, sys
 For Image2.5 free native background removal, see [Transparent asset tips](references/pixel-and-hd-assets.md#image25-transparent-asset-tips).
 
 For HD frame animation V2, `--auto-scale-to-input` (default off, no extra credits) restores the final animation to the input dimensions with smooth scaling and retains the original animation as a second output. With background removal, only the final transparent animation is resized.
+
+For V2 first-frame or first/last-frame animation, prefer leaving `--audio-description` empty with prompt optimization enabled so polishing selects the main sound effect from the action. If writing it yourself, briefly describe only the principal sound, not the action sequence. Outputs are lossless WebP plus a separate WAV when audio is generated; see [animation audio and timing](references/animation-and-video.md#frame-animation-v2-audio-and-timing).
 
 ## Establish the asset contract
 
@@ -142,7 +146,7 @@ Use these common chains only when each downstream module accepts the preceding f
 - HD batch: `general-image-run` → inspect the generated asset arrangement → use `ui-gen-run` instead when automatic background removal and component segmentation are required.
 - Consistent upgrades or variants: inspect and minimally pad the source canvas when the largest requested change needs more room → use `one-click-upgrade-prompts` for a concise editable prompt list → run `one-click-upgrade-run` with the reviewed prompts → compare style, scale, anchor, and dimensions across every result.
 - Existing animation: animated-frame editing. Do not regenerate it as a new animation unless the user asks for a new motion design.
-- Environment materials: search and download a standard 64×64 texture reference, or generate a new 64×64 seamless texture → choose a foreground-only, background-only, or dual top-down tileset → pass the matching validated texture inputs → remove the unused background for a one-terrain atlas when needed → validate the 4×4 atlas → map integration. For a matched standard/diagonal pair, choose `--tileset-template dual_grid_pro`; it requires edge erosion and returns two 256×256 atlases in standard, diagonal order. A standalone HD image, object render, photo, or scene is not a texture.
+- Environment materials: search and download a standard 64×64 texture reference, or generate a new 64×64 seamless texture → choose a foreground-only, background-only, or dual top-down tileset → pass the matching validated texture inputs → remove the unused background for a one-terrain atlas when needed → validate the 4×4 atlas → map integration. For a matched standard/diagonal pair, choose `--tileset-template dual_grid_pro`; it requires edge erosion and returns two 256×256 atlases in standard, diagonal order. Preview the pair with `map-preview-server.py --mode dual-grid-pro --image <standard-final> --image <diagonal-final>` and use its live shape switch. A standalone HD image, object render, photo, or scene is not a texture.
 - Isometric or hex environment tiles: inspect map-reference categories → select and download matching built-in references → preview the references when layout or style needs comparison → generate from those references → preview and assemble the final tiles by logical centers → validate the composed map. Do not start these tile generators from arbitrary images. Generate side-scrolling layers directly because that command does not accept downloaded map presets.
 - Side-scrolling environment: define the playable midground, distant background, and near-camera foreground separately → run `side-scrolling-map-run` for pixel layers or `hd-side-scrolling-map-run` for HD layers → open all three final layers in the bundled map preview → validate shared canvas alignment, parallax speed, layer offsets, and any requested horizontal loop.
 - UI: UI generation or extraction → still-image refinement. UI extraction currently returns one aggregate sheet, not separate component files.

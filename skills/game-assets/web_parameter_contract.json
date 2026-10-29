@@ -1,6 +1,8 @@
 {
   "schema_version": 1,
-  "default_routes": {"animation": "frame_animation_new"},
+  "default_routes": {
+    "animation": "frame_animation_new"
+  },
   "policy": "Public Skill product parameters mirror the selectable web product parameters. Secrets, endpoints, project identity, recovery controls, and debug/provider internals are excluded.",
   "local_tools": {
     "complex_pattern_split": {
@@ -62,22 +64,144 @@
         }
       }
     },
+    "game_development_create": {
+      "command": "game-development-create",
+      "web_sources": [
+        "components/GameLibraryPage.tsx",
+        "services/gameDevelopmentService.ts:ensureGameProject"
+      ],
+      "parameters": {
+        "initial_prompt": {
+          "flag": "--prompt",
+          "required": true,
+          "request_field": "initial_prompt",
+          "max_length": 8000
+        }
+      },
+      "derived_fields": {
+        "title": "first trimmed prompt line, first 40 Unicode characters"
+      }
+    },
+    "game_development": {
+      "command": "game-development-run",
+      "web_sources": [
+        "components/GameDevelopmentPage.tsx",
+        "services/gameDevelopmentService.ts",
+        "components/GamePublicationPanel.tsx"
+      ],
+      "parameters": {
+        "prompt": {
+          "flag": "--prompt",
+          "required": true,
+          "request_field": "prompt",
+          "max_length": 8000
+        }
+      },
+      "equivalent_commands": {
+        "capabilities": "game-development-capabilities",
+        "open": "game-development-open",
+        "read": "game-development-read",
+        "cancel": "game-development-cancel",
+        "preview": "game-development-preview",
+        "export": "game-development-export",
+        "publication": "game-development-publication",
+        "publish": "game-development-publish",
+        "unpublish": "game-development-unpublish",
+        "assets": "game-development-assets",
+        "import": "game-development-import",
+        "list": "game-development-list"
+      },
+      "publication_identity": {
+        "publish": [
+          "revision",
+          "generation",
+          "build_id"
+        ],
+        "unpublish": [
+          "revision",
+          "generation"
+        ]
+      },
+      "replay_default": 0,
+      "library": {
+        "web_sources": [
+          "components/GameLibraryPage.tsx",
+          "services/gameDevelopmentService.ts:listGameProjects"
+        ],
+        "parameters": {
+          "q": {
+            "flag": "--q",
+            "request_field": "q",
+            "default": "",
+            "max_length": 512
+          },
+          "limit": {
+            "flag": "--limit",
+            "request_field": "limit",
+            "default": 24,
+            "minimum": 1,
+            "maximum": 24
+          },
+          "offset": {
+            "flag": "--offset",
+            "request_field": "offset",
+            "default": 0,
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "game_development_import": {
+      "command": "game-development-import",
+      "read_command": "game-development-assets",
+      "web_sources": [
+        "components/GameAssetsPanel.tsx",
+        "services/gameDevelopmentService.ts:gameAssetsRequest"
+      ],
+      "parameters": {
+        "source_url": {
+          "flag": "--source-url",
+          "required": true,
+          "request_field": "source_url",
+          "max_length": 2048
+        }
+      },
+      "media_types": [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp"
+      ],
+      "file_limit_bytes": 8388608,
+      "project_limit_bytes": 16777216,
+      "project_limit_files": 64
+    },
     "media_storage": {
       "command": "media-storage-set",
       "read_command": "media-storage-get",
-      "web_sources": ["components/MediaStorageSelector.tsx", "services/authService.ts:updateMediaStorageSite"],
+      "web_sources": [
+        "components/MediaStorageSelector.tsx",
+        "services/authService.ts:updateMediaStorageSite"
+      ],
       "parameters": {
         "media_storage_site": {
           "flag": "--media-storage-site",
           "default": "auto",
-          "choices": ["auto", "domestic", "overseas"],
+          "choices": [
+            "auto",
+            "domestic",
+            "overseas"
+          ],
           "request_field": "media_storage_site"
         }
       }
     },
     "general_nano_banana": {
       "command": "general-image-run",
-      "command_args": ["--generation-model", "nano-banana"],
+      "command_args": [
+        "--generation-model",
+        "nano-banana"
+      ],
       "legacy_command": "nano-banana-run",
       "web_sources": [
         "types.ts:GenerationSettings",
@@ -87,7 +211,11 @@
         "generation_model": {
           "flag": "--generation-model",
           "default": "image-2.5",
-          "choices": ["image-2.5", "image-2", "nano-banana"],
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
           "request_field": "generationProvider"
         },
         "resolution": {
@@ -119,27 +247,15 @@
             "8:1"
           ],
           "request_field": "aspectRatio"
-        },
-        "generation_model": {
-          "flag": "--generation-model",
-          "default": "image-2.5",
-          "choices": [
-            "nano-banana",
-            "image-2",
-            "image-2.5"
-          ],
-          "request_field": "generationProvider"
         }
-      },
-      "legacy_command": "nano-banana-run",
-      "command_args": [
-        "--generation-model",
-        "nano-banana"
-      ]
+      }
     },
     "general_image2_5": {
       "command": "general-image-run",
-      "command_args": ["--generation-model", "image-2.5"],
+      "command_args": [
+        "--generation-model",
+        "image-2.5"
+      ],
       "legacy_command": "image-2.5-run",
       "web_sources": [
         "types.ts:GenerationSettings",
@@ -149,7 +265,11 @@
         "generation_model": {
           "flag": "--generation-model",
           "default": "image-2.5",
-          "choices": ["image-2.5", "image-2", "nano-banana"],
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
           "request_field": "generationProvider"
         },
         "remove_bg_method": {
@@ -191,27 +311,15 @@
             "16:9"
           ],
           "request_field": "aspectRatio"
-        },
-        "generation_model": {
-          "flag": "--generation-model",
-          "default": "image-2.5",
-          "choices": [
-            "nano-banana",
-            "image-2",
-            "image-2.5"
-          ],
-          "request_field": "generationProvider"
         }
-      },
-      "legacy_command": "image-2.5-run",
-      "command_args": [
-        "--generation-model",
-        "image-2.5"
-      ]
+      }
     },
     "general_image2": {
       "command": "general-image-run",
-      "command_args": ["--generation-model", "image-2"],
+      "command_args": [
+        "--generation-model",
+        "image-2"
+      ],
       "legacy_command": "image-2-run",
       "web_sources": [
         "types.ts:GenerationSettings",
@@ -221,7 +329,11 @@
         "generation_model": {
           "flag": "--generation-model",
           "default": "image-2.5",
-          "choices": ["image-2.5", "image-2", "nano-banana"],
+          "choices": [
+            "nano-banana",
+            "image-2",
+            "image-2.5"
+          ],
           "request_field": "generationProvider"
         },
         "quality": {
@@ -254,23 +366,8 @@
             "16:9"
           ],
           "request_field": "aspectRatio"
-        },
-        "generation_model": {
-          "flag": "--generation-model",
-          "default": "image-2.5",
-          "choices": [
-            "nano-banana",
-            "image-2",
-            "image-2.5"
-          ],
-          "request_field": "generationProvider"
         }
-      },
-      "legacy_command": "image-2-run",
-      "command_args": [
-        "--generation-model",
-        "image-2"
-      ]
+      }
     },
     "image_edit": {
       "command": "image-edit-run",
@@ -453,20 +550,114 @@
       "recovery_command": "workflow-poll",
       "recovery_workflow_id": "asset_clone",
       "prompt_command": "asset-clone-prompt",
-      "prompt_parameters": ["prompt", "clone_count"],
-      "web_sources": ["components/AssetCloneDialog.tsx", "services/assetCloneService.ts"],
+      "prompt_parameters": [
+        "prompt",
+        "clone_count"
+      ],
+      "web_sources": [
+        "components/AssetCloneDialog.tsx",
+        "services/assetCloneService.ts"
+      ],
       "parameters": {
-        "prompt": {"flag": "--prompt", "default": "参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。", "default_count_field": "clone_count", "request_field": "prompt"},
-        "skip_prompt_optimization": {"flag": "--skip-prompt-optimization", "default": true, "request_field": "skip_prompt_optimization"},
-        "clone_count": {"flag": "--clone-count", "default": 1, "choices": [1, 4, 9, 16, 25, 36], "request_field": "clone_count"},
-        "mode": {"flag": "--mode", "default": "pixel", "choices": ["pixel", "hd"], "request_field": "mode"},
-        "generation_model": {"flag": "--generation-model", "default": "image-2.5", "choices": ["nano-banana", "image-2.5"], "request_field": "generation_provider", "defaults_by_mode": {"pixel": "image-2.5", "hd": "image-2.5"}},
-        "quality": {"flag": "--quality", "default": "detailed", "choices": ["standard", "detailed", "ultimate"], "request_field": "image2_quality"},
-        "resolution": {"flag": "--resolution", "default": "1K", "choices": ["1K", "2K"], "request_field": "resolution", "defaults_by_mode": {"pixel": "1K", "hd": "1K"}},
-        "remove_bg_method": {"flag": "--remove-bg-method", "default": "standard", "choices": ["none", "standard"], "request_field": "remove_bg_method", "defaults_by_model": {"nano-banana": "none", "image-2.5": "standard"}},
-        "cell_width": {"flag": "--cell-width", "request_field": "cell_width"},
-        "cell_height": {"flag": "--cell-height", "request_field": "cell_height"},
-        "fit_mode": {"flag": "--fit-mode", "default": "pad", "choices": ["pad", "crop"], "request_field": "fit_mode"}
+        "prompt": {
+          "flag": "--prompt",
+          "default": "参考图 1 的布局，生成1 个不同外观的美术资产，保持美术风格一致。",
+          "default_count_field": "clone_count",
+          "request_field": "prompt"
+        },
+        "skip_prompt_optimization": {
+          "flag": "--skip-prompt-optimization",
+          "default": true,
+          "request_field": "skip_prompt_optimization"
+        },
+        "clone_count": {
+          "flag": "--clone-count",
+          "default": 1,
+          "choices": [
+            1,
+            4,
+            9,
+            16,
+            25,
+            36
+          ],
+          "request_field": "clone_count"
+        },
+        "mode": {
+          "flag": "--mode",
+          "default": "pixel",
+          "choices": [
+            "pixel",
+            "hd"
+          ],
+          "request_field": "mode"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "default": "image-2.5",
+          "choices": [
+            "nano-banana",
+            "image-2.5"
+          ],
+          "request_field": "generation_provider",
+          "defaults_by_mode": {
+            "pixel": "image-2.5",
+            "hd": "image-2.5"
+          }
+        },
+        "quality": {
+          "flag": "--quality",
+          "default": "detailed",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ],
+          "request_field": "image2_quality"
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ],
+          "request_field": "resolution",
+          "defaults_by_mode": {
+            "pixel": "1K",
+            "hd": "1K"
+          }
+        },
+        "remove_bg_method": {
+          "flag": "--remove-bg-method",
+          "default": "standard",
+          "choices": [
+            "none",
+            "standard"
+          ],
+          "request_field": "remove_bg_method",
+          "defaults_by_model": {
+            "nano-banana": "none",
+            "image-2.5": "standard"
+          }
+        },
+        "cell_width": {
+          "flag": "--cell-width",
+          "request_field": "cell_width"
+        },
+        "cell_height": {
+          "flag": "--cell-height",
+          "request_field": "cell_height"
+        },
+        "fit_mode": {
+          "flag": "--fit-mode",
+          "default": "pad",
+          "choices": [
+            "pad",
+            "crop"
+          ],
+          "request_field": "fit_mode"
+        }
       }
     },
     "one_click_upgrade": {
@@ -1270,7 +1461,10 @@
         "animation_model": {
           "flag": "--animation-model",
           "default": "pixel-engine-v1.1",
-          "conditional_default": {"source_up_to_256x256": "pixel-engine-v1.1", "larger_source": "frame-engine-v1.1"},
+          "conditional_default": {
+            "source_up_to_256x256": "pixel-engine-v1.1",
+            "larger_source": "frame-engine-v1.1"
+          },
           "choices": [
             "pixel-engine-v1.1",
             "frame-engine-v1.1"
@@ -1547,6 +1741,11 @@
             ]
           },
           "request_field": "auto_scale_to_input"
+        },
+        "audio_description": {
+          "flag": "--audio-description",
+          "default": "",
+          "request_field": "audio_description"
         }
       }
     },

@@ -17,6 +17,7 @@ import random
 import socket
 import threading
 import sys
+import tempfile
 import time
 import uuid
 import zipfile
@@ -31,7 +32,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.28.1"
+MEOWART_API_CLI_VERSION = "2026.10.29.2"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -1758,7 +1759,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
     "meowa_tts": frozenset({"audio_path", "audio_paths", "url"}),
-    "meowa_animation": frozenset({"video_path", "background_video_path", "url"}),
+    "meowa_animation": frozenset({"video_path", "background_video_path", "audio_path", "url"}),
     "one_click_pixelate": frozenset({"output_path"}),
     "one_click_upgrade": frozenset({"output_paths"}),
     "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
@@ -2413,6 +2414,216 @@ def _save_custom_workflow_outputs(
     _save_json(manifest_path, manifest)
     downloads.insert(0, {"type": "manifest", "path": str(manifest_path)})
     return output_dir, downloads
+
+
+ROOT_FILES = frozenset({'package.json', 'package-lock.json', 'game-assets.json', 'index.html', 'tsconfig.json',
+                        'tsconfig.app.json', 'tsconfig.node.json', 'vite.config.ts',
+                        'vite.config.js', 'README.md', '.gitignore'})
+SOURCE_SUFFIXES = frozenset({'.ts', '.tsx', '.js', '.jsx', '.json', '.css', '.html', '.glsl',
+                            '.vert', '.frag', '.wgsl', '.svg', '.png', '.jpg', '.jpeg', '.webp',
+                            '.gif', '.avif', '.ico', '.mp3', '.ogg', '.wav', '.mp4', '.webm',
+                            '.woff', '.woff2', '.ttf', '.gltf', '.glb', '.bin'})
+PRIVATE_NAMES = frozenset({'auth.json', 'credentials.json', 'tokens.json', 'logs', 'tmp', 'cache',
+                           'checkpoints', 'node_modules', 'dist'})
+
+
+def game_source_file(name):
+    path = PurePosixPath(name)
+    if any(':' in part or part.rstrip(' .') != part for part in path.parts):
+        return False
+    return name in ROOT_FILES or (path.parts[0] in ('src', 'public')
+        and path.suffix.lower() in SOURCE_SUFFIXES
+        and not any(part.lower() in PRIVATE_NAMES or part.startswith('.') for part in path.parts))
+
+
+def download_game_source(args: argparse.Namespace, project: str) -> dict[str, Any]:
+    """Download only this owned project's declared source ZIP, never a job/media URL."""
+    url = _normalize_base_url(args.api_base, f"/api/game-development/projects/{quote(project, safe='')}/source")
+    maximum = 32 * 1024 ** 2 + 2000 * 1200
+    with requests.post(url, json={}, headers=_request_headers_for_url(url, _base_headers(args.api_key)),
+                       timeout=args.timeout, verify=not args.insecure, stream=True, allow_redirects=False) as response:
+        if response.status_code != 200 or response.headers.get('content-type') != 'application/zip':
+            raise RuntimeError('source_export_unavailable')
+        content = bytearray()
+        for chunk in response.iter_content(chunk_size=65536):
+            content.extend(chunk)
+            if len(content) > maximum:
+                raise ValueError('source_export_limit')
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        names = set();total = 0
+        for item in archive.infolist():
+            name = item.filename
+            parts = name.split('/')
+            if (name in names or not name or name.startswith('/') or '\\' in name
+                    or any(part in ('', '.', '..') or ':' in part or part.rstrip(' .') != part for part in parts)
+                    or any(ord(c) < 32 or ord(c) == 127 for c in name)
+                    or not game_source_file(name) or item.compress_type != zipfile.ZIP_STORED
+                    or (item.external_attr >> 16) & 0o170000 not in (0, 0o100000)
+                    or item.file_size > 8 * 1024 ** 2):
+                raise ValueError('invalid_source_export')
+            names.add(name);total += item.file_size
+        if not names or len(names) > 2000 or total > 32 * 1024 ** 2 or archive.testzip() is not None:
+            raise ValueError('invalid_source_export')
+    destination = Path(args.output_dir or '.').expanduser()
+    destination.mkdir(parents=True, exist_ok=True)
+    filename = destination / f'game-source-{uuid.uuid4().hex}.zip'
+    with tempfile.NamedTemporaryFile(dir=destination) as staging:
+        staging.write(content);staging.flush();os.fsync(staging.fileno())
+        os.link(staging.name, filename)  # Publish only a complete archive; never overwrite.
+    return {'project_id': project, 'source_file': str(filename)}
+
+
+def game_development(args: argparse.Namespace) -> dict[str, Any]:
+    """Mirror the authenticated workbench without persisting responses or downloading files."""
+    action = args.command.removeprefix("game-development-")
+
+    def request(method: str, endpoint: str, body=None, params=None, allow_missing=False):
+        response, payload = _request_json(
+            method=method, url=_normalize_base_url(args.api_base, endpoint),
+            headers={**_base_headers(args.api_key), "Accept": "application/json"},
+            timeout=args.timeout, verify=not args.insecure, json_body=body, params=params,
+        )
+        if allow_missing and response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            code = payload.get("detail") if isinstance(payload, dict) else None
+            if response.status_code == 409 and code in ("environment_limit", "service_paused", "publication_changed", "build_changed", "asset_quota_exceeded"):
+                raise RuntimeError(code)
+            raise RuntimeError(f"game_development_request_failed ({response.status_code})")
+        if not isinstance(payload, dict):
+            raise RuntimeError("game_development_response_invalid")
+        return payload
+
+    if action == "capabilities":
+        return {"enabled": request("GET", "/api/game-development/capabilities").get("enabled") is True}
+    if action == "list":
+        if not 1 <= args.limit <= 24 or args.offset < 0 or len(args.q) > 512:
+            raise ValueError("invalid game pagination")
+        payload = request("GET", "/api/game-development/projects", params={"q": args.q.strip(), "limit": args.limit, "offset": args.offset})
+        items = payload.get("items")
+        if (not isinstance(items, list) or len(items) > args.limit or type(payload.get("total")) is not int
+                or payload["total"] < 0 or payload.get("limit") != args.limit or payload.get("offset") != args.offset):
+            raise RuntimeError("game_development_response_invalid")
+        safe = []
+        for item in items:
+            if (not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]
+                    or "play_url" not in item or not isinstance(item.get("title"), str) or type(item.get("created_at")) is not int
+                    or type(item.get("updated_at")) is not int or item.get("publication_status") not in ("draft", "published", "unavailable")):
+                raise RuntimeError("game_development_response_invalid")
+            play_url = item.get("play_url")
+            if item["publication_status"] == "published":
+                url = urlparse(play_url or "")
+                if (url.scheme != "https" or url.username or url.password or not url.hostname
+                        or not re.fullmatch(r"[0-9a-f]{32}\.[a-z0-9.-]+", url.hostname)
+                        or url.path != "/" or url.query or url.fragment):
+                    raise RuntimeError("game_development_response_invalid")
+            elif play_url is not None:
+                raise RuntimeError("game_development_response_invalid")
+            safe.append({key: item[key] for key in ("id", "title", "created_at", "updated_at", "publication_status", "play_url")})
+        return {"items": safe, "total": payload["total"], "limit": args.limit, "offset": args.offset}
+    project = str(args.project_id or "").strip()
+    if action == "create":
+        prompt = args.prompt.strip()
+        if not 1 <= len(prompt) <= 8000:
+            raise ValueError("prompt must contain 1 to 8000 characters")
+        title = prompt.split("\n", 1)[0].rstrip("\r")[:40].strip()
+        project = project or str(uuid.uuid4())
+    if not 1 <= len(project) <= 255:
+        raise ValueError("project ID must contain 1 to 255 characters")
+    if action == 'export':
+        return download_game_source(args, project)
+    if action == "create":
+        # Emit the durable identity before I/O so uncertain creates can be retried.
+        print(_format_json_for_display({"project_id": project}), flush=True)
+        payload = request("POST", "/api/game-development/projects", {"id": project, "title": title, "initial_prompt": prompt})
+        if payload.get("id") != project:
+            raise RuntimeError("game_development_response_invalid")
+        return {"project_id": project}
+
+    path = f"/api/game-development/projects/{quote(project, safe='')}"
+    if action == "open":
+        payload = request("POST", path + "/session", {})
+    elif action == "read":
+        if not 0 <= args.after <= 9007199254740991:
+            raise ValueError("invalid replay cursor")
+        payload = request("GET", path + "/session", params={"after": args.after})
+    elif action == "run":
+        prompt = args.prompt.strip()
+        request_id = args.request_id or str(uuid.uuid4())
+        if not 1 <= len(prompt) <= 8000 or not re.fullmatch(r"[a-zA-Z0-9-]{16,64}", request_id):
+            raise ValueError("invalid prompt or request ID")
+        print(_format_json_for_display({"project_id": project, "request_id": request_id}), flush=True)
+        payload = request("POST", path + "/turns", {"prompt": prompt, "request_id": request_id})
+    elif action == "cancel":
+        if not 1 <= len(args.turn_id) <= 64:
+            raise ValueError("invalid turn ID")
+        payload = request("POST", path + f"/turns/{quote(args.turn_id, safe='')}/cancel", {})
+    elif action == "preview":
+        payload = request("POST", path + "/preview", {})
+    elif action == "assets":
+        payload = request("GET", path + "/assets")
+    elif action == "import":
+        source_url = args.source_url.strip()
+        if not 1 <= len(source_url) <= 2048:
+            raise ValueError("source URL must contain 1 to 2048 characters")
+        payload = request("POST", path + "/assets", {"source_url": source_url})
+    elif action == "publication":
+        payload = request("GET", path + "/publication")
+    elif action in ("publish", "unpublish"):
+        if not 0 <= args.revision <= 9007199254740991 or not 0 <= args.generation <= 9007199254740991:
+            raise ValueError("invalid publication identity")
+        body = {"revision": args.revision, "generation": args.generation}
+        if action == "publish":
+            if not re.fullmatch(r"[0-9a-f]{64}", args.build_id):
+                raise ValueError("invalid build ID")
+            body["build_id"] = args.build_id
+        payload = request("POST", path + ("/publication" if action == "publish" else "/publication/unpublish"), body)
+    else:
+        raise ValueError("unknown game development action")
+    if payload.get("project_id") != project:
+        raise RuntimeError("game_development_response_invalid")
+
+    def fields(value, names):
+        return {name: value[name] for name in names if name in value and isinstance(value[name], (str, bool, int, type(None)))}
+
+    if action in ("assets", "import"):
+        files = payload.get("files") if action == "assets" else [payload.get("asset")]
+        if not isinstance(files, list) or len(files) > 64:
+            raise RuntimeError("game_development_response_invalid")
+        safe = []
+        types = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}
+        for value in files:
+            if (not isinstance(value, dict) or not isinstance(value.get("path"), str)
+                    or not re.fullmatch(r"imported/[0-9a-f]{64}\.(png|jpg|gif|webp)", value["path"])
+                    or value.get("mime_type") != types[value["path"].rsplit(".", 1)[1]]
+                    or type(value.get("bytes")) is not int or not 1 <= value["bytes"] <= 8 * 1024 ** 2):
+                raise RuntimeError("game_development_response_invalid")
+            safe.append(fields(value, ("path", "mime_type", "bytes")))
+        if len({item["path"] for item in safe}) != len(safe) or sum(item["bytes"] for item in safe) > 16 * 1024 ** 2:
+            raise RuntimeError("game_development_response_invalid")
+        return {"project_id": project, **({"files": safe} if action == "assets" else {"asset": safe[0]})}
+    if action == "preview":
+        return fields(payload, ("project_id", "state", "url", "expires_at"))
+    if action in ("publication", "publish", "unpublish"):
+        result = fields(payload, ("project_id", "revision", "generation"))
+        for name, names in (("candidate", ("id", "created_at", "files", "bytes")),
+                            ("release", ("id", "build_id", "published_at", "url"))):
+            value = payload.get(name)
+            result[name] = fields(value, names) if isinstance(value, dict) else None
+        return result
+    result = fields(payload, ("id", "project_id", "execution_ready", "environment_state", "revision", "generation", "next_cursor", "has_more"))
+    for name, names in (
+        ("service", ("code", "revision")),
+        ("checkpoint", ("created_at", "files", "bytes", "validated")),
+    ):
+        value = payload.get(name)
+        result[name] = fields(value, names) if isinstance(value, dict) else None
+    for name, names in (
+        ("turns", ("id", "prompt", "state", "created_at")),
+        ("events", ("seq", "kind", "item_id", "text", "status", "code")),
+    ):
+        result[name] = [fields(value, names) for value in payload.get(name, []) if isinstance(value, dict)]
+    return result
 
 
 def _game_design_api_request(
@@ -3759,6 +3970,7 @@ def prepare_meowa_animation_prompt(
     remove_bg_batch_size: str = "16",
     background_color: str,
     source_padding: dict[str, Any],
+    audio_description: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3770,6 +3982,8 @@ def prepare_meowa_animation_prompt(
         headers=_base_headers(api_key),
         data={
             "prompt": str(prompt or "").strip(),
+            "audio_enabled": "true",
+            "audio_description": audio_description.strip(),
             "style_mode": style_mode,
             "resolution": resolution,
             "alpha_mode": alpha_mode,
@@ -3813,6 +4027,7 @@ def submit_meowa_animation(
     high_frame_rate: bool = False,
     auto_scale_to_input: bool = False,
     source_padding: dict[str, Any],
+    audio_description: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3824,6 +4039,8 @@ def submit_meowa_animation(
         headers=_base_headers(api_key),
         data={
             "action_timeline": str(action_timeline or "").strip(),
+            "audio_enabled": "true" if audio_description.strip() else "false",
+            "audio_description": audio_description.strip(),
             "style_mode": style_mode,
             "resolution": resolution,
             "alpha_mode": alpha_mode,
@@ -6761,6 +6978,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
+    for action in ("capabilities", "list", "create", "open", "read", "run", "cancel", "preview", "export", "publication", "publish", "unpublish", "assets", "import"):
+        command = subparsers.add_parser(f"game-development-{action}", help=f"Game workbench: {action}")
+        if action not in ("capabilities", "list"):
+            command.add_argument("--project-id", required=action != "create", default="")
+        if action == "list":
+            command.add_argument("--q", default="", help="Search game names")
+            command.add_argument("--limit", type=int, default=24)
+            command.add_argument("--offset", type=int, default=0)
+        if action == "create":
+            command.add_argument("--prompt", required=True, help="Game idea saved as initial_prompt; creation does not start development")
+        if action == "read":
+            command.add_argument("--after", type=int, default=0)
+        if action == "run":
+            command.add_argument("--prompt", required=True)
+            command.add_argument("--request-id", default="")
+        if action == "cancel":
+            command.add_argument("--turn-id", required=True)
+        if action in ("publish", "unpublish"):
+            command.add_argument("--revision", type=int, required=True)
+            command.add_argument("--generation", type=int, required=True)
+        if action == "publish":
+            command.add_argument("--build-id", required=True)
+        if action == "import":
+            command.add_argument("--source-url", required=True, help="Owned final library image URL; imported for the next development task")
     subparsers.add_parser("media-storage-get", help="Read this account's media storage and download route")
     storage = subparsers.add_parser("media-storage-set", help="Set media storage and download route; domestic downloads can fall back to the original")
     storage.add_argument("--media-storage-site", choices=("auto", "domestic", "overseas"), default="auto")
@@ -8184,7 +8425,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--high-frame-rate",
             action="store_true",
             default=False,
-            help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
+            help="Keep every generated frame; preserve the source duration in WebP outputs. Defaults removal off and fill to #00b140.",
         )
         edit_parser.add_argument("--auto-scale-to-input", action="store_true", default=False,
             help="HD only: smoothly restore the input size; keep the original animation as a second output")
@@ -8269,8 +8510,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--high-frame-rate",
         action="store_true",
         default=False,
-        help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
+        help="Keep every generated frame; preserve the source duration in WebP outputs. Defaults removal off and fill to #00b140.",
     )
+    meowa_animation_run_parser.add_argument("--audio-description", default="",
+        help="Optional sound description; optimization generates it when empty; without optimization, empty disables audio")
     meowa_animation_run_parser.add_argument("--auto-scale-to-input", action="store_true", default=False,
         help="HD only: smoothly restore the input size; keep the original animation as a second output")
     meowa_animation_run_parser.set_defaults(background_color_explicit=False)
@@ -8559,6 +8802,16 @@ def main() -> int:
     _configure_stdio()
     args = parse_args()
     verify = not args.insecure
+
+    if args.command.startswith("game-development-"):
+        try:
+            args.api_key = _resolve_auth_token()
+            print(_format_json_for_display(game_development(args)))
+            return 0
+        except (RuntimeError, ValueError, OSError, requests.RequestException, zipfile.BadZipFile):
+            # No raw errors, local metadata, response files, or media downloads.
+            print("[ERROR] Game development request failed. Check access and retry with the same identity.", file=sys.stderr)
+            return 1
 
     started_at = datetime.now().isoformat(timespec="seconds")
     run_dir = _create_run_dir(args.work_dir, args.command)
@@ -11614,6 +11867,9 @@ def main() -> int:
                 "alignment": args.padding_alignment,
             }
             action_timeline = str(args.prompt or "").strip()
+            audio_description = args.audio_description
+            if len(audio_description) > 2000:
+                raise ValueError("audio_description must not exceed 2000 characters")
             if args.optimize_prompt:
                 prepared = prepare_meowa_animation_prompt(
                     api_base=args.api_base,
@@ -11631,10 +11887,12 @@ def main() -> int:
                     remove_bg_batch_size=args.remove_bg_batch_size,
                     background_color=args.background_color,
                     source_padding=source_padding,
+                    audio_description=audio_description,
                     timeout=args.timeout,
                     verify=verify,
                 )
                 action_timeline = str(prepared.get("action_timeline") or "").strip()
+                audio_description = str(prepared.get("audio_description") or audio_description)
                 if not action_timeline:
                     raise RuntimeError("prompt optimization returned no action timeline")
 
@@ -11655,6 +11913,7 @@ def main() -> int:
                 background_color=args.background_color,
                 high_frame_rate=args.high_frame_rate,
                 auto_scale_to_input=args.auto_scale_to_input,
+                audio_description=audio_description,
                 source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,

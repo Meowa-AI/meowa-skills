@@ -516,3 +516,22 @@ Defaults mirror the canvas: `--mode hd`, `--resolution 1K`, `--aspect-ratio auto
 ### Dual-grid Pro
 
 `tileset-gen-run --tileset-template dual_grid_pro` generates a matched pair in one 2K call: standard first, diagonal second, both 256×256. Pro always enables edge erosion. Terrain and removal options are unchanged; a single-terrain pair applies the selected removal tier independently to both final images. Use both images as one Pro skin in the map editor; changing the brush style affects subsequent strokes only.
+
+
+### Generate and preview a Dual-grid Pro pair
+
+`tileset-gen-submit` and `tileset-gen-run` both accept `--tileset-template dual_grid_pro`. The runner submits multipart data to `POST /api/workflows/tileset_gen/run`; `tileset_template=dual_grid_pro`, `tileset_mode=dual-grid-15`, and `edge_erosion=true`. The existing job polling and final-output download flow applies. Consume both declared final images in standard, diagonal order; never use intermediate provider images. Single-terrain output removes the unused terrain from both atlases using the selected removal tier.
+
+```bash
+python3 skills/game-assets/meowart_api.py tileset-gen-run \
+  --tileset-template dual_grid_pro --terrain-mode dual \
+  --foreground-texture grass-64.png --background-texture water-64.png \
+  --output-dir output/pro
+
+python3 skills/game-assets/scripts/map-preview-server.py \
+  --mode dual-grid-pro \
+  --image <standard-final-256.png> --image <diagonal-final-256.png> \
+  --columns 12 --rows 8 --lifetime 900
+```
+
+Use the actual final paths returned by the runner. Open the printed loopback URL for the user. The **Pro: right-angle / diagonal** button switches the atlas immediately while preserving the painted terrain layout, allowing a direct comparison on the same map; it does not modify the source images. This comparison control switches the whole preview, whereas the product editor's brush switch affects subsequent strokes. Both inputs must be matching square 4×4 atlases (normally 256×256), with standard first. The same ordered pair works as `libraries["dual-grid-pro"]` in preview JSON. For a portable page, `build-map-preview.py --mode dual-grid-pro --image <standard.png> --image <diagonal.png> --output preview.html` embeds the pair and the same interactive toggle.

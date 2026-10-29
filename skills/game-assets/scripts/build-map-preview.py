@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 
-SUPPORTED_MODES = ("isometric", "hex", "dual-grid", "iso-dual-grid")
+SUPPORTED_MODES = ("isometric", "hex", "dual-grid", "dual-grid-pro", "iso-dual-grid")
 MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
@@ -70,6 +70,9 @@ def build_preview(args: argparse.Namespace) -> dict[str, object]:
         raise ValueError("--output must use an .html or .htm extension")
     if args.mode in {"dual-grid", "iso-dual-grid"} and len(args.image) != 1:
         raise ValueError(f"{args.mode} requires exactly one 4x4 atlas image")
+
+    if args.mode == "dual-grid-pro" and len(args.image) != 2:
+        raise ValueError("dual-grid-pro requires standard then diagonal atlas images")
 
     skill_root = Path(__file__).resolve().parent.parent
     template_path = skill_root / "assets" / "map-tile-layout-demo.html"

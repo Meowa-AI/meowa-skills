@@ -18,6 +18,7 @@ TILE_MODES = (
     "hd-isometric",
     "hd-hex-isometric",
     "dual-grid",
+    "dual-grid-pro",
     "iso-dual-grid",
 )
 SUPPORTED_MODES = (*TILE_MODES, "side-scrolling")
@@ -314,6 +315,8 @@ def load_tile_libraries(
         image_paths = [item[0] for item in library_items]
         if library_mode in {"dual-grid", "iso-dual-grid"} and len(image_paths) != 1:
             raise ValueError(f"{library_mode} requires exactly one 4x4 atlas image")
+        if library_mode == "dual-grid-pro" and len(image_paths) != 2:
+            raise ValueError("dual-grid-pro requires standard then diagonal atlas images")
         library_assets = read_media(image_paths, id_prefix=f"{library_mode}-")
         assets.extend(library_assets)
         frontend_libraries[library_mode] = []
@@ -427,6 +430,8 @@ def build_runtime(args: argparse.Namespace) -> tuple[dict[str, object], list[Med
         image_paths = resolve_image_paths(args.image, config, config_dir)
         if mode in {"dual-grid", "iso-dual-grid"} and len(image_paths) != 1:
             raise ValueError(f"{mode} requires exactly one 4x4 atlas image")
+        if mode == "dual-grid-pro" and len(image_paths) != 2:
+            raise ValueError("dual-grid-pro requires standard then diagonal atlas images")
         assets = read_media(image_paths)
 
     columns = choose(args.columns, config.get("columns", 8))
