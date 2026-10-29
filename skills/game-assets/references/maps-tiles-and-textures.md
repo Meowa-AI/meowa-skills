@@ -515,7 +515,7 @@ Defaults mirror the canvas: `--mode hd`, `--resolution 1K`, `--aspect-ratio auto
 
 ### Dual-grid Pro
 
-`tileset-gen-run --tileset-template dual_grid_pro` generates a matched pair in one 2K call: standard first, diagonal second, both 256×256. Pro always enables edge erosion. Terrain and removal options are unchanged; a single-terrain pair applies the selected removal tier independently to both final images. Use both images as one Pro skin in the map editor; changing the brush style affects subsequent strokes only.
+`tileset-gen-run --tileset-template dual_grid_pro` generates a matched pair in one 2K call: standard first, diagonal second, both 256×256. Pro always enables edge erosion. Terrain and removal options are unchanged; a single-terrain pair batches both final images into one 1K background-removal call. Generation costs 15 credits; single-terrain totals are 15/20/25 for none/standard/advanced removal. Use both images as one Pro skin in the map editor; changing the brush style affects subsequent strokes only.
 
 
 ### Generate and preview a Dual-grid Pro pair
