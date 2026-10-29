@@ -159,7 +159,7 @@
     const MAX_CANVAS_PIXELS = 64 * 1024 * 1024;
     const state = {
       images: [], selectedId: "", cells: [], tool: "paint", pointerDown: false,
-      proVariant: 0, lastCell: "", renderQueued: false, libraries: Object.create(null),
+      proVariant: 0, proTiles: Object.create(null), lastCell: "", renderQueued: false, libraries: Object.create(null),
     };
     const sideState = {
       layers: [], player: null, selectedLayerRole: "foreground", active: false,
@@ -231,7 +231,7 @@
         Array.from({ length: columns }, (_, column) => previous[row]?.[column] ?? (isProjected() ? null : false))
       ));
     };
-    const resetCells = () => { state.cells = makeCells([]); };
+    const resetCells = () => { state.cells = makeCells([]); state.proTiles = Object.create(null); };
     const resizeCells = () => { state.cells = makeCells(state.cells); };
     const isFilled = (column, row) => Boolean(state.cells[row]?.[column]);
     const isDefaultRingCell = (column, row, columns, rows) => {
@@ -533,7 +533,7 @@
     };
 
     const drawDualGrid = (ctx, geometry) => {
-      const atlas = state.images[isProMode() ? state.proVariant : 0];
+      const atlas = state.images[0];
       if (!atlas || !geometry.atlas) return;
       const { tileWidth, tileHeight } = geometry.atlas;
       const ordered = elements.mode.value === "iso-dual-grid"
@@ -543,8 +543,9 @@
         const key = layout.dualGridTileKeyAt(isFilled, cell.column, cell.row);
         const [atlasX, atlasY] = layout.DUAL_GRID_ATLAS_BY_KEY[key];
         const center = shiftedCenter(cell, geometry.bounds);
+        const source = isProMode() ? state.images[state.proTiles[`${cell.column}:${cell.row}`] ?? 0] : atlas;
         ctx.drawImage(
-          atlas.image,
+          source.image,
           atlasX * tileWidth, atlasY * tileHeight, tileWidth, tileHeight,
           Math.round(center.x - tileWidth / 2), Math.round(center.y - tileHeight / 2), tileWidth, tileHeight,
         );
@@ -729,7 +730,7 @@
         setStatus("请先从右侧选择一个地块。", true); return;
       }
       const value = state.tool === "paint" ? (isProjected() ? state.selectedId : true) : (isProjected() ? null : false);
-      const key = `${cell.column}:${cell.row}:${value}`;
+      const key = `${cell.column}:${cell.row}:${value}:${state.proVariant}`;
       if (key === state.lastCell) return;
       state.lastCell = key;
       if (isProjected()) {
@@ -737,6 +738,12 @@
         else clearPlacementAt(cell.column, cell.row);
       } else {
         state.cells[cell.row][cell.column] = value;
+        if (isProMode() && state.tool === "paint") {
+          // Match the editor: update the four display tiles touched by this stroke.
+          for (const dx of [0, 1]) for (const dy of [0, 1]) {
+            state.proTiles[`${cell.column + dx}:${cell.row + dy}`] = state.proVariant;
+          }
+        }
       }
       queueRender();
     };
@@ -963,6 +970,10 @@
         }
       } else {
         state.cells = state.cells.map((row) => row.map(() => true));
+        if (isProMode()) {
+          const { columns, rows } = dimensions();
+          for (let y = 0; y <= rows; y++) for (let x = 0; x <= columns; x++) state.proTiles[`${x}:${y}`] = state.proVariant;
+        }
       }
       render();
     });

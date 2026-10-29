@@ -534,7 +534,7 @@ python3 skills/game-assets/scripts/map-preview-server.py \
   --columns 12 --rows 8 --lifetime 900
 ```
 
-Use the actual final paths returned by the runner. Open the printed loopback URL for the user. The **Pro: right-angle / diagonal** button switches the atlas immediately while preserving the painted terrain layout, allowing a direct comparison on the same map; it does not modify the source images. This comparison control switches the whole preview, whereas the product editor's brush switch affects subsequent strokes. Both inputs must be matching square 4×4 atlases (normally 256×256), with standard first. The same ordered pair works as `libraries["dual-grid-pro"]` in preview JSON. For a portable page, `build-map-preview.py --mode dual-grid-pro --image <standard.png> --image <diagonal.png> --output preview.html` embeds the pair and the same interactive toggle.
+Use the actual final paths returned by the runner. Open the printed loopback URL for the user. The **Pro: right-angle / diagonal** button changes the brush for subsequent strokes only. Existing strokes keep their shape; the four dual-grid display tiles touched by a new stroke use the selected atlas. Both variants coexist seamlessly on one terrain map, matching the product editor. Switching alone never redraws the map in another style and never modifies source images. Both inputs must be matching square 4×4 atlases (normally 256×256), with standard first. The same ordered pair works as `libraries["dual-grid-pro"]` in preview JSON. For a portable page, `build-map-preview.py --mode dual-grid-pro --image <standard.png> --image <diagonal.png> --output preview.html` embeds the pair and the same interactive toggle.
 
 
 ### Use the paired atlases in a game
