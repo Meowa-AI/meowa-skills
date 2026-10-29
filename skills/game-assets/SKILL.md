@@ -15,6 +15,8 @@ For Image2.5 free native background removal, see [Transparent asset tips](refere
 
 For HD frame animation V2, `--auto-scale-to-input` (default off, no extra credits) restores the final animation to the input dimensions with smooth scaling and retains the original animation as a second output. With background removal, only the final transparent animation is resized.
 
+For V2 first-frame or first/last-frame animation, prefer leaving `--audio-description` empty with prompt optimization enabled so polishing selects the main sound effect from the action. If writing it yourself, briefly describe only the principal sound, not the action sequence. Outputs are lossless WebP plus a separate WAV when audio is generated; see [animation audio and timing](references/animation-and-video.md#frame-animation-v2-audio-and-timing).
+
 ## Establish the asset contract
 
 Determine these requirements before selecting a command:
@@ -43,6 +45,8 @@ Treat preset-defined dimensions and output counts as fixed contracts. Do not imp
 Use `general-image-poll --job-id <id>` to recover any of these jobs; `image-2.5-poll`, `image-2-poll`, and `nano-banana-poll` remain compatible. The backend route `/api/gemini/jobs` is a legacy name shared by all three models; the public capability is General generation, not Gemini generation.
 
 For a local edit marked by a user-supplied mask, send the original and mask as ordered references through Nano Banana general generation. Read [mask-guided editing](references/ui-and-image-editing.md#edit-a-user-marked-region-with-nano-banana) for the input order and prompt.
+
+Nano Banana does not offer `21:9` or `9:21` aspect ratios.
 
 **Template-driven HD and pixel generation** adds a template's style, layout, size, and count constraints. Before using any template-dependent capability, tell the user that a template must be selected, discover the current catalog, and list suitable options for their request with the available size, count, style, and preview information. Let the user choose; use an already specified template without asking again. If the available styles do not fit, offer general generation with their prompt and references.
 
@@ -94,7 +98,7 @@ Do not use legacy diffusion-style prompt engineering: no long keyword stacks, se
 3. **Large pixel assets:** use `large-pixel-gen-run` for larger scenes, illustrations, portraits, buildings, and other compositions that do not fit a small sprite preset.
 4. **Low-cost sprite batches and prototypes:** use the general pixel canvas through `pixel-universal-gen-run` when speed, volume, and low cost matter more than exact per-sprite sizing or maximum fidelity. Its built-in 4:3 `xlarge` mode is optimized for asset packs and provides a freer canvas for generating many differently sized assets at once. Its pixel quality is still lower than preset-driven pixel generation.
 5. **Pixel Universal Generation:** the same command is the pixel-art counterpart to a general Nano Banana-style image workflow. It uses a large 4:3 canvas and supports a normal composition or a top-down game view. Typical uses include converting HD artwork into a new pixel composition, generating pixel scenes or character illustrations, and designing multi-stage building-upgrade artwork.
-6. **Animation:** animate only after the character or prop design is stable. Before running, follow the high-quality animation workflow in [Animation and video](references/animation-and-video.md); it defines prompt preparation, automatic prompt enhancement, explicit Pixel/HD selection, intelligence tiers, and mandatory transparent motion space.
+6. **Animation:** animate only after the character or prop design is stable. Choose V1 or V2 with the [animation routing comparison](references/capability-routing.md#choose-v1-or-v2-animation), then follow [Animation and video](references/animation-and-video.md) for source preparation and V2 frame review and cleanup.
 
 Do not run standalone pixelation after any Meowa pixel-generation command. Pixel outputs are already perfectly pixelated.
 
@@ -105,7 +109,7 @@ Do not run standalone pixelation after any Meowa pixel-generation command. Pixel
 3. **Automatic background removal and component segmentation:** use `ui-gen-run` when an HD asset sheet should be generated with background removal and automatic component detection. It can generate UI, ordinary art assets, or a sprite sheet; the result depends primarily on the prompt, not on the name of the module. The public final media remains one aggregate sheet accompanied by component segmentation data.
 
 `ui-gen-run` defaults to Image 2.5 at Standard quality; choose Image 2 explicitly for its Detailed default.
-4. **Animation:** default to `meowa-animation-run`, matching the web main panel (16 frames, Pixel, 480P). Choose `--style-mode hd` for HD art. Use `animate-run` only for the established engine or its intelligence tiers, `keyframes-run` for multiple controlled poses, and `video-run` for a video deliverable or motion that frame animation cannot represent. For reference-video editing, prepare editable text with `meowa-animation-edit-prompts`, then generate with `meowa-animation-edit-run`; polishing is manual. Read [Animation and video](references/animation-and-video.md) for conditional defaults, quality, removal, padding, and recovery.
+4. **Animation:** default to V2 (`meowa-animation-run`), matching the web main panel (16 frames, Pixel, 480P). Choose `--style-mode hd` for HD art. Consult the [animation routing comparison](references/capability-routing.md#choose-v1-or-v2-animation) for V1 use cases; use `keyframes-run` for multiple controlled poses and `video-run` for a video deliverable or motion that frame animation cannot represent. For reference-video editing, prepare editable text with `meowa-animation-edit-prompts`, then generate with `meowa-animation-edit-run`; polishing is manual. Read [Animation and video](references/animation-and-video.md) for conditional defaults, quality, removal, padding, recovery, and V2 frame review and cleanup.
 
 ## Understand the modules
 
@@ -186,6 +190,7 @@ Pixel background removal supports `--preserve-translucency` (default off) for bo
 ### 通用生成 `general-image-run`
 
 `general-image-run --prompt "..."` 使用 Image 2.5 Sunburst；默认 `--quality standard`。
+Nano Banana 不提供 temperature 设置。
 质量仅支持 `standard/detailed/ultimate`，对应网页 普通/精细/极致 与 canonical `low/medium/high`。
 `--resolution 1K|2K` 默认 1K；`--aspect-ratio` 默认 1:1，支持 1:1、3:4、4:3、9:16、16:9。
 可重复 `--reference-image` 传参考图；失败或中断用 `general-image-poll --job-id ...` 恢复，勿重复提交。

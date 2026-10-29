@@ -34,14 +34,27 @@ Use this module to select one primary public command. Prefer a specialized capab
 | Create square isometric or hex-isometric map tiles | `isometric-gen-run`, `hex-isometric-gen-run`, or HD variants | `maps-tiles-and-textures.md` |
 | Create parallax-ready foreground, midground, and background layers | `side-scrolling-map-run` or `hd-side-scrolling-map-run` | `maps-tiles-and-textures.md` |
 | Make an image loop horizontally, vertically, or as a texture | `self-loop-run` | `animation-and-video.md` |
-| Create frame animation with the web default | `meowa-animation-run` | `animation-and-video.md` |
-| Use the established animation engine or intelligence tiers | `animate-run` | `animation-and-video.md` |
+| Create frame animation; try V2 first for complex actions | `meowa-animation-run` | `animation-and-video.md` |
+| Use V1 for subtle pixel idle, or as a fallback for simple walk or run | `animate-run` | `animation-and-video.md` |
 | Control a complex frame animation with intermediate poses | `keyframes-run` | `animation-and-video.md` |
 | Turn a first frame, or first and last frames, into a short clip | `video-run` | `animation-and-video.md` |
 | Create one sound, a sound pack, or variants | `sound-run` | `audio.md` |
 | Draft music direction or render a track | `music-run` | `audio.md` |
 | Speak one character line from text | `tts-run` | `audio.md` |
 | Speak one line in a voice cloned from reference audio | `tts-run --reference-audio` | `audio.md` |
+
+## Choose V1 or V2 animation
+
+V2 is `meowa-animation-run`. V1 Pixel is `animate-run --animation-model pixel-engine-v1.1 --intelligence standard`.
+
+| Motion | Recommended route | Practical tradeoff |
+|---|---|---|
+| Very simple pixel idle with subtle motion | V1 Pixel | Usually more stable, with a slightly higher success rate |
+| Idle with larger motion | V2 | V2 usually produces greater motion amplitude, including for idle; choose it when the user wants a more animated result |
+| Other or complex action | V2 | V1 has a high failure rate outside simple idle, walk, and run, so it is not a recommended fallback |
+| Walk or run | Prefer V2 with local frame cleanup when needed | V1 often loops better, but animal gaits and character walking at complex angles can be less reliable; V2 runs often contain a few extra frames that need trimming |
+
+If either version gives poor results on simple idle, walk, or run, try the other within the authorized generation scope, or consult the user about the tradeoff. For other actions, stay with V2 or consult the user rather than routinely trying V1. These are practical tendencies, not guarantees. Follow the [V2 review and frame cleanup](animation-and-video.md#v2-review-and-frame-cleanup) guidance before handoff.
 
 ## Selection rules
 
@@ -60,7 +73,7 @@ Use this module to select one primary public command. Prefer a specialized capab
 - Treat preset output size and default count as part of the deliverable contract. If no preset matches the requested size or count, explain the gap instead of implying that prompt text can enforce it.
 - Use pixel workflows when their style and exact sprite contract fit. If template styles do not fit, offer general generation in pixel style and inspect the resulting pixel grid and dimensions; prompt wording alone does not guarantee either.
 - Use `image-edit-run` for one precise still-image transformation. Use one-click upgrade when one source should become a coherent upgrade sequence or several style-consistent variants. Use `animation-edit-run` for an existing animated GIF or WebP.
-- Default to `meowa-animation-run`, matching the web main panel: 16 frames, Pixel, 480P, and prompt optimization. Use `animate-run` only for the established engine, its intelligence tiers or sprite-sheet output; use `keyframes-run` for multiple controlled poses. Their output resolution and frame rules differ; do not substitute them silently. Use `video-run` for a video deliverable or motion that frame animation cannot represent.
+- Default to `meowa-animation-run`, matching the web main panel: 16 frames, Pixel, 480P, and prompt optimization, with the V1 recommendations limited to simple idle, walk, and run as described above. The established `animate-run` engine also exposes intelligence tiers and sprite-sheet output; use `keyframes-run` for multiple controlled poses. Their output resolution and frame rules differ; do not substitute them silently. Use `video-run` for a video deliverable or motion that frame animation cannot represent.
 - Use `character-multi-view-run` for a still eight-direction character sheet. Its left and right views are typically mirrored. When the user needs a physically consistent eight-direction turnaround without mirroring, use Frame Animation V2 (`meowa-animation-run`) with the Multi-view prompt and 32-frame loop documented in `pixel-and-hd-assets.md`. That path is a follow-up, not a one-click replacement for the still sheet.
 - Use `texture-reference-search` and `texture-reference-download` first when a standard 64×64 flat material already fits. Use `texture-gen-run` to create and download a new 64×64 seamless texture, and `isometric-texture-run` when the final tile must already have a 2:1 isometric projection.
 - Use `tileset-gen-run` for a 64px top-down dual-grid atlas. Select `foreground` or `background` with one matching 64×64 texture, or `dual` with both textures. Single-terrain modes can remove the unused background; dual mode cannot. Use `isometric-tileset-run` for an isometric atlas.

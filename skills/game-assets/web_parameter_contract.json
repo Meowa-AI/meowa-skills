@@ -229,7 +229,6 @@
             "5:4",
             "9:16",
             "16:9",
-            "21:9",
             "1:4",
             "4:1",
             "1:8",
@@ -1730,6 +1729,11 @@
             ]
           },
           "request_field": "auto_scale_to_input"
+        },
+        "audio_description": {
+          "flag": "--audio-description",
+          "default": "",
+          "request_field": "audio_description"
         }
       }
     },

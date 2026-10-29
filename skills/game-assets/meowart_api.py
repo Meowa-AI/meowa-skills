@@ -32,7 +32,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.28.1"
+MEOWART_API_CLI_VERSION = "2026.10.29.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -1759,7 +1759,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "isometric_tileset_gen": frozenset({"final_isometric_tileset_path", "final_tileset_path", "tileset_path", "url"}),
     "music_generator": frozenset({"audio_path", "audio_paths", "url"}),
     "meowa_tts": frozenset({"audio_path", "audio_paths", "url"}),
-    "meowa_animation": frozenset({"video_path", "background_video_path", "url"}),
+    "meowa_animation": frozenset({"video_path", "background_video_path", "audio_path", "url"}),
     "one_click_pixelate": frozenset({"output_path"}),
     "one_click_upgrade": frozenset({"output_paths"}),
     "pixel_gen": frozenset({"final_sprite", "final_sprite_paths", "sprite_pack_preview_path", "output_url", "url"}),
@@ -3970,6 +3970,7 @@ def prepare_meowa_animation_prompt(
     remove_bg_batch_size: str = "16",
     background_color: str,
     source_padding: dict[str, Any],
+    audio_description: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -3981,6 +3982,8 @@ def prepare_meowa_animation_prompt(
         headers=_base_headers(api_key),
         data={
             "prompt": str(prompt or "").strip(),
+            "audio_enabled": "true",
+            "audio_description": audio_description.strip(),
             "style_mode": style_mode,
             "resolution": resolution,
             "alpha_mode": alpha_mode,
@@ -4024,6 +4027,7 @@ def submit_meowa_animation(
     high_frame_rate: bool = False,
     auto_scale_to_input: bool = False,
     source_padding: dict[str, Any],
+    audio_description: str = "",
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
@@ -4035,6 +4039,8 @@ def submit_meowa_animation(
         headers=_base_headers(api_key),
         data={
             "action_timeline": str(action_timeline or "").strip(),
+            "audio_enabled": "true" if audio_description.strip() else "false",
+            "audio_description": audio_description.strip(),
             "style_mode": style_mode,
             "resolution": resolution,
             "alpha_mode": alpha_mode,
@@ -7179,7 +7185,7 @@ def build_parser() -> argparse.ArgumentParser:
     nano_banana_run.add_argument(
         "--aspect-ratio",
         default="1:1",
-        choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"],
+        choices=["1:1", "3:4", "4:3", "2:3", "3:2", "4:5", "5:4", "9:16", "16:9", "1:4", "4:1", "1:8", "8:1"],
         help="Canvas ratio; recommended shared default is 1:1",
     )
     nano_banana_poll = subparsers.add_parser(
@@ -8413,7 +8419,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--high-frame-rate",
             action="store_true",
             default=False,
-            help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
+            help="Keep every generated frame; preserve the source duration in WebP outputs. Defaults removal off and fill to #00b140.",
         )
         edit_parser.add_argument("--auto-scale-to-input", action="store_true", default=False,
             help="HD only: smoothly restore the input size; keep the original animation as a second output")
@@ -8498,8 +8504,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--high-frame-rate",
         action="store_true",
         default=False,
-        help="Keep every generated frame in the output WebP instead of sampling to 8fps. Defaults removal off and fill to #00b140.",
+        help="Keep every generated frame; preserve the source duration in WebP outputs. Defaults removal off and fill to #00b140.",
     )
+    meowa_animation_run_parser.add_argument("--audio-description", default="",
+        help="Optional sound description; optimization generates it when empty; without optimization, empty disables audio")
     meowa_animation_run_parser.add_argument("--auto-scale-to-input", action="store_true", default=False,
         help="HD only: smoothly restore the input size; keep the original animation as a second output")
     meowa_animation_run_parser.set_defaults(background_color_explicit=False)
@@ -11849,6 +11857,9 @@ def main() -> int:
                 "alignment": args.padding_alignment,
             }
             action_timeline = str(args.prompt or "").strip()
+            audio_description = args.audio_description
+            if len(audio_description) > 2000:
+                raise ValueError("audio_description must not exceed 2000 characters")
             if args.optimize_prompt:
                 prepared = prepare_meowa_animation_prompt(
                     api_base=args.api_base,
@@ -11866,10 +11877,12 @@ def main() -> int:
                     remove_bg_batch_size=args.remove_bg_batch_size,
                     background_color=args.background_color,
                     source_padding=source_padding,
+                    audio_description=audio_description,
                     timeout=args.timeout,
                     verify=verify,
                 )
                 action_timeline = str(prepared.get("action_timeline") or "").strip()
+                audio_description = str(prepared.get("audio_description") or audio_description)
                 if not action_timeline:
                     raise RuntimeError("prompt optimization returned no action timeline")
 
@@ -11890,6 +11903,7 @@ def main() -> int:
                 background_color=args.background_color,
                 high_frame_rate=args.high_frame_rate,
                 auto_scale_to_input=args.auto_scale_to_input,
+                audio_description=audio_description,
                 source_padding=source_padding,
                 timeout=args.timeout,
                 verify=verify,
