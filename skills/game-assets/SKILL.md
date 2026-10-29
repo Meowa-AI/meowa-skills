@@ -5,7 +5,7 @@ description: Develop TypeScript/Three.js games in isolated workspaces, plan game
 
 # Meowa Game Assets
 
-For playable TypeScript/Three.js games, use the developer-only beta [Game development workbench](references/game-development.md). It supports project creation, development tasks, activity replay, cancellation, private previews, owned image imports, saved source export, and explicit publishing/unpublishing when enabled. Publish only when the user requests public access.
+For playable TypeScript/Three.js games, use the developer-only beta [Game development workbench](references/game-development.md). It supports a separate owned game library, idea-based creation without automatic execution, development tasks, activity replay, cancellation, private previews, owned image imports, saved source export, and explicit publishing/unpublishing when enabled. Publish only when the user requests public access.
 
 For coordinate-based map expansion, use `image-expander-run`; for editable expansion prompts, use `image-expander-prompt`; for selected final tile exports, use `image-expander-export`. See [maps, tiles, and textures](references/maps-tiles-and-textures.md) for matching canvas parameters and neighbor coordinates.
 

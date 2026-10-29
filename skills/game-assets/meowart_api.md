@@ -194,3 +194,5 @@ Two-head Spine uses GPT Image 2 (`image-2`, default) or GPT Image 2.5 (`image-2.
 生成任务受理后会立即输出 ID。中断后用 `workflow-poll --job-id ID --workflow-id image_edit` 等恢复原任务，workflow ID 对照表见 [任务恢复](references/running-and-outputs.md#polling-and-recovery)。自定义 workflow 用 `custom-workflow-poll`，Spine 用 `spine-poll`；这些命令只读原任务，不会重新生成。扩图和自定义 workflow 首次运行不再要求手填项目／会话 ID；后续操作复用打印出的 ID。
 
 Image2.5 的 `standard` 去背景附加费为零，但生成和参考图仍计费；原生透明失败会保留背景，不会自动转付费抠图。适合生成透明角色、道具、图标和 UI 素材；已有图片经过编辑仍属于一次生成，不能承诺像素完全不变。通用生成需显式开启 `--remove-bg-method standard`；素材克隆、HD GEN、UI 生成默认已开启，万能编辑需选 Image2.5。详见 [透明素材技巧](references/pixel-and-hd-assets.md#image25-transparent-asset-tips)。
+
+游戏作品独立于普通项目：`game-development-create --prompt "游戏想法"` 仅创建并保存描述，`game-development-list --q "名称"` 查询自己的游戏（默认每页 24 条、offset 0）；需要明确开始开发时再使用 `game-development-run`。

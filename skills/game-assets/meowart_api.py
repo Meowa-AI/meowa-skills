@@ -32,7 +32,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.28.1"
+MEOWART_API_CLI_VERSION = "2026.10.29.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -2496,11 +2496,37 @@ def game_development(args: argparse.Namespace) -> dict[str, Any]:
 
     if action == "capabilities":
         return {"enabled": request("GET", "/api/game-development/capabilities").get("enabled") is True}
+    if action == "list":
+        if not 1 <= args.limit <= 24 or args.offset < 0 or len(args.q) > 512:
+            raise ValueError("invalid game pagination")
+        payload = request("GET", "/api/game-development/projects", params={"q": args.q.strip(), "limit": args.limit, "offset": args.offset})
+        items = payload.get("items")
+        if (not isinstance(items, list) or len(items) > args.limit or type(payload.get("total")) is not int
+                or payload["total"] < 0 or payload.get("limit") != args.limit or payload.get("offset") != args.offset):
+            raise RuntimeError("game_development_response_invalid")
+        safe = []
+        for item in items:
+            if (not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]
+                    or "play_url" not in item or not isinstance(item.get("title"), str) or type(item.get("created_at")) is not int
+                    or type(item.get("updated_at")) is not int or item.get("publication_status") not in ("draft", "published", "unavailable")):
+                raise RuntimeError("game_development_response_invalid")
+            play_url = item.get("play_url")
+            if item["publication_status"] == "published":
+                url = urlparse(play_url or "")
+                if (url.scheme != "https" or url.username or url.password or not url.hostname
+                        or not re.fullmatch(r"[0-9a-f]{32}\.[a-z0-9.-]+", url.hostname)
+                        or url.path != "/" or url.query or url.fragment):
+                    raise RuntimeError("game_development_response_invalid")
+            elif play_url is not None:
+                raise RuntimeError("game_development_response_invalid")
+            safe.append({key: item[key] for key in ("id", "title", "created_at", "updated_at", "publication_status", "play_url")})
+        return {"items": safe, "total": payload["total"], "limit": args.limit, "offset": args.offset}
     project = str(args.project_id or "").strip()
     if action == "create":
-        title = args.title.strip()
-        if not 1 <= len(title) <= 512:
-            raise ValueError("title must contain 1 to 512 characters")
+        prompt = args.prompt.strip()
+        if not 1 <= len(prompt) <= 8000:
+            raise ValueError("prompt must contain 1 to 8000 characters")
+        title = prompt.split("\n", 1)[0].rstrip("\r")[:40].strip()
         project = project or str(uuid.uuid4())
     if not 1 <= len(project) <= 255:
         raise ValueError("project ID must contain 1 to 255 characters")
@@ -2509,9 +2535,7 @@ def game_development(args: argparse.Namespace) -> dict[str, Any]:
     if action == "create":
         # Emit the durable identity before I/O so uncertain creates can be retried.
         print(_format_json_for_display({"project_id": project}), flush=True)
-        payload = request("GET", f"/api/projects/{quote(project, safe='')}", allow_missing=True)
-        if payload is None:
-            payload = request("POST", "/api/projects", {"id": project, "title": title, "projectTitleSource": "manual"})
+        payload = request("POST", "/api/game-development/projects", {"id": project, "title": title, "initial_prompt": prompt})
         if payload.get("id") != project:
             raise RuntimeError("game_development_response_invalid")
         return {"project_id": project}
@@ -6949,12 +6973,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
-    for action in ("capabilities", "create", "open", "read", "run", "cancel", "preview", "export", "publication", "publish", "unpublish", "assets", "import"):
+    for action in ("capabilities", "list", "create", "open", "read", "run", "cancel", "preview", "export", "publication", "publish", "unpublish", "assets", "import"):
         command = subparsers.add_parser(f"game-development-{action}", help=f"Game workbench: {action}")
-        if action != "capabilities":
+        if action not in ("capabilities", "list"):
             command.add_argument("--project-id", required=action != "create", default="")
+        if action == "list":
+            command.add_argument("--q", default="", help="Search game names")
+            command.add_argument("--limit", type=int, default=24)
+            command.add_argument("--offset", type=int, default=0)
         if action == "create":
-            command.add_argument("--title", required=True)
+            command.add_argument("--prompt", required=True, help="Game idea saved as initial_prompt; creation does not start development")
         if action == "read":
             command.add_argument("--after", type=int, default=0)
         if action == "run":

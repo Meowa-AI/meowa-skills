@@ -55,16 +55,19 @@
     "game_development_create": {
       "command": "game-development-create",
       "web_sources": [
-        "components/ProjectsPage.tsx",
+        "components/GameLibraryPage.tsx",
         "services/gameDevelopmentService.ts:ensureGameProject"
       ],
       "parameters": {
-        "title": {
-          "flag": "--title",
+        "initial_prompt": {
+          "flag": "--prompt",
           "required": true,
-          "request_field": "title",
-          "max_length": 512
+          "request_field": "initial_prompt",
+          "max_length": 8000
         }
+      },
+      "derived_fields": {
+        "title": "first trimmed prompt line, first 40 Unicode characters"
       }
     },
     "game_development": {
@@ -93,7 +96,8 @@
         "publish": "game-development-publish",
         "unpublish": "game-development-unpublish",
         "assets": "game-development-assets",
-        "import": "game-development-import"
+        "import": "game-development-import",
+        "list": "game-development-list"
       },
       "publication_identity": {
         "publish": [
@@ -106,7 +110,34 @@
           "generation"
         ]
       },
-      "replay_default": 0
+      "replay_default": 0,
+      "library": {
+        "web_sources": [
+          "components/GameLibraryPage.tsx",
+          "services/gameDevelopmentService.ts:listGameProjects"
+        ],
+        "parameters": {
+          "q": {
+            "flag": "--q",
+            "request_field": "q",
+            "default": "",
+            "max_length": 512
+          },
+          "limit": {
+            "flag": "--limit",
+            "request_field": "limit",
+            "default": 24,
+            "minimum": 1,
+            "maximum": 24
+          },
+          "offset": {
+            "flag": "--offset",
+            "request_field": "offset",
+            "default": 0,
+            "minimum": 0
+          }
+        }
+      }
     },
     "game_development_import": {
       "command": "game-development-import",

@@ -5,7 +5,8 @@ Develop TypeScript + Three.js games in an isolated remote workspace. Authenticat
 | Website action | CLI command | Product inputs |
 | --- | --- | --- |
 | Entry availability | `game-development-capabilities` | None |
-| Create game project | `game-development-create --title "My game"` | Required title, 1–512 characters |
+| Create game | `game-development-create --prompt "Make an island fishing game"` | Required prompt, 1–8000 characters, stored as `initial_prompt`; title derives from its first 40 characters |
+| List my games | `game-development-list` | `--q` defaults to empty, `--limit` to 24 (1–24), `--offset` to 0 |
 | Open workbench | `game-development-open --project-id ID` | None |
 | Read activity and task state | `game-development-read --project-id ID` | None |
 | Start development | `game-development-run --project-id ID --prompt "Build a collection game"` | Required prompt, 1–8000 characters |
@@ -22,7 +23,7 @@ Imports use the same `source_url` field as the website's library image selection
 
 Run commands with `python3 <skill-dir>/meowart_api.py`. Create then open the project; `execution_ready` means the service accepts development requests, including while `environment_state` is `idle`. Opening and reading a project never reserve a sandbox. Development tasks and explicitly requested live previews acquire temporary capacity; excess demand remains queued. Project source, assets and history remain saved when that capacity is released. Titles and prompts are trimmed just like the website. There are no model, provider, execution-command, or sandbox configuration options.
 
-Creation prints a project ID before the request. On an uncertain response, repeat `create` with that same `--project-id` and title. Task submission similarly prints a request ID; retain it and use `--request-id` for retries of the same prompt. Use a new ID only for a new task. Failed or cancelled tasks are not automatically replayed.
+Creation prints a project ID before the request. On an uncertain response, repeat `create` with that same `--project-id` and prompt. Task submission similarly prints a request ID; retain it and use `--request-id` for retries of the same prompt. Use a new ID only for a new task. Failed or cancelled tasks are not automatically replayed.
 
 `read --after N` resumes from `next_cursor`; the default is exactly `0`. Drain pages while `has_more`, otherwise poll about once per second. If `generation` changes, discard old activity and read from `0`. A paused `service.code` keeps queued tasks; cancellation and existing previews remain available. Re-read before deciding to submit another task.
 
@@ -39,3 +40,5 @@ Publishing makes the saved build playable by anyone with its link. It never happ
 The published version remains fixed when development continues. Replacing or withdrawing it invalidates its old URL; publishing after withdrawal creates a new URL. Publication reads and withdrawal remain available while execution is paused. Public play does not require the game workspace to be running. Withdrawal stops subsequent file requests, but cannot recall files already loaded or saved. These commands print only the declared publication view and never download or execute the published game.
 
 The project template uses strict TypeScript, pinned dependencies and a lockfile. Verification order is **typecheck → build → actual gameplay**. Vite transpiles TypeScript but does not type-check it; `typecheck` must run `tsc --noEmit`. Browser testing still requires the applicable host authorization.
+
+Games use a separate owned game library, not canvas projects or game-design documents. The home page links to `/develop/game-development`; Projects has no game-development entry. Creating saves the idea without running a task. The website restores it in the workbench and waits for confirmation; the equivalent CLI flow is `create`, `open`, then an explicitly requested `run`. Listing is read-only, never starts a sandbox, and includes only safe game summaries. Publication status can be `unavailable` while the control service cannot be reached.
