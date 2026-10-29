@@ -520,7 +520,7 @@ Defaults mirror the canvas: `--mode hd`, `--resolution 1K`, `--aspect-ratio auto
 
 ### Generate and preview a Dual-grid Pro pair
 
-`tileset-gen-submit` and `tileset-gen-run` both accept `--tileset-template dual_grid_pro`. The runner submits multipart data to `POST /api/workflows/tileset_gen/run`; `tileset_template=dual_grid_pro`, `tileset_mode=dual-grid-15`, and `edge_erosion=true`. The existing job polling and final-output download flow applies. Consume both declared final images in standard, diagonal order; never use intermediate provider images. Single-terrain output removes the unused terrain from both atlases using the selected removal tier.
+`tileset-gen-submit` and `tileset-gen-run` both accept `--tileset-template dual_grid_pro`. The runner submits multipart data to `POST /api/workflows/tileset_gen/run`; `tileset_template=dual_grid_pro` and `tileset_mode=dual-grid-15`; the backend always enables edge erosion for Pro. The existing job polling and final-output download flow applies. Consume both declared final images in standard, diagonal order; never use intermediate provider images. Single-terrain output removes the unused terrain from both atlases using the selected removal tier.
 
 ```bash
 python3 skills/game-assets/meowart_api.py tileset-gen-run \
