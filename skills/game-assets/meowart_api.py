@@ -31,7 +31,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.23.2"
+MEOWART_API_CLI_VERSION = "2026.10.28.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -1781,7 +1781,7 @@ _WORKFLOW_FINAL_OUTPUT_FIELDS: dict[str, frozenset[str]] = {
     "seedance_generator": frozenset({"raw_video_path", "video_paths", "url"}),
     "side_scrolling_map_gen": frozenset({"background_path", "foreground_path", "midground_path", "url"}),
     "texture_gen": frozenset({"final_texture_path", "texture_path", "url"}),
-    "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "url"}),
+    "tileset_gen": frozenset({"final_tileset_path", "tileset_path", "output_paths", "url"}),
 }
 _WORKFLOW_FINAL_OUTPUT_CONTAINERS: dict[str, frozenset[str]] = {
     "animate": frozenset({"animation_assets"}),
@@ -5563,6 +5563,7 @@ def submit_tileset_generator(
     api_key: str,
     prompt: str = "",
     terrain_mode: str = "dual",
+    tileset_template: str = "dual_grid_15",
     foreground_texture: str = "",
     background_texture: str = "",
     remove_bg_method: str = "standard",
@@ -5571,6 +5572,8 @@ def submit_tileset_generator(
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
+    if tileset_template not in {"dual_grid_15", "tile-15", "dual_grid_pro"}:
+        raise ValueError("unsupported tileset_template")
     normalized_terrain_mode = str(terrain_mode or "").strip().lower()
     if normalized_terrain_mode not in {"foreground", "background", "dual"}:
         raise ValueError("terrain_mode must be one of: foreground, background, dual")
@@ -5609,7 +5612,7 @@ def submit_tileset_generator(
     single_terrain = normalized_terrain_mode != "dual"
     data: dict[str, str] = {
         "prompt": prompt,
-        "tileset_template": "dual_grid_15",
+        "tileset_template": tileset_template,
         "tileset_mode": "dual-grid-15",
         "terrain_mode": "single" if single_terrain else "dual",
         "remove_bg_method": normalized_remove_bg_method if single_terrain else "none",
@@ -5644,6 +5647,7 @@ def run_tileset_generator(
     api_key: str,
     prompt: str = "",
     terrain_mode: str = "dual",
+    tileset_template: str = "dual_grid_15",
     foreground_texture: str = "",
     background_texture: str = "",
     remove_bg_method: str = "standard",
@@ -5659,6 +5663,7 @@ def run_tileset_generator(
         api_key=api_key,
         prompt=prompt,
         terrain_mode=terrain_mode,
+        tileset_template=tileset_template,
         foreground_texture=foreground_texture,
         background_texture=background_texture,
         remove_bg_method=remove_bg_method,
@@ -7667,6 +7672,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tileset_submit = subparsers.add_parser("tileset-gen-submit", help="Submit a tileset_gen job")
     add_shared_path_args(tileset_submit)
+    tileset_submit.add_argument("--tileset-template", default="dual_grid_15", choices=["dual_grid_15", "tile-15", "dual_grid_pro"])
     tileset_submit.add_argument("--prompt", default="", help="Optional transition or style instruction")
     tileset_submit.add_argument(
         "--terrain-mode",
@@ -10548,6 +10554,7 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "terrain_mode": args.terrain_mode,
+                "tileset_template": args.tileset_template,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
                 "remove_bg_method": args.remove_bg_method,
@@ -10559,6 +10566,7 @@ def main() -> int:
                 api_key=args.api_key,
                 prompt=args.prompt,
                 terrain_mode=args.terrain_mode,
+                tileset_template=args.tileset_template,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
                 remove_bg_method=args.remove_bg_method,
@@ -10586,6 +10594,7 @@ def main() -> int:
             request_payload = {
                 "prompt": args.prompt,
                 "terrain_mode": args.terrain_mode,
+                "tileset_template": args.tileset_template,
                 "foreground_texture": args.foreground_texture,
                 "background_texture": args.background_texture,
                 "remove_bg_method": args.remove_bg_method,
@@ -10597,6 +10606,7 @@ def main() -> int:
                 api_key=args.api_key,
                 prompt=args.prompt,
                 terrain_mode=args.terrain_mode,
+                tileset_template=args.tileset_template,
                 foreground_texture=args.foreground_texture,
                 background_texture=args.background_texture,
                 remove_bg_method=args.remove_bg_method,

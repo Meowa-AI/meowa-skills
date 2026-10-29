@@ -512,3 +512,7 @@ Defaults mirror the canvas: `--mode hd`, `--resolution 1K`, `--aspect-ratio auto
 `image-expander-export --project-id PROJECT --tiles-json tiles.json --aspect-ratio 1:1 --export-kind assembled` mirrors canvas image export; `--export-kind split` exports the selected final tile archive. The JSON list contains canonical `coord`, `asset_id` and optional `display_feather` facts (`range_percent` defaults to 3; `top/right/bottom/left` default to 0). Coordinates and assets refer to the same project input references as the canvas. Match the map’s mode, resolution, resolved aspect ratio, generation provider and overlap when exporting.
 
 `--export-kind godot` creates a Godot 4 scene with final textures split into bounded chunks and the same positions, paint order, display feather and pixel/HD sampling as the canvas. Extract the archive as a Godot 4 project and open `project.godot`; its main scene is `scenes/image_expansion.tscn`. This avoids allocating one giant combined image.
+
+### Dual-grid Pro
+
+`tileset-gen-run --tileset-template dual_grid_pro` generates a matched pair in one 2K call: standard first, diagonal second, both 256×256. Pro always enables edge erosion. Terrain and removal options are unchanged; a single-terrain pair applies the selected removal tier independently to both final images. Use both images as one Pro skin in the map editor; changing the brush style affects subsequent strokes only.

@@ -50,6 +50,18 @@
     }
   },
   "features": {
+    "tileset_template": {
+      "command": "tileset-gen-run",
+      "web_sources": ["types.ts:TilesetTemplate", "components/SettingsPanel.tsx", "services/textureGenService.ts:runTileset"],
+      "parameters": {
+        "tileset_template": {
+          "flag": "--tileset-template",
+          "default": "dual_grid_15",
+          "choices": ["dual_grid_15", "tile-15", "dual_grid_pro"],
+          "request_field": "tileset_template"
+        }
+      }
+    },
     "media_storage": {
       "command": "media-storage-set",
       "read_command": "media-storage-get",
