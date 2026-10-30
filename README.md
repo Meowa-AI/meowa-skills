@@ -39,6 +39,16 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/game-assets/meowart_api.py" --versio
 
 Do not update only `SKILL.md`; the runner and references are one versioned unit.
 
+Versioned ZIP packages and checksums are available from [GitHub Releases](https://github.com/Meowa-AI/meowa-skills/releases). The default Git and `npx skills add https://github.com/Meowa-AI/meowa-skills --skill game-assets` installation channels track `main`; existing Skills CLI installations can run `npx skills update game-assets -y`. After installing or upgrading, verify both `--version` and `image-edit-run --help`. Release 2026.10.30.1 supersedes NAS patch `nas-image-edit-aspect-ratio/1`; preserve local credentials and outputs, replace the complete Skill, and remove any runner-selection override for the patch.
+
+The still-edit ratio regression is fully offline and blocks real network requests:
+
+```bash
+python3 -m pytest -q tests/test_image_edit_aspect_ratio.py
+```
+
+It checks actual multipart request preparation for all three generation models. It does not verify supplier output dimensions.
+
 Create a key from [Meowa API Keys](https://meowa.ai/#/api-keys), then configure it locally:
 
 ```bash
