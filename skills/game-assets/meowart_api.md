@@ -196,3 +196,9 @@ Two-head Spine uses GPT Image 2 (`image-2`, default) or GPT Image 2.5 (`image-2.
 Image2.5 的 `standard` 去背景附加费为零，但生成和参考图仍计费；原生透明失败会保留背景，不会自动转付费抠图。适合生成透明角色、道具、图标和 UI 素材；已有图片经过编辑仍属于一次生成，不能承诺像素完全不变。通用生成需显式开启 `--remove-bg-method standard`；素材克隆、HD GEN、UI 生成默认已开启，万能编辑需选 Image2.5。详见 [透明素材技巧](references/pixel-and-hd-assets.md#image25-transparent-asset-tips)。
 
 游戏作品独立于普通项目：`game-development-create --prompt "游戏想法"` 仅创建并保存描述，`game-development-list --q "名称"` 查询自己的游戏（默认每页 24 条、offset 0）；需要明确开始开发时再使用 `game-development-run`。
+
+### Still-edit canvas ratio (2026.10.30.1)
+
+`image-edit-run --aspect-ratio auto|1:1|3:4|4:3|9:16|16:9` sets the request field `aspect_ratio` for `nano-banana`, `image-2`, and `image-2.5`, in pixel or HD mode. Omission sends `auto`, preserving existing source-based selection. This selects the generation canvas; inspect final dimensions after background removal or pixel processing.
+
+Upgrade the complete `skills/game-assets` directory from the official repository, including the runner, references, contract, and `release.json`; verify `--version` and `image-edit-run --help`. NAS patch `nas-image-edit-aspect-ratio/1` based on 2026.10.29.2 is superseded by 2026.10.30.1. Preserve local credentials and outputs, replace the patched Skill with the complete official version, and retire overrides or cached copies that select the patched runner. An existing paid job must be recovered by its original job ID rather than submitted again.

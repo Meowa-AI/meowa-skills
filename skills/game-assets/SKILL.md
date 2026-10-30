@@ -161,7 +161,7 @@ Avoid unnecessary chains. Every generative step can change identity, scale, pale
 3. Read [capability-routing.md](references/capability-routing.md).
 4. Read the selected capability module; read multiple modules only for an intentional production chain.
 5. Inspect `python3 meowart_api.py <command> --help` for current product options.
-6. Run one primary `*-run` command with a new explicit `--output-dir`.
+6. Run one primary `*-run` command with a new explicit `--output-dir`. For still edits, `image-edit-run --aspect-ratio` selects the generation canvas; omit it for source-based `auto`, or choose `1:1`, `3:4`, `4:3`, `9:16`, or `16:9` with any supported generation model.
 7. Apply a downstream edit or post-process only when required by the asset contract.
 8. Open the saved media, inspect `final_outputs.json`, and validate every promised property before handoff.
 9. Pixel isometric `tetraploid` accepts one large reference (visible width > 200 px) or three small references (≤ 200 px); small-tile modes accept only small references. For isometric, hex, dual-grid, or side-scrolling work, start `scripts/map-preview-server.py` with downloaded public references or declared final outputs. Select `hd-isometric` or `hd-hex-isometric` for HD tiles, and declare tetraploid assets as `"footprint": "2x2"` in a JSON library; direct `--image` entries default to `1×1`. For side-scrolling, pass the directory containing the three final layers or a user-owned prefab manifest. Open its temporary loopback URL with the user's browser when browser control is available. Do not make the user browse deep directories, select files, copy paths, or navigate manually.

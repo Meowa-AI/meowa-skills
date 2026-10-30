@@ -32,7 +32,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.29.2"
+MEOWART_API_CLI_VERSION = "2026.10.30.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -7346,7 +7346,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=IMAGE2_QUALITY_CHOICES,
         help="Image2 quality: Standard, Detailed, or Ultimate",
     )
-    image_edit_run.set_defaults(aspect_ratio="auto")
+    image_edit_run.add_argument(
+        "--aspect-ratio",
+        default="auto",
+        choices=["auto", "1:1", "3:4", "4:3", "9:16", "16:9"],
+        help="Generation canvas aspect ratio (default: auto, selected from the source)",
+    )
     image_edit_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard", "advanced"])
 
     asset_clone_run = subparsers.add_parser("asset-clone-run", help="Clone a sheet of consistent game-art assets")

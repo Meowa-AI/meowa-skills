@@ -198,6 +198,7 @@ python3 skills/game-assets/meowart_api.py image-edit-run \
 ```
 
 - Provide one to eight reference images.
+- `--aspect-ratio auto|1:1|3:4|4:3|9:16|16:9` selects the generation canvas for Nano Banana, Image-2, and Image2.5 in pixel or HD mode. The default `auto` retains source-based canvas selection. Background removal and pixel post-processing can change final dimensions; inspect the saved output before claiming its exact ratio.
 - Use pixel mode for pixel assets and HD mode for smooth artwork.
 - Use `--strict` only when pixel structure must remain exact.
 - Use `--regional-pixelation` for a multi-asset image whose detected regions need separate pixel-size handling. It is mutually exclusive with `--strict` and adds the same 2-credit product add-on shown on the web.
