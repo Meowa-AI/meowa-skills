@@ -26,7 +26,7 @@
 
 高清角色可用 `general-image-run` 设计、用 `image-edit-run --mode hd` 调整，也可选择匹配的高清模板。根据当前命令 `--help` 选择模型、比例、质量和分辨率；模板的尺寸与数量仍是固定契约。具体参数见[角色生成能力](../../references/pixel-and-hd-assets.md)和[万能编辑](../../references/ui-and-image-editing.md#edit-still-images)。高清定稿可直接进入[动画制作](animation-production.md)，不需要经过像素化。
 
-角色后续要做动画时，生图尽量直接输出透明背景，便于填充绿幕。Image2.5 生图／编辑可开启 `--remove-bg-method standard`，去背景不收附加费，生成与参考图仍按正常计费；下载后检查实际 alpha。未得到干净透明图时，按[动画输入背景准备](animation-production.md#先准备透明角色图再填充绿幕)补做去背景并验收，再进入动作生成。
+角色后续要做绿幕动画时，**生成图片后必须先完成去背景与透明边缘验收，再填充绿幕**；直接填绿会保留原背景和轮廓杂边，容易在动画中产生大量边缘残留。生图尽量直接输出透明背景；Image2.5 生图／编辑可开启 `--remove-bg-method standard`，去背景不收附加费，生成与参考图仍按正常计费。下载后检查实际 alpha 和轮廓；已有干净透明图无需重复抠图，否则按[动画输入背景准备](animation-production.md#先准备透明角色图再填充绿幕)补做去背景并验收，再进入动作生成。
 
 ## 4. 验收并固定设计
 

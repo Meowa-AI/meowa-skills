@@ -123,13 +123,13 @@ python3 skills/game-assets/meowart_api.py pixel-universal-gen-run \
 
 ## 3. 动画制作与像素专属约束
 
-母版通过后，按[通用动画制作流程](animation-production.md)完成：
+母版通过后，按[通用动画制作流程](animation-production.md)完成。**填充绿幕前必须先去背景并验收透明边缘**，避免原背景和杂边被带入动画，造成大量边缘残留；已有干净透明图无需重复抠图。姿态编辑后也要重新检查，具体按[动画输入背景准备](animation-production.md#先准备透明角色图再填充绿幕)执行。
 
 1. [姿态与首尾帧](animation-production.md#1-准备动作姿态与首尾帧)：万能编辑使用 `--mode pixel`；先验收动作起始姿势，变身或特效需要限定终点时准备尾帧。
 2. [画布与留白](animation-production.md#2-按动作方向选择画布与留白)：按动作轨迹决定比例、四向空间、角色尺度与锚点；同段首尾帧尺寸一致，不同动作无需套同一最大方形画布。
 3. [生成小样](animation-production.md#4-生成小样高帧率与分辨率)：使用 `meowa-animation-run --style-mode pixel`，Agent 优先高帧率与合适纯色背景；提高生成分辨率可改善动作清晰度和像素稳定性，不需要先放大角色原始像素。
 4. [动作验收](animation-production.md#6-动画校验先整体动作与画布再看细节)：先看整体动作、运动范围和裁切，再看角色稳定与局部像素；代表小样通过后才扩展同类动作。
-5. 按用途做[连续动作或分段拼接](animation-production.md#5-连续动作与分段拼接)、[循环整理](animation-production.md#7-循环动作整理)，最后[抠图与交付](animation-production.md#8-抠图复核和交付)。
+5. 按用途做[连续动作或分段拼接](animation-production.md#5-连续动作与分段拼接)、[循环整理](animation-production.md#7-循环动作整理)，最后[抠图与交付](animation-production.md#8-抠图复核和交付)。同一角色整套交付前，必须按[跨动作锚点验收](animation-alignment.md)检查连续切换，有 padding 偏移时用固定平移加边矫正，已对齐则不重复处理。
 
 **Pixel 输入尺寸与留白：** V2 最终输入最长边（含留白）不超过 320px。可动画角色内容尽量在 128×128 内；64px 角色可优先尝试 128×128 以内的动作画布，再按实际动作调整，不作为硬性尺寸。旧入口 Standard／Advanced 的限制不同，见[动画能力参数](../../references/animation-and-video.md#how-to-create-a-high-quality-animation)。超限大图应回到模板或精确像素路线准备适合动画的版本；若要保留超大图，可明确选择 HD 动画并另验收像素边缘，不能静默切换。
 
