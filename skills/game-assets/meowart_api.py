@@ -32,7 +32,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.10.30.1"
+MEOWART_API_CLI_VERSION = "2026.11.05.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -84,7 +84,8 @@ GENERAL_IMAGE_ENDPOINT = "/api/gemini/jobs"
 NANO_BANANA_MODEL = "gemini-nano-banana-2.1"
 IMAGE_2_MODEL = "gpt-image-2"
 GENERATION_MODEL_CHOICES = ("nano-banana", "image-2")
-UI_GENERATION_MODEL_CHOICES = (*GENERATION_MODEL_CHOICES, "image-2.5")
+NATIVE_IMAGE2_MODELS = {"image-2.5": "gpt-image-2.5-sunburst", "image-2.6": "gpt-image-2.6-sunburst"}
+UI_GENERATION_MODEL_CHOICES = (*GENERATION_MODEL_CHOICES, *NATIVE_IMAGE2_MODELS)
 IMAGE2_QUALITY_CHOICES = ("standard", "detailed", "ultimate")
 SPINE_AGENT_DEFAULT_TEMPLATE_NAME = (
     "character_template_2head_celestial_librarian"
@@ -3675,7 +3676,7 @@ def submit_hd_gen(
         "aspect_ratio": aspect_ratio,
         "quality_mode": quality_mode,
         "remove_bg_method": remove_bg_method,
-        "generation_provider": "nanobanana" if generation_model == "nano-banana" else "image2_5" if generation_model == "image-2.5" else "image2",
+        "generation_provider": "nanobanana" if generation_model == "nano-banana" else generation_model.replace("image-2.", "image2_") if generation_model in NATIVE_IMAGE2_MODELS else "image2",
         "generation_speed": "normal",
     }
     if project_id is not None:
@@ -4499,17 +4500,32 @@ def submit_general_image(
     quality: str = "standard",
     generation_speed: str = "normal",
     remove_bg_method: str = "none",
+    output_format: str = "png",
+    gif_size: str = "256x256",
+    frame_count: int = 16,
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
     normalized_capability = str(capability or "").strip().lower()
-    if normalized_capability not in {"nano-banana", "image-2", "image-2.5"}:
+    if normalized_capability not in {"nano-banana", "image-2", "image-2.5", "image-2.6"}:
         raise ValueError("capability must be nano-banana, image-2 or image-2.5")
 
     if remove_bg_method not in ("none", "standard"):
         raise ValueError("remove_bg_method must be none or standard")
-    if normalized_capability != "image-2.5" and remove_bg_method != "none":
+    if normalized_capability not in NATIVE_IMAGE2_MODELS and remove_bg_method != "none":
         raise ValueError("General background removal requires Image2.5")
+    if output_format == "gif":
+        if normalized_capability != "image-2.6" or remove_bg_method != "none":
+            raise ValueError("GIF output requires Image2.6 without background removal")
+        if not re.fullmatch(r"[1-9][0-9]{2}x[1-9][0-9]{2}", gif_size):
+            raise ValueError("GIF size must be WIDTHxHEIGHT")
+        width, height = map(int, gif_size.split("x"))
+        if width % 16 or height % 16 or not (256 <= width <= 512 and 256 <= height <= 512):
+            raise ValueError("GIF dimensions must be multiples of 16 between 256 and 512")
+        pixels = width * height
+        minimum_frames = (655_360 + pixels - 1) // pixels
+        if type(frame_count) is not int or not minimum_frames <= frame_count <= 16:
+            raise ValueError(f"GIF output {gif_size} requires {minimum_frames}–16 frames")
     quality_map = {"standard": "low", "detailed": "medium", "ultimate": "high"}
     normalized_quality = str(quality or "standard").strip().lower()
     if normalized_quality not in quality_map:
@@ -4522,16 +4538,18 @@ def submit_general_image(
     is_nano_banana = normalized_capability == "nano-banana"
     normalized_model = NANO_BANANA_MODEL
     if not is_nano_banana:
-        normalized_model = "gpt-image-2.5-sunburst" if normalized_capability == "image-2.5" else IMAGE_2_MODEL
+        normalized_model = NATIVE_IMAGE2_MODELS.get(normalized_capability, IMAGE_2_MODEL)
     payload = {
-        "generationProvider": "nanobanana" if is_nano_banana else "image2_5" if normalized_capability == "image-2.5" else "image2",
+        "generationProvider": "nanobanana" if is_nano_banana else normalized_capability.replace("image-2.", "image2_") if normalized_capability in NATIVE_IMAGE2_MODELS else "image2",
         "model": normalized_model,
         "image2Quality": "medium" if is_nano_banana else quality_map[normalized_quality],
         "generationSpeed": "normal",
         "resolution": resolution,
         "aspectRatio": aspect_ratio,
         "requestBody": request_body,
-        **({"removeBgMethod": remove_bg_method} if normalized_capability == "image-2.5" else {}),
+        **({"outputFormat": "gif", "gifSize": gif_size, "frameCount": frame_count}
+           if output_format == "gif" else {}),
+        **({"removeBgMethod": remove_bg_method} if normalized_capability in NATIVE_IMAGE2_MODELS else {}),
     }
     url = _normalize_base_url(api_base, GENERAL_IMAGE_ENDPOINT)
     response, response_payload = _request_json(
@@ -4559,6 +4577,9 @@ def run_general_image(
     quality: str = "standard",
     generation_speed: str = "normal",
     remove_bg_method: str = "none",
+    output_format: str = "png",
+    gif_size: str = "256x256",
+    frame_count: int = 16,
     timeout: int = DEFAULT_TIMEOUT,
     max_wait: int = DEFAULT_MAX_WAIT,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
@@ -4575,6 +4596,9 @@ def run_general_image(
         quality=quality,
         generation_speed=generation_speed,
         remove_bg_method=remove_bg_method,
+        output_format=output_format,
+        gif_size=gif_size,
+        frame_count=frame_count,
         timeout=timeout,
         verify=verify,
     )
@@ -4921,9 +4945,9 @@ def submit_spine_agent(
     timeout: int = DEFAULT_TIMEOUT,
     verify: bool = True,
 ) -> dict[str, Any]:
-    if template_name != "character_template_slim" and generation_model not in {"image-2", "image-2.5"}:
+    if template_name != "character_template_slim" and generation_model not in {"image-2", "image-2.5", "image-2.6"}:
         raise ValueError("Two-head Spine supports image-2 or image-2.5")
-    if template_name == "character_template_slim" and generation_model == "image-2.5":
+    if template_name == "character_template_slim" and generation_model in NATIVE_IMAGE2_MODELS:
         raise ValueError("Image 2.5 is available for two-head Spine templates")
     input_assets: list[dict[str, Any]] = []
     if character_reference:
@@ -4945,7 +4969,7 @@ def submit_spine_agent(
     payload = {
         "requirement": prompt,
         "template_name": template_name,
-        "generation_provider": {"nano-banana": "nanobanana", "image-2": "image2", "image-2.5": "image2_5"}[generation_model],
+        "generation_provider": {"nano-banana": "nanobanana", "image-2": "image2", "image-2.5": "image2_5", "image-2.6": "image2_6"}[generation_model],
         "resolution": "2K",
         "export_resolution": export_resolution,
         "image2_quality": {
@@ -6102,7 +6126,7 @@ def submit_ui_generator(
         raise ValueError("remove_bg_method must be one of: none, standard, advanced")
     if generation_model not in UI_GENERATION_MODEL_CHOICES:
         raise ValueError("generation_model must be one of: nano-banana, image-2, image-2.5")
-    if generation_model == "image-2.5" and normalized_remove_bg_method == "advanced":
+    if generation_model in NATIVE_IMAGE2_MODELS and normalized_remove_bg_method == "advanced":
         raise ValueError("Image 2.5 background removal supports only none or standard")
     effective_remove_bg_method = normalized_remove_bg_method if remove_background else "none"
     data: dict[str, str] = {
@@ -6113,8 +6137,8 @@ def submit_ui_generator(
         "generation_provider": (
             "nanobanana"
             if generation_model == "nano-banana"
-            else "image2_5"
-            if generation_model == "image-2.5"
+            else generation_model.replace("image-2.", "image2_")
+            if generation_model in NATIVE_IMAGE2_MODELS
             else "image2"
         ),
         "generation_speed": "normal",
@@ -6881,11 +6905,13 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             commands = next(action.choices for action in self._actions if isinstance(action, argparse._SubParsersAction))
             for action in commands["general-image-run"]._actions:
                 help_actions.append((action, action.choices, action.help))
-                if model != "nano-banana" and action.dest == "resolution":
+                if model != "image-2.6" and action.dest in {"output_format", "gif_size", "frame_count"}:
+                    action.help = argparse.SUPPRESS
+                elif model != "nano-banana" and action.dest == "resolution":
                     action.choices = ["1K", "2K"]
                 elif model != "nano-banana" and action.dest == "aspect_ratio":
                     action.choices = ["1:1", "3:4", "4:3", "9:16", "16:9"]
-                elif (model == "nano-banana" and action.dest == "quality") or (model != "image-2.5" and action.dest == "remove_bg_method"):
+                elif (model == "nano-banana" and action.dest == "quality") or (model not in NATIVE_IMAGE2_MODELS and action.dest == "remove_bg_method"):
                     action.help = argparse.SUPPRESS
         try:
             parsed = super().parse_args(arguments, namespace)
@@ -6903,7 +6929,7 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
                         parsed.animation_model = "pixel-engine-v1.1" if max(source.size) <= 256 else "frame-engine-v1.1"
                 except OSError:
                     pass  # The existing source validation reports invalid image files before submission.
-        if parsed.command in {"hd-gen-run", "hd-gen-submit"} and parsed.generation_model == "image-2.5" and parsed.remove_bg_method == "advanced":
+        if parsed.command in {"hd-gen-run", "hd-gen-submit"} and parsed.generation_model in NATIVE_IMAGE2_MODELS and parsed.remove_bg_method == "advanced":
             self.error("Image2.5 background removal supports only none or standard (free)")
         if parsed.command == "image-expander-run" and not any(arg.split("=", 1)[0] == "--basic-prompt" for arg in arguments):
             parsed.basic_prompt = IMAGE_EXPANDER_BASIC_PROMPTS[parsed.view_preset]
@@ -6928,9 +6954,13 @@ class GameAssetsArgumentParser(argparse.ArgumentParser):
             parsed.remove_bg_method = "none" if parsed.generation_model == "nano-banana" else "standard"
         ui_quality_explicit = vars(parsed).pop("quality_explicit", False)
         if parsed.command in (UI_GEN_SUBMIT_COMMANDS | UI_GEN_RUN_COMMANDS) and not ui_quality_explicit:
-            parsed.quality = "standard" if parsed.generation_model == "image-2.5" else "detailed"
+            parsed.quality = "standard" if parsed.generation_model in NATIVE_IMAGE2_MODELS else "detailed"
         if parsed.command == "general-image-run":
             explicit = {argument.split("=", 1)[0] for argument in arguments if argument.startswith("--")}
+            if parsed.output_format != "gif" and explicit.intersection({"--gif-size", "--frame-count"}):
+                self.error("GIF size and frame count require --output-format gif")
+            if parsed.output_format == "gif" and parsed.generation_model != "image-2.6":
+                self.error("GIF output requires --generation-model image-2.6")
             if parsed.generation_model != "nano-banana":
                 if parsed.resolution not in {"1K", "2K"} or parsed.aspect_ratio not in {"1:1", "3:4", "4:3", "9:16", "16:9"}:
                     self.error("Selected image model supports 1K/2K and the standard five aspect ratios")
@@ -7253,7 +7283,7 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     general_image_run.add_argument("--generation-model", default="image-2.5",
-                                   choices=["nano-banana", "image-2", "image-2.5"],
+                                   choices=["nano-banana", "image-2", "image-2.5", "image-2.6"],
                                    help="Image generation model; default Image2.5")
     for action in nano_banana_run._actions[1:]:
         cloned_action = copy.copy(action)
@@ -7267,6 +7297,10 @@ def build_parser() -> argparse.ArgumentParser:
             cloned_action.help = ("Image2/Image2.5 only; Standard/Detailed/Ultimate" if action.dest == "quality"
                                   else "Image2.5 only; free native background removal, default none")
             general_image_run._add_action(cloned_action)
+
+    general_image_run.add_argument("--output-format", choices=["png", "gif"], default="png", help="Image2.6 output format")
+    general_image_run.add_argument("--gif-size", default="256x256", help="GIF frame size as WIDTHxHEIGHT, edges 256–512 in multiples of 16")
+    general_image_run.add_argument("--frame-count", type=_bounded_integer(2, 16), default=16, help="GIF frame count, up to 16; minimum is ceil(655360 / (width * height))")
 
     general_image_poll = subparsers.add_parser(
         "general-image-poll",
@@ -7329,7 +7363,7 @@ def build_parser() -> argparse.ArgumentParser:
     image_edit_run.add_argument(
         "--generation-model",
         default="nano-banana",
-        choices=[*GENERATION_MODEL_CHOICES, "image-2.5"],
+        choices=[*GENERATION_MODEL_CHOICES, "image-2.5", "image-2.6"],
         help="Generation model (pixel default: Nano Banana; HD default: Image2.5)",
         action=ImageEditOptionAction,
     )
@@ -7361,7 +7395,7 @@ def build_parser() -> argparse.ArgumentParser:
     asset_clone_run.add_argument("--skip-prompt-optimization", action="store_true", default=True, help="Use the prompt without AI optimization (default); use asset-clone-prompt to polish explicitly")
     asset_clone_run.add_argument("--clone-count", type=int, default=1, choices=[1, 4, 9, 16, 25, 36], help="Square reference-grid cell count; match input image count where possible. For one composite image, keep 1 and describe its actual object count in --prompt")
     asset_clone_run.add_argument("--mode", default="pixel", choices=["pixel", "hd"])
-    asset_clone_run.add_argument("--generation-model", default="image-2.5", choices=["nano-banana", "image-2.5"], action=ImageEditOptionAction)
+    asset_clone_run.add_argument("--generation-model", default="image-2.5", choices=["nano-banana", "image-2.5", "image-2.6"], action=ImageEditOptionAction)
     asset_clone_run.add_argument("--quality", default="detailed", choices=IMAGE2_QUALITY_CHOICES)
     asset_clone_run.add_argument("--resolution", default="1K", choices=["1K", "2K"], action=ImageEditOptionAction)
     asset_clone_run.add_argument("--remove-bg-method", default="standard", choices=["none", "standard"], action=ImageEditOptionAction)
@@ -8229,7 +8263,7 @@ def build_parser() -> argparse.ArgumentParser:
     spine_run.add_argument(
         "--generation-model",
         default="image-2.5",
-        choices=["image-2", "image-2.5", "nano-banana"],
+        choices=["image-2", "image-2.5", "image-2.6", "nano-banana"],
         help="Two-head: GPT Image 2.5 (default) or 2. Nano Banana is available only for the four-head template",
     )
     spine_run.add_argument("--export-resolution", default="2K", choices=["1K", "2K", "4K"])
@@ -9270,6 +9304,8 @@ def main() -> int:
                 quality=getattr(args, "quality", "standard"),
                 generation_speed=getattr(args, "generation_speed", "normal"),
                 remove_bg_method=getattr(args, "remove_bg_method", "none"),
+                **({"output_format": args.output_format, "gif_size": args.gif_size, "frame_count": args.frame_count}
+                   if getattr(args, "output_format", "png") == "gif" else {}),
                 timeout=args.timeout,
                 max_wait=args.max_wait,
                 poll_interval=args.poll_interval,
@@ -9375,7 +9411,7 @@ def main() -> int:
                     raise ValueError("--multi-pixelation and --no-multi-pixelation are mutually exclusive")
                 if args.mode == "hd" and args.remove_bg_method == "advanced":
                     raise ValueError("HD image editing supports only none or standard background removal")
-                if args.generation_model == "image-2.5" and args.remove_bg_method == "advanced":
+                if args.generation_model in NATIVE_IMAGE2_MODELS and args.remove_bg_method == "advanced":
                     raise ValueError("image-2.5 image editing supports only none or standard background removal")
                 endpoint = "/api/workflows/image_edit/run"
                 workflow_id = "image_edit"
@@ -9387,12 +9423,12 @@ def main() -> int:
                     "pixelation_method": "fine" if args.regional_pixelation else "whole",
                     "multi_pixelation": "true" if args.multi_pixelation or (args.regional_pixelation and not args.no_multi_pixelation) else "false",
                     "generation_provider": (
-                        "nanobanana" if args.generation_model == "nano-banana" else "image2_5" if args.generation_model == "image-2.5" else "image2"
+                        "nanobanana" if args.generation_model == "nano-banana" else args.generation_model.replace("image-2.", "image2_") if args.generation_model in NATIVE_IMAGE2_MODELS else "image2"
                     ),
                     "model_name": (
                         NANO_BANANA_MODEL
                         if args.generation_model == "nano-banana"
-                        else "gpt-image-2.5-sunburst" if args.generation_model == "image-2.5" else IMAGE_2_MODEL
+                        else NATIVE_IMAGE2_MODELS.get(args.generation_model, IMAGE_2_MODEL)
                     ),
                     "remove_bg_method": args.remove_bg_method,
                     "resolution": args.resolution,
@@ -9422,7 +9458,7 @@ def main() -> int:
                     "skip_prompt_optimization": "true" if args.skip_prompt_optimization else "false",
                     "clone_count": str(args.clone_count),
                     "mode": args.mode,
-                    "generation_provider": "nanobanana" if args.generation_model == "nano-banana" else "image2_5",
+                    "generation_provider": "nanobanana" if args.generation_model == "nano-banana" else args.generation_model.replace("image-2.", "image2_"),
                     "image2_quality": "low" if args.generation_model == "nano-banana" else {"standard": "low", "detailed": "medium", "ultimate": "high"}[args.quality],
                     "resolution": args.resolution,
                     "remove_bg_method": args.remove_bg_method,

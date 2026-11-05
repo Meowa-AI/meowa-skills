@@ -40,7 +40,7 @@ Use this module to create the base still asset for a character, prop, item, icon
 |---|---|---|---|
 | Discover pixel or HD presets | `pixel-gen-template-info`, `hd-gen-template-info` | Choose a supported size, count, and asset family | Discovery does not generate an asset |
 | Generate pixel or HD assets | `pixel-gen-run`, `hd-gen-run` | Produce the base still asset or pack | Preset size and count are fixed contracts |
-| General generation in HD or pixel style | `general-image-run --generation-model image-2.5|image-2|nano-banana` | Produce freely styled characters, props, UI, backgrounds, or asset sheets | Prompt and references control the result; no preset sprite contract or pixel-grid guarantee |
+| General generation in HD or pixel style | `general-image-run --generation-model image-2.6|image-2.5|image-2|nano-banana` | Produce freely styled characters, props, UI, backgrounds, or asset sheets | Prompt and references control the result; no preset sprite contract or pixel-grid guarantee |
 | Discover large-pixel presets | `large-pixel-template-info` | Choose a supported large canvas shape | Lists only the large-pixel family |
 | Generate a large pixel asset | `large-pixel-gen-run` | Produce a scene, illustration, portrait, building, or other large pixel composition | Requires a preset from large-pixel discovery |
 | Generate a general-purpose 4:3 pixel image or asset pack | `pixel-universal-gen-run` | Produce a normal-view or top-down pixel composition without choosing a preset | Uses the fixed large 4:3 `xlarge` canvas contract |
@@ -330,3 +330,7 @@ The public command always uses automatic pixel-size detection. Review the result
 Pixel background removal supports `--preserve-translucency` (default off) for both General and Complex removal. It skips alpha binarization and preserves soft alpha in PNG/WebP; GIF retains its format limitation. HD always preserves soft alpha. This option does not change credits.
 
 Nano Banana exposes one product model. Generation uses Nano Banana 2.1. Generation costs 10/20/40 credits at 1K/2K/4K. Each reference image adds 2 credits.
+
+### Image2.6 GIF output
+
+Use `general-image-run --generation-model image-2.6 --output-format gif --gif-size 512x288 --frame-count 9` with a motion prompt. The default frame size is 256×256, each edge accepts multiples of 16 from 256 to 512, and frame count defaults to 16. The minimum is `ceil(655360 / (width * height))`, and the maximum is 16. The provider can impose additional limits on individual combinations. Use `--reference-image` for image-guided GIFs (+2 credits per image).

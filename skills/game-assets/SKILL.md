@@ -27,6 +27,8 @@ For HD frame animation V2, `--auto-scale-to-input` (default off, no extra credit
 
 For V2 first-frame or first/last-frame animation, prefer leaving `--audio-description` empty with prompt optimization enabled so polishing selects the main sound effect from the action. If writing it yourself, briefly describe only the principal sound, not the action sequence. Outputs are lossless WebP plus a separate WAV when audio is generated; see [animation audio and timing](references/animation-and-video.md#frame-animation-v2-audio-and-timing).
 
+For GPT Image 2.6 GIFs, use `general-image-run --generation-model image-2.6 --output-format gif`. See [general generation](references/pixel-and-hd-assets.md) for frame and size controls.
+
 ## Establish the asset contract
 
 Determine these requirements before selecting a command:
