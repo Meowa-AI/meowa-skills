@@ -18,6 +18,8 @@ python3 skills/game-assets/meowart_api.py --help
 python3 skills/game-assets/meowart_api.py --version
 ```
 
+For editable layers from an approved UI image, see [Smart UI Split](references/ui-and-image-editing.md#smart-ui-split). Quote and confirm the estimated credit reservation before submitting.
+
 ## 更新 Skill
 
 旧版 runner 仍可继续执行；服务端发现新版本时，runner 只提示一次，不会阻断命令。

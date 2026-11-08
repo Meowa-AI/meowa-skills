@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import copy
 import base64
 from datetime import date, datetime
@@ -32,7 +33,7 @@ try:
 except ImportError:  # Pillow is required for local image validation and animation routing.
     Image = None
 
-MEOWART_API_CLI_VERSION = "2026.11.05.1"
+MEOWART_API_CLI_VERSION = "2026.11.08.1"
 ARTIFACT_POLICY_VERSION = 1
 DEFAULT_API_BASE = "https://api.meowa.ai"
 GAME_ASSETS_SKILL_NAME = "game-assets"
@@ -281,6 +282,14 @@ def format_meowa_voice_clone_emotion_intensity(value: float) -> str:
     return format(value, "g")
 
 
+SMART_UI_SPLIT_ENDPOINT = "/api/workflows/ui_package_gen/jobs"
+SMART_UI_SPLIT_MODELS = {
+    "default": None,
+    "image-2": "image2",
+    "image-2.5": "image2_5",
+    "image-2.6": "image2_6",
+    "nano-banana": "nanobanana",
+}
 UI_GEN_ENDPOINT = "/api/workflows/general_ui_gen/run"
 UI_GEN_SUBMIT_COMMANDS = {
     "ui-gen-submit",
@@ -2801,7 +2810,7 @@ def prepare_workflow_project_context(
     return project_id, thread_id
 
 
-def _create_spine_source_message(
+def _create_workflow_source_message(
     *,
     api_base: str,
     api_key: str,
@@ -2810,9 +2819,10 @@ def _create_spine_source_message(
     prompt: str,
     timeout: int,
     verify: bool,
+    client_id: str = "",
 ) -> str:
     cleaned_prompt = str(prompt or "").strip()
-    client_id = f"skill_spine_{uuid.uuid4().hex}"
+    client_id = client_id or f"skill_spine_{uuid.uuid4().hex}"
     payload = _game_design_api_request(
         method="POST",
         api_base=api_base,
@@ -2871,7 +2881,7 @@ def prepare_spine_submission_context(
             verify=verify,
         )
     if not resolved_message_id:
-        resolved_message_id = _create_spine_source_message(
+        resolved_message_id = _create_workflow_source_message(
             api_base=api_base,
             api_key=api_key,
             project_id=resolved_project_id,
@@ -6097,6 +6107,141 @@ def _normalize_ui_generation_mode(generation_mode: str) -> str:
     return aliases[normalized]
 
 
+def smart_ui_split_settings(args: argparse.Namespace) -> dict[str, Any]:
+    provider = SMART_UI_SPLIT_MODELS[args.generation_model]
+    quality = dict(zip(IMAGE2_QUALITY_CHOICES, ("low", "medium", "high")))[args.quality]
+    return {
+        **({"generation_provider": provider} if provider else {}),
+        "image2_quality": "medium" if provider == "nanobanana" else quality,
+        "resolution": args.resolution,
+        "call_count": args.call_count,
+    }
+
+
+def quote_smart_ui_split(settings: dict[str, Any]) -> dict[str, int]:
+    # Read the versioned mirror of the canonical product pricing CSV.
+    path = Path(__file__).resolve().parent / "references" / "ui_package_gen_pricing.csv"
+    with path.open(encoding="utf-8", newline="") as pricing:
+        rows = list(csv.DictReader(pricing))
+    provider = settings.get("generation_provider") or next(
+        row["generation_provider"] for row in rows if row["is_default"] == "true"
+    )
+    for row in rows:
+        if row["generation_provider"] == provider and all(
+            row[key] == str(settings[key]) for key in ("image2_quality", "resolution", "call_count")
+        ):
+            return {key: int(row[key]) for key in ("max_credits", "service_credits", "per_call_credits")}
+    raise ValueError("Smart UI Split price unavailable for these options")
+
+
+def submit_smart_ui_split(args: argparse.Namespace, *, verify: bool) -> dict[str, Any]:
+    settings = smart_ui_split_settings(args)
+    quote_details = quote_smart_ui_split(settings)
+    if args.confirm_credits != quote_details["max_credits"]:
+        raise ValueError(
+            f"Confirm the estimated {quote_details['max_credits']}-credit reservation with the user "
+            "before running Smart UI Split. Pass that amount with --confirm-credits."
+        )
+    reference_path = Path(args.reference_image).expanduser()
+    if not reference_path.is_file():
+        raise FileNotFoundError(f"UI reference not found: {reference_path}")
+    request_options = dict(api_base=args.api_base, api_key=args.api_key, timeout=args.timeout, verify=verify)
+    project_id, thread_id = prepare_workflow_project_context(
+        **request_options, title="Smart UI Split", project_id=args.project_id, thread_id=args.thread_id,
+    )
+    asset_id = upload_project_input_asset(
+        **request_options, project_id=project_id, image_path=args.reference_image,
+    )
+    operation_id = f"skill_smart_ui_split_{uuid.uuid4().hex}"
+    source_message_id = _create_workflow_source_message(
+        **request_options, project_id=project_id, thread_id=thread_id,
+        prompt="Smart UI Split", client_id=operation_id,
+    )
+    return _game_design_api_request(
+        **request_options, method="POST", endpoint=SMART_UI_SPLIT_ENDPOINT,
+        json_body={
+            "project_id": project_id, "thread_id": thread_id,
+            "source_message_id": source_message_id, "client_operation_id": operation_id,
+            "input_assets": [{"role": "primary_reference", "asset_id": asset_id, "ordinal": 0}],
+            "prompt": "", **settings,
+        },
+    )
+
+
+def save_smart_ui_split_package(
+    args: argparse.Namespace, *, job_id: str, final_payload: dict[str, Any],
+    output_root: Path, verify: bool,
+) -> Path:
+    result = final_payload.get("result")
+    package = result.get("ui_package") if isinstance(result, dict) else None
+    if not isinstance(package, dict):
+        raise _compatibility_error("Smart UI Split result is missing its final UI package", job_id=job_id)
+    package_url = package.get("packageUrl")
+    checksum = package.get("packageSha256")
+    size = package.get("packageByteSize")
+    if not (
+        isinstance(package_url, str)
+        and re.fullmatch(r"/api/project-assets/ui/uifile_[0-9a-f]{32}/download", package_url)
+        and isinstance(checksum, str) and re.fullmatch(r"[0-9a-f]{64}", checksum)
+        and type(size) is int and 0 < size <= 80 * 1024**2
+    ):
+        raise _compatibility_error("Smart UI Split result is missing its final ZIP contract", job_id=job_id)
+
+    def open_package() -> tuple[requests.Response, bool]:
+        access = _game_design_api_request(
+            api_base=args.api_base, api_key=args.api_key, timeout=args.timeout, verify=verify,
+            method="POST", endpoint="/api/media/access", json_body={"url": package_url, "version": 2},
+        )
+        delivery = access.get("delivery")
+        if delivery == "proxy":
+            url = _normalize_base_url(args.api_base, package_url)
+            headers = _base_headers(args.api_key)
+        elif delivery in {"gcs", "oss", "cdn"}:
+            url = str(access.get("url") or "")
+            headers = None
+        else:
+            raise RuntimeError("Smart UI Split package delivery is unavailable")
+        if urlparse(url).scheme != "https" or not urlparse(url).hostname:
+            raise RuntimeError("Invalid Smart UI Split package delivery URL")
+        response = requests.get(
+            url, headers=headers, timeout=args.timeout, verify=verify, stream=True, allow_redirects=False,
+        )
+        return response, headers is None
+
+    output_dir = _predict_saved_dir(output_root, f"smart-ui-split-{job_id}")
+    target = output_dir / "package.meowa-ui.zip"
+    try:
+        response, signed = open_package()
+        if signed and response.status_code in {401, 403}:
+            response.close()
+            response, _ = open_package()
+        with response:
+            if response.status_code != 200:
+                raise RuntimeError(f"Smart UI Split package download returned HTTP {response.status_code}")
+            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            if content_type != "application/zip":
+                raise ValueError("Smart UI Split package download did not return application/zip")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=output_dir) as temp_dir:
+                partial = Path(temp_dir) / target.name
+                digest = hashlib.sha256()
+                written = 0
+                with partial.open("wb") as output:
+                    for chunk in response.iter_content(chunk_size=256 * 1024):
+                        written += len(chunk)
+                        if written > size:
+                            raise ValueError("Smart UI Split package exceeds its declared size")
+                        digest.update(chunk)
+                        output.write(chunk)
+                if written != size or digest.hexdigest() != checksum or not zipfile.is_zipfile(partial):
+                    raise ValueError("Smart UI Split package failed integrity validation")
+                partial.replace(target)
+    except requests.RequestException:
+        # The transport exception can contain a short-lived signed URL.
+        raise RuntimeError("Smart UI Split package transfer failed. Retry with the same job ID.") from None
+    return target
+
+
 def submit_ui_generator(
     *,
     api_base: str,
@@ -7981,6 +8126,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_path_args(tileset_poll)
     tileset_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
 
+    split_quote = subparsers.add_parser("smart-ui-split-quote", help="Estimate the Smart UI Split credit reservation")
+    split_run = subparsers.add_parser("smart-ui-split-run", help="Smart UI Split: turn one UI image into editable layers")
+    for command in (split_quote, split_run):
+        command.add_argument("--generation-model", choices=SMART_UI_SPLIT_MODELS, default="default")
+        command.add_argument("--quality", choices=IMAGE2_QUALITY_CHOICES, default="detailed",
+                             help="Standard, Detailed, or Ultimate; Nano Banana uses a fixed quality")
+        command.add_argument("--resolution", choices=["1K", "2K"], default="1K")
+        command.add_argument("--call-count", type=int, choices=[4, 6, 8], default=6, help="Maximum image generation calls")
+    add_shared_path_args(split_run)
+    split_run.add_argument("--reference-image", required=True, help="One finished game UI image")
+    split_run.add_argument("--confirm-credits", required=True, type=int, help="Credit reservation explicitly approved by the user")
+    split_run.add_argument("--project-id", default="")
+    split_run.add_argument("--thread-id", default="")
+    split_poll = subparsers.add_parser("smart-ui-split-poll", help="Recover a Smart UI Split job and download its final ZIP")
+    add_shared_path_args(split_poll)
+    split_poll.add_argument("--api-job-id", "--job-id", dest="api_job_id", required=True)
+
     ui_submit = subparsers.add_parser("ui-gen-submit", aliases=["general-ui-gen-submit"], help="Submit a general_ui_gen job")
     add_shared_path_args(ui_submit)
     ui_submit.add_argument("--prompt", required=True, help="Game UI sheet, HUD, menu, button, or icon requirement")
@@ -8852,6 +9014,10 @@ def main() -> int:
             print("[ERROR] Game development request failed. Check access and retry with the same identity.", file=sys.stderr)
             return 1
 
+    if args.command == "smart-ui-split-quote":
+        print(_format_public_json(quote_smart_ui_split(smart_ui_split_settings(args))))
+        return 0
+
     started_at = datetime.now().isoformat(timespec="seconds")
     run_dir = _create_run_dir(args.work_dir, args.command)
     effective_output_dir = _resolve_output_dir(args.output_dir, run_dir)
@@ -8867,6 +9033,28 @@ def main() -> int:
         }
         needs_api_key = args.command not in no_auth_commands
         args.api_key = _resolve_auth_token() if needs_api_key else ""
+
+        if args.command in {"smart-ui-split-run", "smart-ui-split-poll"}:
+            if args.command == "smart-ui-split-run":
+                receipt = submit_smart_ui_split(args, verify=verify)
+                job_id = str(receipt.get("job_id") or "")
+            else:
+                job_id = args.api_job_id
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", job_id):
+                raise ValueError("Invalid Smart UI Split job ID")
+            final = wait_submitted_workflow_job(
+                api_base=args.api_base, api_key=args.api_key, submit_payload={"job_id": job_id},
+                label="smart-ui-split", timeout=args.timeout, verify=verify,
+                max_wait=args.max_wait, poll_interval=args.poll_interval,
+            )
+            status = final["status"]
+            if status != "success":
+                return 1
+            target = save_smart_ui_split_package(
+                args, job_id=job_id, final_payload=final, output_root=effective_output_dir, verify=verify,
+            )
+            print(_format_public_json({"job_id": job_id, "status": status, "package_path": str(target)}))
+            return 0
 
         if args.command in {"media-storage-get", "media-storage-set"}:
             preference = media_storage_settings(

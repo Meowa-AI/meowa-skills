@@ -15,6 +15,7 @@ Use this module to select one primary public command. Prefer a specialized capab
 | Remove a background | `remove-background-run` | `pixel-and-hd-assets.md` |
 | Convert existing art into crisp pixel art | `pixelate-run` | `pixel-and-hd-assets.md` |
 | Generate a UI sheet, HUD, menu, buttons, icons, or extract UI components | `ui-gen-run` | `ui-and-image-editing.md` |
+| Turn a generated UI image the user is happy with into editable layers | `smart-ui-split-quote`, then `smart-ui-split-run` after the user approves the estimated reservation | [Smart UI Split](ui-and-image-editing.md#smart-ui-split) |
 | Split separated complex patterns in an existing PNG into individual transparent assets locally | `scripts/split-components.py` | `local-tools.md` |
 | Edit one or more still images | `image-edit-run` | `ui-and-image-editing.md` |
 | Edit a region marked by a user-supplied mask | `general-image-run --generation-model nano-banana` with ordered original and mask references | [Mask-guided editing](ui-and-image-editing.md#edit-a-user-marked-region-with-nano-banana) |

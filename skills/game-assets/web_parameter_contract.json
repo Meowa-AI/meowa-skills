@@ -957,6 +957,61 @@
         }
       }
     },
+    "smart_ui_split": {
+      "command": "smart-ui-split-run",
+      "web_sources": [
+        "services/uiGenService.ts",
+        "components/SettingsPanel.tsx",
+        "utils/uiAgentCredits.ts"
+      ],
+      "parameters": {
+        "reference_image": {
+          "flag": "--reference-image",
+          "request_field": "input_assets[].asset_id"
+        },
+        "generation_model": {
+          "flag": "--generation-model",
+          "request_field": "generation_provider",
+          "default": "default",
+          "choices": [
+            "default",
+            "image-2",
+            "image-2.5",
+            "image-2.6",
+            "nano-banana"
+          ]
+        },
+        "quality": {
+          "flag": "--quality",
+          "request_field": "image2_quality",
+          "default": "detailed",
+          "choices": [
+            "standard",
+            "detailed",
+            "ultimate"
+          ]
+        },
+        "resolution": {
+          "flag": "--resolution",
+          "request_field": "resolution",
+          "default": "1K",
+          "choices": [
+            "1K",
+            "2K"
+          ]
+        },
+        "call_count": {
+          "flag": "--call-count",
+          "request_field": "call_count",
+          "default": 6,
+          "choices": [
+            4,
+            6,
+            8
+          ]
+        }
+      }
+    },
     "ui_agent": {
       "command": "ui-gen-run",
       "web_sources": [

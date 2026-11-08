@@ -37,6 +37,7 @@ Use this module to generate a UI or general asset sheet with automatic backgroun
 | Capability | Command | Final role | Main limitation |
 |---|---|---|---|
 | Generate or extract UI and asset sheets | `ui-gen-run` | Produce one transparent aggregate sheet plus component segmentation data | Does not return separate cropped component media files |
+| Split one approved UI image into editable layers | `smart-ui-split-quote` → approval → `smart-ui-split-run` | Download a layered Meowa UI package |
 | Split an existing complex-pattern PNG locally | `scripts/split-components.py` | Produce individual transparent PNG crops and placement data without an API | Requires separated shapes on transparency or a solid background; see [local tools](local-tools.md) |
 | Create consistent upgrades or variants | `one-click-upgrade-prompts`, `one-click-upgrade-run` | Quickly produce one to eight related outputs from one source | Requires one reviewed prompt per output and enough source canvas for the largest change |
 | Edit still images | `image-edit-run` | Modify one or more existing visual assets | Pixel and HD default to standard background removal; use none to retain the background |
@@ -274,3 +275,27 @@ Two-head Spine uses GPT Image 2.5 (`image-2.5`, default) or GPT Image 2 (`image-
 ## Full Spine editor
 
 `spine-editor-open --project-id ID --node-id ID` returns the authenticated web workbench URL. Use it for translate/rotate keys, animation creation/copy/deletion, linear/stepped interpolation, pose-key resampling, project drafts, atlas editing and validated joint rebinding. Parameters and defaults come from the web editor; do not build a separate CLI parameter surface. Rebind candidates require comparison and explicit acceptance before applying to the canvas.
+
+## Smart UI Split
+
+Use Smart UI Split when the user is satisfied with a generated or existing game UI image and wants to edit the layers. Supply that one image as `--reference-image`. The final `package.meowa-ui.zip` contains the editable layer package and its preview.
+
+1. Run `smart-ui-split-quote` with the same model, quality, resolution, and call limit intended for submission. This reads the Skill's versioned [price table](ui_package_gen_pricing.csv) without contacting the API.
+2. Tell the user the estimated maximum credit reservation before submitting. Meowa reserves the service fee plus the budget for the selected maximum number of image calls. On success, it charges the service fee and the image calls actually used, then returns the unused balance. On failure or cancellation, it refunds the full reservation. Wait for explicit approval even if the original UI generation was already approved.
+3. Pass the approved amount as `--confirm-credits` along with the same settings. If the settings or quote change, ask for approval again. For an existing job, recover by job ID.
+
+```bash
+python3 meowart_api.py smart-ui-split-quote
+# After the user approves the displayed reservation, pass that amount as APPROVED_CREDITS.
+python3 meowart_api.py smart-ui-split-run --reference-image approved-ui.png --confirm-credits "$APPROVED_CREDITS"
+python3 meowart_api.py smart-ui-split-poll --job-id "$JOB_ID"
+```
+
+| Option | Choices | Default |
+| --- | --- | --- |
+| `--generation-model` | `default`, `image-2`, `image-2.5`, `image-2.6`, `nano-banana` | `default` (GPT Image 2.5) |
+| `--quality` | `standard`, `detailed`, `ultimate`. Nano Banana uses fixed quality. | `detailed` |
+| `--resolution` | `1K`, `2K` | `1K` |
+| `--call-count` | `4`, `6`, `8` | `6` |
+
+The command can use an existing project with `--project-id` and optionally `--thread-id`. Otherwise, it creates a project.
